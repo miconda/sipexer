@@ -62,6 +62,22 @@ type SGSIPURI struct {
 	atype    int
 }
 
+// Quick detection of ip/address type
+func SGAddrType(addr string) int {
+	if net.ParseIP(addr) == nil {
+		return AFHost
+	}
+	for i := 0; i < len(addr); i++ {
+		switch addr[i] {
+		case '.':
+			return AFIPv4
+		case ':':
+			return AFIPv6
+		}
+	}
+	return AFNONE
+}
+
 // SGSIPSetProto --
 func SGSIPSetProto(protostr string, protoval *string, protoid *int) int {
 	switch protostr {
@@ -95,17 +111,47 @@ func SGSIPSetProto(protostr string, protoval *string, protoid *int) int {
 
 // SGSIPParseSocketAddress --
 func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
+	if sockstr[0:1] == "[" && sockstr[len(sockstr)-1:] == "]" {
+		// assuming only IPv6 address -- fill with defaults
+		sockaddr.atype = SGAddrType(sockaddr.addr)
+		if sockaddr.atype != AFIPv6 {
+			return SGSIPRetErr
+		}
+		sockaddr.val = sockstr
+		sockaddr.proto = "udp"
+		sockaddr.protoid = ProtoUDP
+		sockaddr.addr = sockstr
+		sockaddr.port = "5060"
+		sockaddr.portno = 5060
+		return SGSIPRetOK
+	}
 	strArray := strings.SplitN(sockstr, ":", 2)
+	if len(strArray) == 1 {
+		// only host address -- fill with defaults
+		sockaddr.val = sockstr
+		sockaddr.proto = "udp"
+		sockaddr.protoid = ProtoUDP
+		sockaddr.addr = sockstr
+		sockaddr.port = "5060"
+		sockaddr.portno = 5060
+		sockaddr.atype = SGAddrType(sockaddr.addr)
+		return SGSIPRetOK
+	}
 	strProto := strArray[0]
 	strAddrPort := strArray[1]
 
 	ret := SGSIPSetProto(strProto, &sockaddr.proto, &sockaddr.protoid)
 	if ret != SGSIPRetOK {
-		return ret
+		// first token is not proto - assume addr:port
+		sockaddr.proto = "udp"
+		sockaddr.protoid = ProtoUDP
+		strAddrPort = sockstr
+		strProto = ""
 	}
 	if strAddrPort[0:1] == "[" {
 		strArray = strings.SplitN(strAddrPort, "]", 2)
-		if strArray[1][0:1] != ":" {
+		if strProto == "" && strArray[1][0:1] != ":" {
+			// no port and only IPv6 tested before
 			return SGSIPRetErr
 		}
 		sockaddr.port = strArray[1][1:]
@@ -125,7 +171,7 @@ func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 		}
 		sockaddr.portno = i
 		sockaddr.addr = strArray[0]
-		sockaddr.atype = AFIPv4
+		sockaddr.atype = SGAddrType(sockaddr.addr)
 	}
 	sockaddr.val = sockstr
 	return SGSIPRetOK
