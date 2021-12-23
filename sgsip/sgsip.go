@@ -109,6 +109,26 @@ func SGSIPSetProto(protostr string, protoval *string, protoid *int) int {
 	return SGSIPRetErr
 }
 
+// SGSIPSetSchema --
+func SGSIPSetSchema(schemastr string, schemaval *string, schemaid *int) int {
+	switch schemastr {
+	case "sip", "SIP":
+		*schemaval = "sip"
+		*schemaid = SchemaSIP
+		return SGSIPRetOK
+	case "sips", "SIPS":
+		*schemaval = "sips"
+		*schemaid = SchemaSIPS
+		return SGSIPRetOK
+	case "tel", "TEL":
+		*schemaval = "tel"
+		*schemaid = SchemaTEL
+		return SGSIPRetOK
+	default:
+		return SGSIPRetErr
+	}
+}
+
 // SGSIPParseSocketAddress --
 func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 	if sockstr[0:1] == "[" && sockstr[len(sockstr)-1:] == "]" {
@@ -184,18 +204,9 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	if len(strArray) < 2 {
 		return SGSIPRetErr
 	}
-	switch strArray[0] {
-	case "sip", "SIP":
-		uri.schema = "sip"
-		uri.schemaid = SchemaSIP
-	case "sips", "SIPS":
-		uri.schema = "sips"
-		uri.schemaid = SchemaSIPS
-	case "tel", "TEL":
-		uri.schema = "tel"
-		uri.schemaid = SchemaTEL
-	default:
-		return SGSIPRetErr
+	ret := SGSIPSetSchema(strArray[0], &uri.schema, &uri.schemaid)
+	if ret != SGSIPRetOK {
+		return ret
 	}
 	atPos := strings.Index(strArray[1], "@")
 	colPos := strings.Index(strArray[1], ":")
@@ -212,10 +223,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		uri.port = "5060"
 		uri.portno = 5060
 		uri.val = uristr
-		if net.ParseIP(uri.addr) == nil {
-			uri.atype = AFHost
-		}
-		uri.atype = AFIPv4
+		uri.atype = SGAddrType(uri.addr)
 		return SGSIPRetOK
 	}
 	pHostPP := ""
@@ -244,10 +252,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		uri.port = "5060"
 		uri.portno = 5060
 		uri.val = uristr
-		if net.ParseIP(uri.addr) == nil {
-			uri.atype = AFHost
-		}
-		uri.atype = AFIPv4
+		uri.atype = SGAddrType(uri.addr)
 		return SGSIPRetOK
 	}
 	uri.val = uristr
