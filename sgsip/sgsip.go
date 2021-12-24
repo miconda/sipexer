@@ -1,6 +1,7 @@
 package sgsip
 
 import (
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -181,7 +182,10 @@ func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 		}
 		sockaddr.portno = i
 		sockaddr.addr = strArray[0] + "]"
-		sockaddr.atype = AFIPv6
+		sockaddr.atype = SGAddrType(sockaddr.addr)
+		if sockaddr.atype != AFIPv6 {
+			return SGSIPRetErr
+		}
 	} else {
 		strArray = strings.SplitN(strAddrPort, ":", 2)
 		sockaddr.port = strArray[1]
@@ -222,8 +226,8 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		uri.protoid = ProtoUDP
 		uri.port = "5060"
 		uri.portno = 5060
-		uri.val = uristr
 		uri.atype = SGAddrType(uri.addr)
+		uri.val = uristr
 		return SGSIPRetOK
 	}
 	pHostPP := ""
@@ -251,9 +255,88 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		uri.protoid = ProtoUDP
 		uri.port = "5060"
 		uri.portno = 5060
-		uri.val = uristr
 		uri.atype = SGAddrType(uri.addr)
+		uri.val = uristr
 		return SGSIPRetOK
+	}
+	pPortParams := ""
+	if pHostPP[0:1] == "[" {
+		if pHostPP[len(pHostPP)-1:] == "]" {
+			// only IPv6 address
+			uri.addr = pHostPP
+			uri.proto = "udp"
+			uri.protoid = ProtoUDP
+			uri.port = "5060"
+			uri.portno = 5060
+			uri.atype = SGAddrType(uri.addr)
+			if uri.atype != AFIPv6 {
+				return SGSIPRetErr
+			}
+			uri.val = uristr
+			return SGSIPRetOK
+		}
+		strArray = strings.SplitN(pHostPP, "]", 2)
+		uri.addr = strArray[0] + "]"
+		uri.atype = SGAddrType(uri.addr[1 : len(uri.addr)-1])
+		if uri.atype != AFIPv6 {
+			return SGSIPRetErr
+		}
+		pPortParams = strArray[1]
+	} else {
+		scPos = strings.IndexAny(pHostPP, ":;")
+		uri.addr = pHostPP[0:scPos]
+		uri.atype = SGAddrType(uri.addr)
+		pPortParams = pHostPP[scPos:]
+	}
+	fmt.Printf("--- pPortParams: %v\n", pPortParams)
+	pParams := ""
+	if pPortParams[0:1] == ":" {
+		// port
+		pPort := ""
+		scPos = strings.Index(pPortParams, ";")
+		if scPos < 0 {
+			pPort = pPortParams[1:]
+		} else {
+			pPort = pPortParams[1:scPos]
+		}
+		i, err := strconv.Atoi(pPort)
+		if err != nil || i <= 0 {
+			return SGSIPRetErr
+		}
+		uri.port = pPort
+		uri.portno = i
+		if scPos < 0 {
+			uri.proto = "udp"
+			uri.protoid = ProtoUDP
+			uri.val = uristr
+			return SGSIPRetOK
+		}
+		pParams = pPortParams[scPos:]
+	} else if pPortParams[0:1] == ";" {
+		pParams = pPortParams
+	} else {
+		return SGSIPRetErr
+	}
+	uri.proto = "udp"
+	uri.protoid = ProtoUDP
+	if len(pParams) > 0 {
+		uri.params = pParams[1:]
+		strArray = strings.Split(pParams, ";transport=")
+		if len(strArray) == 1 {
+			uri.val = uristr
+			return SGSIPRetOK
+		}
+		scPos = strings.Index(strArray[1], ";")
+		pProto := ""
+		if scPos < 0 {
+			pProto = strArray[1]
+		} else {
+			pProto = strArray[1][0:scPos]
+		}
+		ret := SGSIPSetProto(pProto, &uri.proto, &uri.protoid)
+		if ret != SGSIPRetOK {
+			return SGSIPRetErr
+		}
 	}
 	uri.val = uristr
 	return SGSIPRetOK
