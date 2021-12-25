@@ -11,7 +11,8 @@ import (
 const (
 	SGSIPRetOK = 0
 	// generic errors
-	SGSIPRetErr = -1
+	SGSIPRetErr      = -1
+	SGSIPRetNotFound = -2
 )
 
 const (
@@ -339,5 +340,37 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		}
 	}
 	uri.val = uristr
+	return SGSIPRetOK
+}
+
+// SGSIPParamsGet --
+func SGSIPParamsGet(paramStr string, paramName string, paramVal *string) int {
+	if len(paramStr) < len(paramName) {
+		return SGSIPRetNotFound
+	}
+	pStr := paramStr
+	if pStr[0:1] != ";" {
+		pStr = ";" + pStr
+	}
+	if pStr[len(pStr)-1:] != ";" {
+		pStr = pStr + ";"
+	}
+
+	if strings.Index(pStr, ";"+paramName+";") >= 0 {
+		// parameter without value
+		*paramVal = ""
+		return SGSIPRetOK
+	}
+
+	strArray := strings.Split(pStr, ";"+paramName+"=")
+	if len(strArray) == 1 {
+		return SGSIPRetNotFound
+	}
+	scPos := strings.Index(strArray[1], ";")
+	if scPos < 0 {
+		*paramVal = strArray[1]
+	} else {
+		*paramVal = strArray[1][0:scPos]
+	}
 	return SGSIPRetOK
 }
