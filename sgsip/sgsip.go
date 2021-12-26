@@ -39,6 +39,12 @@ const (
 	SchemaTEL
 )
 
+const (
+	ParamValNone = iota
+	ParamValBare
+	ParamValQuoted
+)
+
 type SGSIPSocketAddress struct {
 	val     string
 	proto   string
@@ -62,6 +68,12 @@ type SGSIPURI struct {
 	proto    string
 	protoid  int
 	atype    int
+}
+
+type SGSIPParam struct {
+	name  string
+	value string
+	pmode int
 }
 
 // Quick detection of ip/address type
@@ -344,7 +356,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 }
 
 // SGSIPParamsGet --
-func SGSIPParamsGet(paramStr string, paramName string, paramVal *string) int {
+func SGSIPParamsGet(paramStr string, paramName string, vmode int, paramVal *SGSIPParam) int {
 	if len(paramStr) < len(paramName) {
 		return SGSIPRetNotFound
 	}
@@ -358,7 +370,9 @@ func SGSIPParamsGet(paramStr string, paramName string, paramVal *string) int {
 
 	if strings.Index(pStr, ";"+paramName+";") >= 0 {
 		// parameter without value
-		*paramVal = ""
+		paramVal.name = paramName
+		paramVal.value = ""
+		paramVal.pmode = ParamValBare
 		return SGSIPRetOK
 	}
 
@@ -366,11 +380,24 @@ func SGSIPParamsGet(paramStr string, paramName string, paramVal *string) int {
 	if len(strArray) == 1 {
 		return SGSIPRetNotFound
 	}
-	scPos := strings.Index(strArray[1], ";")
-	if scPos < 0 {
-		*paramVal = strArray[1]
+	scPos := -1
+	qVal := 0
+	if strArray[1][0:1] == "\"" {
+		if vmode == 0 {
+			return SGSIPRetErr
+		}
+		scPos = strings.Index(strArray[1], "\";")
+		paramVal.pmode = ParamValQuoted
+		qVal = 1
 	} else {
-		*paramVal = strArray[1][0:scPos]
+		paramVal.pmode = ParamValBare
+		scPos = strings.Index(strArray[1], ";")
 	}
+	if scPos < 0 {
+		paramVal.value = strArray[1]
+	} else {
+		paramVal.value = strArray[1][0 : scPos+qVal]
+	}
+	paramVal.name = paramName
 	return SGSIPRetOK
 }
