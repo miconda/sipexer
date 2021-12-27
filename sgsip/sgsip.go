@@ -45,6 +45,12 @@ const (
 	ParamValQuoted
 )
 
+const (
+	FLineNone = iota
+	FLineRequest
+	FLineResponse
+)
+
 type SGSIPSocketAddress struct {
 	val     string
 	proto   string
@@ -74,6 +80,17 @@ type SGSIPParam struct {
 	name  string
 	value string
 	pmode int
+}
+
+type SGSIPFirstLine struct {
+	mtype    int
+	proto    string
+	method   string
+	methodid int
+	uri      string
+	code     int    // status code number
+	codeval  string // status code string
+	reason   string
 }
 
 // Quick detection of ip/address type
@@ -399,5 +416,47 @@ func SGSIPParamsGet(paramStr string, paramName string, vmode int, paramVal *SGSI
 		paramVal.value = strArray[1][0 : scPos+qVal]
 	}
 	paramVal.name = paramName
+	return SGSIPRetOK
+}
+
+// SGSIPParseFirstLine --
+func SGSIPParseFirstLine(inputStr string, flineVal *SGSIPFirstLine) int {
+	strArray := strings.SplitN(inputStr, "\n", 2)
+	strFLine := strings.Trim(strArray[0], " \t\r")
+	if len(strFLine) < 8 {
+		return SGSIPRetErr
+	}
+	if strFLine[0:8] == "SIP/2.0 " {
+		flineVal.mtype = FLineResponse
+	} else if strFLine[len(strFLine)-8:] == " SIP/2.0" {
+		flineVal.mtype = FLineRequest
+	} else {
+		return SGSIPRetErr
+	}
+	if flineVal.mtype == FLineResponse {
+		strCR := strFLine[8:]
+		if len(strCR) < 5 {
+			return SGSIPRetErr
+		}
+		strArray = strings.SplitN(strCR, " ", 2)
+		if len(strArray) < 2 || len(strArray[0]) != 3 {
+			return SGSIPRetErr
+		}
+		i, err := strconv.Atoi(strArray[0])
+		if err != nil || i < 100 || i > 999 {
+			return SGSIPRetErr
+		}
+		flineVal.code = i
+		flineVal.codeval = strArray[0]
+		flineVal.reason = strings.Trim(strArray[1], " \t\r")
+		return SGSIPRetOK
+	}
+	strMU := strFLine[0 : len(strFLine)-8]
+	strArray = strings.SplitN(strMU, " ", 2)
+	if len(strArray) < 2 || len(strArray[0]) < 3 || len(strArray[1]) < 5 {
+		return SGSIPRetErr
+	}
+	flineVal.method = strings.Trim(strArray[0], " \t\r")
+	flineVal.uri = strings.Trim(strArray[1], " \t\r")
 	return SGSIPRetOK
 }
