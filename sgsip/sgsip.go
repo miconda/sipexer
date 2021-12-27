@@ -13,6 +13,14 @@ const (
 	// generic errors
 	SGSIPRetErr      = -1
 	SGSIPRetNotFound = -2
+
+	// first line parse errors
+	SGSIPRetErrFLineShort          = -100
+	SGSIPRetErrFLineFormat         = -101
+	SGSIPRetErrFLineResponseShort  = -102
+	SGSIPRetErrFLineResponseFormat = -103
+	SGSIPRetErrFLineResponseCode   = -104
+	SGSIPRetErrFLineRequestFormat  = -120
 )
 
 const (
@@ -424,27 +432,27 @@ func SGSIPParseFirstLine(inputStr string, flineVal *SGSIPFirstLine) int {
 	strArray := strings.SplitN(inputStr, "\n", 2)
 	strFLine := strings.Trim(strArray[0], " \t\r")
 	if len(strFLine) < 8 {
-		return SGSIPRetErr
+		return SGSIPRetErrFLineShort
 	}
 	if strFLine[0:8] == "SIP/2.0 " {
 		flineVal.mtype = FLineResponse
 	} else if strFLine[len(strFLine)-8:] == " SIP/2.0" {
 		flineVal.mtype = FLineRequest
 	} else {
-		return SGSIPRetErr
+		return SGSIPRetErrFLineFormat
 	}
 	if flineVal.mtype == FLineResponse {
 		strCR := strFLine[8:]
 		if len(strCR) < 5 {
-			return SGSIPRetErr
+			return SGSIPRetErrFLineResponseShort
 		}
 		strArray = strings.SplitN(strCR, " ", 2)
 		if len(strArray) < 2 || len(strArray[0]) != 3 {
-			return SGSIPRetErr
+			return SGSIPRetErrFLineResponseFormat
 		}
 		i, err := strconv.Atoi(strArray[0])
 		if err != nil || i < 100 || i > 999 {
-			return SGSIPRetErr
+			return SGSIPRetErrFLineResponseCode
 		}
 		flineVal.code = i
 		flineVal.codeval = strArray[0]
@@ -454,7 +462,7 @@ func SGSIPParseFirstLine(inputStr string, flineVal *SGSIPFirstLine) int {
 	strMU := strFLine[0 : len(strFLine)-8]
 	strArray = strings.SplitN(strMU, " ", 2)
 	if len(strArray) < 2 || len(strArray[0]) < 3 || len(strArray[1]) < 5 {
-		return SGSIPRetErr
+		return SGSIPRetErrFLineRequestFormat
 	}
 	flineVal.method = strings.Trim(strArray[0], " \t\r")
 	flineVal.uri = strings.Trim(strArray[1], " \t\r")
