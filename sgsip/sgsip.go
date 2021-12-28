@@ -21,6 +21,9 @@ const (
 	SGSIPRetErrFLineResponseFormat = -103
 	SGSIPRetErrFLineResponseCode   = -104
 	SGSIPRetErrFLineRequestFormat  = -120
+
+	// sip params parse errors
+	SGSIPRetErrParamFormat = -150
 )
 
 const (
@@ -409,7 +412,7 @@ func SGSIPParamsGet(paramStr string, paramName string, vmode int, paramVal *SGSI
 	qVal := 0
 	if strArray[1][0:1] == "\"" {
 		if vmode == 0 {
-			return SGSIPRetErr
+			return SGSIPRetErrParamFormat
 		}
 		scPos = strings.Index(strArray[1], "\";")
 		paramVal.pmode = ParamValQuoted
