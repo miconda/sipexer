@@ -105,56 +105,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	var sockAddr = sgsip.SGSIPSocketAddress{}
-	sgsip.SGSIPParseSocketAddress("udp:127.0.0.1:5060", &sockAddr)
-	fmt.Printf("%+v\n", sockAddr)
-	sockAddr = sgsip.SGSIPSocketAddress{}
-	sgsip.SGSIPParseSocketAddress("tls:[::1]:5061", &sockAddr)
-	fmt.Printf("%+v\n", sockAddr)
-	sockAddr = sgsip.SGSIPSocketAddress{}
-	sgsip.SGSIPParseSocketAddress("tcp:localhost1:5080", &sockAddr)
-	fmt.Printf("%+v\n", sockAddr)
-	sockAddr = sgsip.SGSIPSocketAddress{}
-	sgsip.SGSIPParseSocketAddress("[::1]:5060", &sockAddr)
-	fmt.Printf("%+v\n", sockAddr)
-	sockAddr = sgsip.SGSIPSocketAddress{}
-	sgsip.SGSIPParseSocketAddress("127.0.0.1", &sockAddr)
-	fmt.Printf("%+v\n", sockAddr)
-	fmt.Printf("\n")
-
-	var sipURI = sgsip.SGSIPURI{}
-	sgsip.SGSIPParseURI("sip:127.0.0.1:5090", &sipURI)
-	fmt.Printf("%+v\n", sipURI)
-	sipURI = sgsip.SGSIPURI{}
-	sgsip.SGSIPParseURI("sip:alice@127.0.0.1:5060", &sipURI)
-	fmt.Printf("%+v\n", sipURI)
-	sipURI = sgsip.SGSIPURI{}
-	sgsip.SGSIPParseURI("sip:127.0.0.1:5080", &sipURI)
-	fmt.Printf("%+v\n", sipURI)
-	sipURI = sgsip.SGSIPURI{}
-	sgsip.SGSIPParseURI("sip:127.0.0.1:5061;transport=tls", &sipURI)
-	fmt.Printf("%+v\n", sipURI)
-	sipURI = sgsip.SGSIPURI{}
-	sgsip.SGSIPParseURI("sip:127.0.0.1:5061;transport=tls;line=55", &sipURI)
-	fmt.Printf("%+v\n", sipURI)
-	sipURI = sgsip.SGSIPURI{}
-	sgsip.SGSIPParseURI("sip:[::1]:5061;line=44;transport=tls", &sipURI)
-	fmt.Printf("%+v\n", sipURI)
-	sipURI = sgsip.SGSIPURI{}
-	sgsip.SGSIPParseURI("sip:bob;user=sip@127.0.0.1:5060", &sipURI)
-	fmt.Printf("%+v\n", sipURI)
-
-	var paramVal = sgsip.SGSIPParam{}
-	sgsip.SGSIPParamsGet("line=44;transport=tls", "line", 0, &paramVal)
-	fmt.Printf("param val: %+v\n", paramVal)
-	paramVal = sgsip.SGSIPParam{}
-	sgsip.SGSIPParamsGet("line=\"44\";transport=tls", "line", 1, &paramVal)
-	fmt.Printf("param val: %+v\n", paramVal)
-
-	var flineVal = sgsip.SGSIPFirstLine{}
-	sgsip.SGSIPParseFirstLine("SIP/2.0 200 All OK\r\n", &flineVal)
-	fmt.Printf("%+v\n", flineVal)
-	flineVal = sgsip.SGSIPFirstLine{}
-	sgsip.SGSIPParseFirstLine("INVITE sip:alice@server.com SIP/2.0\r\n", &flineVal)
-	fmt.Printf("%+v\n", flineVal)
+	dstAddr := "udp:127.0.0.1:5060"
+	if len(flag.Args()) > 0 {
+		if len(flag.Args()) == 1 {
+			dstAddr = flag.Arg(0)
+		} else if len(flag.Args()) == 2 {
+			dstAddr = "upd:" + flag.Arg(0) + flag.Arg(0)
+		} else {
+			fmt.Fprintf(os.Stderr, "invalid number of arguments : %d\n", len(flag.Args()))
+			os.Exit(-1)
+		}
+	}
+	var dstSockAddr = sgsip.SGSIPSocketAddress{}
+	var dstURI = sgsip.SGSIPURI{}
+	if sgsip.SGSIPParseSocketAddress(dstAddr, &dstSockAddr) != sgsip.SGSIPRetOK {
+		if sgsip.SGSIPParseURI(dstAddr, &dstURI) != sgsip.SGSIPRetOK {
+			fmt.Fprintf(os.Stderr, "invalid destination address: %s\n", dstAddr)
+			os.Exit(-1)
+		} else {
+			fmt.Printf("parsed SIP URI argument (%+v)\n", dstURI)
+		}
+	} else {
+		fmt.Printf("parsed socket address argument (%+v)\n", dstSockAddr)
+	}
+	os.Exit(0)
 }
