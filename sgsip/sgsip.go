@@ -229,12 +229,17 @@ func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 		}
 	} else {
 		strArray = strings.SplitN(strAddrPort, ":", 2)
-		sockaddr.port = strArray[1]
-		i, err := strconv.Atoi(sockaddr.port)
-		if err != nil {
-			return SGSIPRetErr
+		if len(strArray) > 1 {
+			sockaddr.port = strArray[1]
+			i, err := strconv.Atoi(sockaddr.port)
+			if err != nil {
+				return SGSIPRetErr
+			}
+			sockaddr.portno = i
+		} else {
+			sockaddr.port = "5060"
+			sockaddr.portno = 5060
 		}
-		sockaddr.portno = i
 		sockaddr.addr = strArray[0]
 		sockaddr.atype = SGAddrType(sockaddr.addr)
 	}
