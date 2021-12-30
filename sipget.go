@@ -8,25 +8,34 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"log"
+	mathrand "math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"text/template"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/miconda/sipget/sgsip"
 )
 
 const sipgetVersion = "1.0.0"
 
 var templateDefaultText string = `{{.method}} sip:{{.callee}}@{{.domain}} SIP/2.0
-Via: SIP/2.0/WSS df7jal23ls0d.invalid;branch=z9hG4bKasudf-3696-24845-1
+Via: SIP/2.0/{{.viaproto}} {{.viaaddr}};rport;branch=z9hG4bKSG.{{.viabranch}}
 From: "{{.caller}}" <sip:{{.caller}}@{{.domain}}>;tag={{.fromtag}}
 To: "{{.callee}}" <sip:{{.callee}}@{{.domain}}>
 Call-ID: {{.callid}}
 CSeq: {{.cseqnum}} {{.method}}
-Subject: testing
+{{if .subject}}Subject: {{.subject}}{{else}}$rmeol{{end}}
 Date: {{.date}}
+{{if .contacturi}}Contact: {{.contacturi}}{{else}}$rmeol{{end}}
 Content-Length: 0
 
 `
@@ -36,6 +45,9 @@ var templateDefaultJSONFields string = `{
 	"caller": "alice",
 	"callee": "bob",
 	"domain": "localhost",
+	"viabranch": "$uuid",
+	"viaproto": "UDP",
+	"viaaddr": "127.0.0.1:15060",
 	"fromtag": "$uuid",
 	"callid": "$uuid",
 	"cseqnum": "$randseq",
@@ -69,13 +81,27 @@ var paramFields = make(paramFieldsType)
 //
 // CLIOptions - structure for command line options
 type CLIOptions struct {
-	ruri    string
-	version bool
+	ruri             string
+	template         string
+	templaterun      bool
+	fields           string
+	fieldseval       bool
+	crlf             bool
+	flagdefaults     bool
+	templatedefaults bool
+	version          bool
 }
 
 var cliops = CLIOptions{
-	ruri:    "sip:127.0.0.1:5060",
-	version: false,
+	ruri:             "sip:127.0.0.1:5060",
+	template:         "",
+	templaterun:      false,
+	fields:           "",
+	fieldseval:       false,
+	crlf:             false,
+	flagdefaults:     false,
+	templatedefaults: false,
+	version:          false,
 }
 
 //
@@ -89,6 +115,18 @@ func init() {
 		os.Exit(1)
 	}
 	flag.StringVar(&cliops.ruri, "ruri", cliops.ruri, "request uri (r-uri)")
+	flag.StringVar(&cliops.template, "template", cliops.template, "path to template file")
+	flag.StringVar(&cliops.template, "t", cliops.template, "path to template file")
+	flag.StringVar(&cliops.fields, "fields", cliops.fields, "path to the json fields file")
+	flag.StringVar(&cliops.fields, "f", cliops.fields, "path to the json fields file")
+	flag.BoolVar(&cliops.fieldseval, "fields-eval", cliops.fieldseval, "evaluate expression in fields file")
+	flag.BoolVar(&cliops.crlf, "crlf", cliops.crlf, "replace '\\n' with '\\r\\n' inside the data to be sent (true|false)")
+	flag.BoolVar(&cliops.flagdefaults, "flag-defaults", cliops.flagdefaults, "print flag (cli param) default values")
+	flag.BoolVar(&cliops.templatedefaults, "template-defaults", cliops.templatedefaults, "print default (internal) template data")
+	flag.BoolVar(&cliops.templaterun, "template-run", cliops.templaterun, "run template execution and print the result")
+
+	flag.Var(&paramFields, "field-val", "field value in format 'name:value' (can be provided many times)")
+
 	flag.BoolVar(&cliops.version, "version", cliops.version, "print version")
 }
 
@@ -102,6 +140,102 @@ func main() {
 
 	if cliops.version {
 		fmt.Printf("%s v%s\n", filepath.Base(os.Args[0]), sipgetVersion)
+		os.Exit(1)
+	}
+
+	if cliops.templatedefaults {
+		fmt.Println("Default template:\n")
+		fmt.Println(templateDefaultText)
+		fmt.Println("Default fields:\n")
+		fmt.Println(templateDefaultJSONFields)
+		os.Exit(1)
+	}
+	if cliops.flagdefaults {
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+	// enable file name and line numbers in logging
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	// buffer to send over SIP link
+	var buf bytes.Buffer
+	var tplstr = ""
+	if len(cliops.template) > 0 {
+		tpldata, err1 := ioutil.ReadFile(cliops.template)
+		if err1 != nil {
+			log.Fatal(err1)
+		}
+		tplstr = string(tpldata)
+	} else if len(templateDefaultText) > 0 {
+		tplstr = templateDefaultText
+	} else {
+		log.Fatal("missing data template file ('-t' or '--template' parameter must be provided)")
+	}
+	var err error
+	tplfields := make(map[string]interface{})
+	if len(cliops.fields) > 0 {
+		fieldsdata, err1 := ioutil.ReadFile(cliops.fields)
+		if err1 != nil {
+			log.Fatal(err1)
+		}
+		err = json.Unmarshal(fieldsdata, &tplfields)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else if len(templateDefaultJSONFields) > 0 {
+		err = json.Unmarshal([]byte(templateDefaultJSONFields), &tplfields)
+		if err != nil {
+			log.Fatal(err)
+		}
+		cliops.fieldseval = true
+	} else {
+		tplfields = templateFields["FIELDS:EMPTY"]
+	}
+	if cliops.fieldseval {
+		for k := range tplfields {
+			switch tplfields[k].(type) {
+			case string:
+				if tplfields[k] == "$uuid" {
+					tplfields[k] = uuid.New().String()
+				} else if tplfields[k] == "$randseq" {
+					mathrand.Seed(time.Now().Unix())
+					tplfields[k] = strconv.Itoa(1 + mathrand.Intn(999999))
+				} else if tplfields[k] == "$datefull" {
+					tplfields[k] = time.Now().String()
+				} else if tplfields[k] == "$daterfc1123" {
+					tplfields[k] = time.Now().Format(time.RFC1123)
+				} else if tplfields[k] == "$dateunix" {
+					tplfields[k] = time.Now().Format(time.UnixDate)
+				} else if tplfields[k] == "$dateansic" {
+					tplfields[k] = time.Now().Format(time.ANSIC)
+				} else if tplfields[k] == "$timestamp" {
+					tplfields[k] = strconv.FormatInt(time.Now().Unix(), 10)
+				} else if tplfields[k] == "$cr" {
+					tplfields[k] = "\r"
+				} else if tplfields[k] == "$lf" {
+					tplfields[k] = "\n"
+				}
+				break
+			}
+		}
+	}
+	if len(paramFields) > 0 {
+		for k := range paramFields {
+			tplfields[k] = paramFields[k]
+		}
+	}
+	var tpl = template.Must(template.New("wsout").Parse(tplstr))
+	tpl.Execute(&buf, tplfields)
+
+	var wmsg []byte
+	if cliops.crlf {
+		wmsg = []byte(strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1))
+	} else {
+		wmsg = []byte(strings.Replace(buf.String(), "$rmeol\n", "", -1))
+	}
+
+	if cliops.templaterun {
+		fmt.Println(string(wmsg))
 		os.Exit(1)
 	}
 
