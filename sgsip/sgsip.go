@@ -388,6 +388,30 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	return SGSIPRetOK
 }
 
+// SGSIPParseURI --
+func SGSIPURIToSocketAddress(uri *SGSIPURI, sockaddr *SGSIPSocketAddress) int {
+	if len(uri.proto) > 0 {
+		sockaddr.proto = uri.proto
+		sockaddr.protoid = uri.protoid
+	} else {
+		sockaddr.proto = "udp"
+		sockaddr.protoid = ProtoUDP
+	}
+	if len(uri.addr) > 0 {
+		sockaddr.addr = uri.addr
+	} else {
+		sockaddr.addr = "127.0.0.1"
+	}
+	if len(uri.port) > 0 {
+		sockaddr.port = uri.port
+		sockaddr.portno = uri.portno
+	} else {
+		sockaddr.port = "5060"
+		sockaddr.portno = 5060
+	}
+	return SGSIPRetOK
+}
+
 // SGSIPParamsGet --
 func SGSIPParamsGet(paramStr string, paramName string, vmode int, paramVal *SGSIPParam) int {
 	if len(paramStr) < len(paramName) {
