@@ -36,7 +36,8 @@ CSeq: {{.cseqnum}} {{.method}}
 {{if .subject}}Subject: {{.subject}}{{else}}$rmeol{{end}}
 Date: {{.date}}
 {{if .contacturi}}Contact: {{.contacturi}}{{else}}$rmeol{{end}}
-Content-Length: 0
+{{if .expires}}Contact: {{.expires}}{{else}}$rmeol{{end}}
+Content-Length: {{if .contentlength}}{{.contentlength}}{{else}}0{{end}}
 
 `
 
@@ -82,6 +83,7 @@ var paramFields = make(paramFieldsType)
 // CLIOptions - structure for command line options
 type CLIOptions struct {
 	ruri             string
+	laddr            string
 	template         string
 	templaterun      bool
 	fields           string
@@ -94,6 +96,7 @@ type CLIOptions struct {
 
 var cliops = CLIOptions{
 	ruri:             "sip:127.0.0.1:5060",
+	laddr:            "",
 	template:         "",
 	templaterun:      false,
 	fields:           "",
@@ -119,6 +122,7 @@ func init() {
 	flag.StringVar(&cliops.template, "t", cliops.template, "path to template file")
 	flag.StringVar(&cliops.fields, "fields", cliops.fields, "path to the json fields file")
 	flag.StringVar(&cliops.fields, "f", cliops.fields, "path to the json fields file")
+	flag.StringVar(&cliops.laddr, "laddr", cliops.laddr, "local address (`ip:port` or `:port`)")
 	flag.BoolVar(&cliops.fieldseval, "fields-eval", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.crlf, "crlf", cliops.crlf, "replace '\\n' with '\\r\\n' inside the data to be sent (true|false)")
 	flag.BoolVar(&cliops.flagdefaults, "flag-defaults", cliops.flagdefaults, "print flag (cli param) default values")
@@ -244,7 +248,9 @@ func main() {
 		if len(flag.Args()) == 1 {
 			dstAddr = flag.Arg(0)
 		} else if len(flag.Args()) == 2 {
-			dstAddr = "upd:" + flag.Arg(0) + flag.Arg(0)
+			dstAddr = "upd:" + flag.Arg(0) + ":" + flag.Arg(1)
+		} else if len(flag.Args()) == 3 {
+			dstAddr = flag.Arg(0) + ":" + flag.Arg(1) + ":" + flag.Arg(2)
 		} else {
 			fmt.Fprintf(os.Stderr, "invalid number of arguments : %d\n", len(flag.Args()))
 			os.Exit(-1)
@@ -258,6 +264,7 @@ func main() {
 			os.Exit(-1)
 		} else {
 			fmt.Printf("parsed SIP URI argument (%+v)\n", dstURI)
+			sgsip.SGSIPURIToSocketAddress(&dstURI, &dstSockAddr)
 		}
 	} else {
 		fmt.Printf("parsed socket address argument (%+v)\n", dstSockAddr)
