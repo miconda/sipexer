@@ -63,45 +63,45 @@ const (
 )
 
 type SGSIPSocketAddress struct {
-	val     string
-	proto   string
-	addr    string
-	port    string
-	portno  int
-	atype   int
-	protoid int
+	Val     string
+	Proto   string
+	Addr    string
+	Port    string
+	PortNo  int
+	AType   int
+	ProtoId int
 }
 
 type SGSIPURI struct {
-	val      string
-	schema   string
-	schemaid int
-	user     string
-	addr     string
-	port     string
-	portno   int
-	params   string
-	uparams  string
-	proto    string
-	protoid  int
-	atype    int
+	Val      string
+	Schema   string
+	SchemaId int
+	User     string
+	Addr     string
+	Port     string
+	PortNo   int
+	Params   string
+	UParams  string
+	Proto    string
+	ProtoId  int
+	AType    int
 }
 
 type SGSIPParam struct {
-	name  string
-	value string
-	pmode int
+	Name  string
+	Value string
+	PMode int
 }
 
 type SGSIPFirstLine struct {
-	mtype    int
-	proto    string
-	method   string
-	methodid int
-	uri      string
-	code     int    // status code number
-	codeval  string // status code string
-	reason   string
+	MType    int
+	Proto    string
+	Method   string
+	MethodId int
+	URI      string
+	Code     int    // status code number
+	CodeVal  string // status code string
+	Reason   string
 }
 
 // Quick detection of ip/address type
@@ -175,38 +175,38 @@ func SGSIPSetSchema(schemastr string, schemaval *string, schemaid *int) int {
 func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 	if sockstr[0:1] == "[" && sockstr[len(sockstr)-1:] == "]" {
 		// assuming only IPv6 address -- fill with defaults
-		sockaddr.atype = SGAddrType(sockaddr.addr)
-		if sockaddr.atype != AFIPv6 {
+		sockaddr.AType = SGAddrType(sockaddr.Addr)
+		if sockaddr.AType != AFIPv6 {
 			return SGSIPRetErr
 		}
-		sockaddr.val = sockstr
-		sockaddr.proto = "udp"
-		sockaddr.protoid = ProtoUDP
-		sockaddr.addr = sockstr
-		sockaddr.port = "5060"
-		sockaddr.portno = 5060
+		sockaddr.Val = sockstr
+		sockaddr.Proto = "udp"
+		sockaddr.ProtoId = ProtoUDP
+		sockaddr.Addr = sockstr
+		sockaddr.Port = "5060"
+		sockaddr.PortNo = 5060
 		return SGSIPRetOK
 	}
 	strArray := strings.SplitN(sockstr, ":", 2)
 	if len(strArray) == 1 {
 		// only host address -- fill with defaults
-		sockaddr.val = sockstr
-		sockaddr.proto = "udp"
-		sockaddr.protoid = ProtoUDP
-		sockaddr.addr = sockstr
-		sockaddr.port = "5060"
-		sockaddr.portno = 5060
-		sockaddr.atype = SGAddrType(sockaddr.addr)
+		sockaddr.Val = sockstr
+		sockaddr.Proto = "udp"
+		sockaddr.ProtoId = ProtoUDP
+		sockaddr.Addr = sockstr
+		sockaddr.Port = "5060"
+		sockaddr.PortNo = 5060
+		sockaddr.AType = SGAddrType(sockaddr.Addr)
 		return SGSIPRetOK
 	}
 	strProto := strArray[0]
 	strAddrPort := strArray[1]
 
-	ret := SGSIPSetProto(strProto, &sockaddr.proto, &sockaddr.protoid)
+	ret := SGSIPSetProto(strProto, &sockaddr.Proto, &sockaddr.ProtoId)
 	if ret != SGSIPRetOK {
 		// first token is not proto - assume addr:port
-		sockaddr.proto = "udp"
-		sockaddr.protoid = ProtoUDP
+		sockaddr.Proto = "udp"
+		sockaddr.ProtoId = ProtoUDP
 		strAddrPort = sockstr
 		strProto = ""
 	}
@@ -216,34 +216,34 @@ func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 			// no port and only IPv6 tested before
 			return SGSIPRetErr
 		}
-		sockaddr.port = strArray[1][1:]
-		i, err := strconv.Atoi(sockaddr.port)
+		sockaddr.Port = strArray[1][1:]
+		i, err := strconv.Atoi(sockaddr.Port)
 		if err != nil {
 			return SGSIPRetErr
 		}
-		sockaddr.portno = i
-		sockaddr.addr = strArray[0] + "]"
-		sockaddr.atype = SGAddrType(sockaddr.addr)
-		if sockaddr.atype != AFIPv6 {
+		sockaddr.PortNo = i
+		sockaddr.Addr = strArray[0] + "]"
+		sockaddr.AType = SGAddrType(sockaddr.Addr)
+		if sockaddr.AType != AFIPv6 {
 			return SGSIPRetErr
 		}
 	} else {
 		strArray = strings.SplitN(strAddrPort, ":", 2)
 		if len(strArray) > 1 {
-			sockaddr.port = strArray[1]
-			i, err := strconv.Atoi(sockaddr.port)
+			sockaddr.Port = strArray[1]
+			i, err := strconv.Atoi(sockaddr.Port)
 			if err != nil {
 				return SGSIPRetErr
 			}
-			sockaddr.portno = i
+			sockaddr.PortNo = i
 		} else {
-			sockaddr.port = "5060"
-			sockaddr.portno = 5060
+			sockaddr.Port = "5060"
+			sockaddr.PortNo = 5060
 		}
-		sockaddr.addr = strArray[0]
-		sockaddr.atype = SGAddrType(sockaddr.addr)
+		sockaddr.Addr = strArray[0]
+		sockaddr.AType = SGAddrType(sockaddr.Addr)
 	}
-	sockaddr.val = sockstr
+	sockaddr.Val = sockstr
 	return SGSIPRetOK
 }
 
@@ -254,7 +254,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	if len(strArray) < 2 {
 		return SGSIPRetErr
 	}
-	ret := SGSIPSetSchema(strArray[0], &uri.schema, &uri.schemaid)
+	ret := SGSIPSetSchema(strArray[0], &uri.Schema, &uri.SchemaId)
 	if ret != SGSIPRetOK {
 		return ret
 	}
@@ -267,13 +267,13 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	}
 	if atPos < 0 && colPos < 0 && scPos < 0 {
 		// no user, no port, no parameters
-		uri.addr = strArray[1]
-		uri.proto = "udp"
-		uri.protoid = ProtoUDP
-		uri.port = "5060"
-		uri.portno = 5060
-		uri.atype = SGAddrType(uri.addr)
-		uri.val = uristr
+		uri.Addr = strArray[1]
+		uri.Proto = "udp"
+		uri.ProtoId = ProtoUDP
+		uri.Port = "5060"
+		uri.PortNo = 5060
+		uri.AType = SGAddrType(uri.Addr)
+		uri.Val = uristr
 		return SGSIPRetOK
 	}
 	pHostPP := ""
@@ -286,52 +286,52 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 			return SGSIPRetErr
 		}
 		if uScPos < 0 {
-			uri.user = pUser
+			uri.User = pUser
 		} else {
-			uri.user = pUser[0 : uScPos+1]
-			uri.uparams = pUser[uScPos+1:]
+			uri.User = pUser[0 : uScPos+1]
+			uri.UParams = pUser[uScPos+1:]
 		}
 	} else {
 		pHostPP = strArray[1]
 	}
 	if colPos < 0 && scPos < 0 {
 		// no port, no params
-		uri.addr = pHostPP
-		uri.proto = "udp"
-		uri.protoid = ProtoUDP
-		uri.port = "5060"
-		uri.portno = 5060
-		uri.atype = SGAddrType(uri.addr)
-		uri.val = uristr
+		uri.Addr = pHostPP
+		uri.Proto = "udp"
+		uri.ProtoId = ProtoUDP
+		uri.Port = "5060"
+		uri.PortNo = 5060
+		uri.AType = SGAddrType(uri.Addr)
+		uri.Val = uristr
 		return SGSIPRetOK
 	}
 	pPortParams := ""
 	if pHostPP[0:1] == "[" {
 		if pHostPP[len(pHostPP)-1:] == "]" {
 			// only IPv6 address
-			uri.addr = pHostPP
-			uri.proto = "udp"
-			uri.protoid = ProtoUDP
-			uri.port = "5060"
-			uri.portno = 5060
-			uri.atype = SGAddrType(uri.addr)
-			if uri.atype != AFIPv6 {
+			uri.Addr = pHostPP
+			uri.Proto = "udp"
+			uri.ProtoId = ProtoUDP
+			uri.Port = "5060"
+			uri.PortNo = 5060
+			uri.AType = SGAddrType(uri.Addr)
+			if uri.AType != AFIPv6 {
 				return SGSIPRetErr
 			}
-			uri.val = uristr
+			uri.Val = uristr
 			return SGSIPRetOK
 		}
 		strArray = strings.SplitN(pHostPP, "]", 2)
-		uri.addr = strArray[0] + "]"
-		uri.atype = SGAddrType(uri.addr[1 : len(uri.addr)-1])
-		if uri.atype != AFIPv6 {
+		uri.Addr = strArray[0] + "]"
+		uri.AType = SGAddrType(uri.Addr[1 : len(uri.Addr)-1])
+		if uri.AType != AFIPv6 {
 			return SGSIPRetErr
 		}
 		pPortParams = strArray[1]
 	} else {
 		scPos = strings.IndexAny(pHostPP, ":;")
-		uri.addr = pHostPP[0:scPos]
-		uri.atype = SGAddrType(uri.addr)
+		uri.Addr = pHostPP[0:scPos]
+		uri.AType = SGAddrType(uri.Addr)
 		pPortParams = pHostPP[scPos:]
 	}
 	fmt.Printf("--- pPortParams: %v\n", pPortParams)
@@ -349,12 +349,12 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		if err != nil || i <= 0 {
 			return SGSIPRetErr
 		}
-		uri.port = pPort
-		uri.portno = i
+		uri.Port = pPort
+		uri.PortNo = i
 		if scPos < 0 {
-			uri.proto = "udp"
-			uri.protoid = ProtoUDP
-			uri.val = uristr
+			uri.Proto = "udp"
+			uri.ProtoId = ProtoUDP
+			uri.Val = uristr
 			return SGSIPRetOK
 		}
 		pParams = pPortParams[scPos:]
@@ -363,13 +363,13 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	} else {
 		return SGSIPRetErr
 	}
-	uri.proto = "udp"
-	uri.protoid = ProtoUDP
+	uri.Proto = "udp"
+	uri.ProtoId = ProtoUDP
 	if len(pParams) > 0 {
-		uri.params = pParams[1:]
+		uri.Params = pParams[1:]
 		strArray = strings.Split(pParams, ";transport=")
 		if len(strArray) == 1 {
-			uri.val = uristr
+			uri.Val = uristr
 			return SGSIPRetOK
 		}
 		scPos = strings.Index(strArray[1], ";")
@@ -379,35 +379,35 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		} else {
 			pProto = strArray[1][0:scPos]
 		}
-		ret := SGSIPSetProto(pProto, &uri.proto, &uri.protoid)
+		ret := SGSIPSetProto(pProto, &uri.Proto, &uri.ProtoId)
 		if ret != SGSIPRetOK {
 			return SGSIPRetErr
 		}
 	}
-	uri.val = uristr
+	uri.Val = uristr
 	return SGSIPRetOK
 }
 
 // SGSIPParseURI --
 func SGSIPURIToSocketAddress(uri *SGSIPURI, sockaddr *SGSIPSocketAddress) int {
-	if len(uri.proto) > 0 {
-		sockaddr.proto = uri.proto
-		sockaddr.protoid = uri.protoid
+	if len(uri.Proto) > 0 {
+		sockaddr.Proto = uri.Proto
+		sockaddr.ProtoId = uri.ProtoId
 	} else {
-		sockaddr.proto = "udp"
-		sockaddr.protoid = ProtoUDP
+		sockaddr.Proto = "udp"
+		sockaddr.ProtoId = ProtoUDP
 	}
-	if len(uri.addr) > 0 {
-		sockaddr.addr = uri.addr
+	if len(uri.Addr) > 0 {
+		sockaddr.Addr = uri.Addr
 	} else {
-		sockaddr.addr = "127.0.0.1"
+		sockaddr.Addr = "127.0.0.1"
 	}
-	if len(uri.port) > 0 {
-		sockaddr.port = uri.port
-		sockaddr.portno = uri.portno
+	if len(uri.Port) > 0 {
+		sockaddr.Port = uri.Port
+		sockaddr.PortNo = uri.PortNo
 	} else {
-		sockaddr.port = "5060"
-		sockaddr.portno = 5060
+		sockaddr.Port = "5060"
+		sockaddr.PortNo = 5060
 	}
 	return SGSIPRetOK
 }
@@ -427,9 +427,9 @@ func SGSIPParamsGet(paramStr string, paramName string, vmode int, paramVal *SGSI
 
 	if strings.Index(pStr, ";"+paramName+";") >= 0 {
 		// parameter without value
-		paramVal.name = paramName
-		paramVal.value = ""
-		paramVal.pmode = ParamValBare
+		paramVal.Name = paramName
+		paramVal.Value = ""
+		paramVal.PMode = ParamValBare
 		return SGSIPRetOK
 	}
 
@@ -444,18 +444,18 @@ func SGSIPParamsGet(paramStr string, paramName string, vmode int, paramVal *SGSI
 			return SGSIPRetErrParamFormat
 		}
 		scPos = strings.Index(strArray[1], "\";")
-		paramVal.pmode = ParamValQuoted
+		paramVal.PMode = ParamValQuoted
 		qVal = 1
 	} else {
-		paramVal.pmode = ParamValBare
+		paramVal.PMode = ParamValBare
 		scPos = strings.Index(strArray[1], ";")
 	}
 	if scPos < 0 {
-		paramVal.value = strArray[1]
+		paramVal.Value = strArray[1]
 	} else {
-		paramVal.value = strArray[1][0 : scPos+qVal]
+		paramVal.Value = strArray[1][0 : scPos+qVal]
 	}
-	paramVal.name = paramName
+	paramVal.Name = paramName
 	return SGSIPRetOK
 }
 
@@ -467,13 +467,13 @@ func SGSIPParseFirstLine(inputStr string, flineVal *SGSIPFirstLine) int {
 		return SGSIPRetErrFLineShort
 	}
 	if strFLine[0:8] == "SIP/2.0 " {
-		flineVal.mtype = FLineResponse
+		flineVal.MType = FLineResponse
 	} else if strFLine[len(strFLine)-8:] == " SIP/2.0" {
-		flineVal.mtype = FLineRequest
+		flineVal.MType = FLineRequest
 	} else {
 		return SGSIPRetErrFLineFormat
 	}
-	if flineVal.mtype == FLineResponse {
+	if flineVal.MType == FLineResponse {
 		strCR := strFLine[8:]
 		if len(strCR) < 5 {
 			return SGSIPRetErrFLineResponseShort
@@ -486,9 +486,9 @@ func SGSIPParseFirstLine(inputStr string, flineVal *SGSIPFirstLine) int {
 		if err != nil || i < 100 || i > 999 {
 			return SGSIPRetErrFLineResponseCode
 		}
-		flineVal.code = i
-		flineVal.codeval = strArray[0]
-		flineVal.reason = strings.Trim(strArray[1], " \t\r")
+		flineVal.Code = i
+		flineVal.CodeVal = strArray[0]
+		flineVal.Reason = strings.Trim(strArray[1], " \t\r")
 		return SGSIPRetOK
 	}
 	strMU := strFLine[0 : len(strFLine)-8]
@@ -496,7 +496,7 @@ func SGSIPParseFirstLine(inputStr string, flineVal *SGSIPFirstLine) int {
 	if len(strArray) < 2 || len(strArray[0]) < 3 || len(strArray[1]) < 5 {
 		return SGSIPRetErrFLineRequestFormat
 	}
-	flineVal.method = strings.Trim(strArray[0], " \t\r")
-	flineVal.uri = strings.Trim(strArray[1], " \t\r")
+	flineVal.Method = strings.Trim(strArray[0], " \t\r")
+	flineVal.URI = strings.Trim(strArray[1], " \t\r")
 	return SGSIPRetOK
 }
