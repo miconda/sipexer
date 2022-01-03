@@ -96,6 +96,8 @@ type CLIOptions struct {
 	timert2          int
 	timeout          int
 	buffersize       int
+	connectudp       bool
+	af               int
 	version          bool
 }
 
@@ -113,6 +115,8 @@ var cliops = CLIOptions{
 	timert2:          4000,
 	timeout:          32000,
 	buffersize:       32 * 1024,
+	connectudp:       false,
+	af:               0,
 	version:          false,
 }
 
@@ -132,15 +136,18 @@ func init() {
 	flag.StringVar(&cliops.fields, "fields", cliops.fields, "path to the json fields file")
 	flag.StringVar(&cliops.fields, "f", cliops.fields, "path to the json fields file")
 	flag.StringVar(&cliops.laddr, "laddr", cliops.laddr, "local address (`ip:port` or `:port`)")
+
 	flag.BoolVar(&cliops.fieldseval, "fields-eval", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.crlf, "crlf", cliops.crlf, "replace '\\n' with '\\r\\n' inside the data to be sent (true|false)")
 	flag.BoolVar(&cliops.flagdefaults, "flag-defaults", cliops.flagdefaults, "print flag (cli param) default values")
 	flag.BoolVar(&cliops.templatedefaults, "template-defaults", cliops.templatedefaults, "print default (internal) template data")
 	flag.BoolVar(&cliops.templaterun, "template-run", cliops.templaterun, "run template execution and print the result")
+	flag.BoolVar(&cliops.connectudp, "connect-udp", cliops.connectudp, "attempt first a connect for UDP (dial ICMP connect)")
 
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
 	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
 	flag.IntVar(&cliops.timeout, "timeout", cliops.timeout, "timeout trying to send data (milliseconds)")
+	flag.IntVar(&cliops.af, "af", cliops.af, "enforce address family for socket (4 or 6)")
 
 	flag.Var(&paramFields, "field-val", "field value in format 'name:value' (can be provided many times)")
 
@@ -298,20 +305,37 @@ func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfield
 	var srcaddr *net.UDPAddr = nil
 	var dstaddr *net.UDPAddr = nil
 	var err error
+
+	strAFProto := "udp"
+	if dstSockAddr.AType == sgsip.AFIPv4 {
+		strAFProto = "udp4"
+	} else if dstSockAddr.AType == sgsip.AFIPv6 {
+		strAFProto = "udp6"
+	} else {
+		if cliops.af == sgsip.AFIPv4 {
+			strAFProto = "udp4"
+		} else if cliops.af == sgsip.AFIPv6 {
+			strAFProto = "udp6"
+		}
+	}
 	if len(cliops.laddr) > 0 {
-		srcaddr, err = net.ResolveUDPAddr("udp", cliops.laddr)
+		srcaddr, err = net.ResolveUDPAddr(strAFProto, cliops.laddr)
 		if err != nil {
 			tchan <- -100
 			return
 		}
 	}
-	dstaddr, err = net.ResolveUDPAddr("udp", dstSockAddr.Addr+":"+dstSockAddr.Port)
+	dstaddr, err = net.ResolveUDPAddr(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port)
 	if err != nil {
 		tchan <- -101
 		return
 	}
 	var conn *net.UDPConn
-	conn, err = net.DialUDP("udp", srcaddr, dstaddr)
+	if cliops.connectudp {
+		conn, err = net.DialUDP(strAFProto, srcaddr, dstaddr)
+	} else {
+		conn, err = net.ListenUDP(strAFProto, srcaddr)
+	}
 	if err != nil {
 		tchan <- -103
 		return
@@ -336,7 +360,11 @@ func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfield
 
 	// retransmissions loop
 	for {
-		_, err = conn.WriteToUDP(wmsg, dstaddr)
+		if cliops.connectudp {
+			_, err = conn.Write(wmsg)
+		} else {
+			_, err = conn.WriteToUDP(wmsg, dstaddr)
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error writing - %v\n", err)
 			tchan <- -105
@@ -349,8 +377,15 @@ func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfield
 			return
 		}
 		nRead, rcvAddr, err = conn.ReadFromUDP(rmsg)
-		fmt.Fprintf(os.Stderr, "not receiving after %dms (bytes %d - %v)\n", timeoutVal, nRead, err)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "not receiving after %dms (bytes %d - %v)\n", timeoutVal, nRead, err)
+			if cliops.connectudp {
+				if strings.Contains(err.Error(), "recvfrom: connection refused") {
+					fmt.Fprintf(os.Stderr, "stop receiving - ICMP error\n")
+					tchan <- -106
+					return
+				}
+			}
 			if timeoutStep < cliops.timert2 {
 				timeoutStep *= 2
 			} else {
@@ -362,7 +397,7 @@ func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfield
 				continue
 			}
 			fmt.Fprintf(os.Stderr, "error reading - bytes %d - %v\n", nRead, err)
-			tchan <- -106
+			tchan <- -107
 			return
 		}
 		break
