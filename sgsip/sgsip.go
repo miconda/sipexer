@@ -37,10 +37,10 @@ const (
 )
 
 const (
-	AFNONE = iota
-	AFIPv4
-	AFIPv6
-	AFHost
+	AFNONE = 0
+	AFIPv4 = 4
+	AFIPv6 = 6
+	AFHost = 8
 )
 
 const (
