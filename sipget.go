@@ -352,7 +352,7 @@ func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfield
 		return
 	}
 
-	fmt.Printf("local address: %v\n", conn.LocalAddr())
+	fmt.Printf("local address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
 	var ok bool
 	_, ok = tplfields["viaaddr"]
 	if !ok {
@@ -373,6 +373,8 @@ func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfield
 	} else {
 		wmsg = []byte(strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1))
 	}
+
+	fmt.Printf("sending: [[%s]]\n\n", string(wmsg))
 
 	timeoutStep := cliops.timert1
 	timeoutVal := timeoutStep
