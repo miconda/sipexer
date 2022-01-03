@@ -89,7 +89,7 @@ type CLIOptions struct {
 	templaterun      bool
 	fields           string
 	fieldseval       bool
-	crlf             bool
+	nocrlf           bool
 	flagdefaults     bool
 	templatedefaults bool
 	timert1          int
@@ -108,7 +108,7 @@ var cliops = CLIOptions{
 	templaterun:      false,
 	fields:           "",
 	fieldseval:       false,
-	crlf:             false,
+	nocrlf:           false,
 	flagdefaults:     false,
 	templatedefaults: false,
 	timert1:          500,
@@ -138,7 +138,7 @@ func init() {
 	flag.StringVar(&cliops.laddr, "laddr", cliops.laddr, "local address (`ip:port` or `:port`)")
 
 	flag.BoolVar(&cliops.fieldseval, "fields-eval", cliops.fieldseval, "evaluate expression in fields file")
-	flag.BoolVar(&cliops.crlf, "crlf", cliops.crlf, "replace '\\n' with '\\r\\n' inside the data to be sent (true|false)")
+	flag.BoolVar(&cliops.nocrlf, "no-crlf", cliops.nocrlf, "do not replace '\\n' with '\\r\\n' inside the data to be sent (true|false)")
 	flag.BoolVar(&cliops.flagdefaults, "flag-defaults", cliops.flagdefaults, "print flag (cli param) default values")
 	flag.BoolVar(&cliops.templatedefaults, "template-defaults", cliops.templatedefaults, "print default (internal) template data")
 	flag.BoolVar(&cliops.templaterun, "template-run", cliops.templaterun, "run template execution and print the result")
@@ -252,10 +252,10 @@ func main() {
 		tpl.Execute(&buf, tplfields)
 
 		var wmsg []byte
-		if cliops.crlf {
-			wmsg = []byte(strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1))
-		} else {
+		if cliops.nocrlf {
 			wmsg = []byte(strings.Replace(buf.String(), "$rmeol\n", "", -1))
+		} else {
+			wmsg = []byte(strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1))
 		}
 
 		fmt.Println(string(wmsg))
@@ -346,10 +346,10 @@ func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfield
 	tpl.Execute(&buf, tplfields)
 
 	var wmsg []byte
-	if cliops.crlf {
-		wmsg = []byte(strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1))
-	} else {
+	if cliops.nocrlf {
 		wmsg = []byte(strings.Replace(buf.String(), "$rmeol\n", "", -1))
+	} else {
+		wmsg = []byte(strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1))
 	}
 
 	timeoutStep := cliops.timert1
