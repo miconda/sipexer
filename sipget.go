@@ -244,34 +244,6 @@ func main() {
 			tplfields[k] = paramFields[k]
 		}
 	}
-	if cliops.templaterun {
-		var ok bool
-		_, ok = tplfields["viaaddr"]
-		if !ok {
-			if len(cliops.laddr) > 0 {
-				tplfields["viaaddr"] = cliops.laddr
-			} else {
-				tplfields["viaaddr"] = "127.0.0.1:55060"
-			}
-		}
-		_, ok = tplfields["viaproto"]
-		if !ok {
-			tplfields["viaproto"] = "UDP"
-		}
-		var buf bytes.Buffer
-		var tpl = template.Must(template.New("wsout").Parse(tplstr))
-		tpl.Execute(&buf, tplfields)
-
-		var wmsg []byte
-		if cliops.nocrlf {
-			wmsg = []byte(strings.Replace(buf.String(), "$rmeol\n", "", -1))
-		} else {
-			wmsg = []byte(strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1))
-		}
-
-		fmt.Println(string(wmsg))
-		os.Exit(1)
-	}
 
 	dstAddr := "udp:127.0.0.1:5060"
 	if len(flag.Args()) > 0 {
@@ -300,10 +272,40 @@ func main() {
 		fmt.Printf("parsed socket address argument (%+v)\n", dstSockAddr)
 	}
 
+	if cliops.templaterun {
+		var ok bool
+		_, ok = tplfields["viaaddr"]
+		if !ok {
+			if len(cliops.laddr) > 0 {
+				tplfields["viaaddr"] = cliops.laddr
+			} else {
+				tplfields["viaaddr"] = "127.0.0.1:55060"
+			}
+		}
+		_, ok = tplfields["viaproto"]
+		if !ok {
+			tplfields["viaproto"] = strings.ToUpper(dstSockAddr.Proto)
+		}
+		var buf bytes.Buffer
+		var tpl = template.Must(template.New("wsout").Parse(tplstr))
+		tpl.Execute(&buf, tplfields)
+
+		var wmsg []byte
+		if cliops.nocrlf {
+			wmsg = []byte(strings.Replace(buf.String(), "$rmeol\n", "", -1))
+		} else {
+			wmsg = []byte(strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1))
+		}
+
+		fmt.Println(string(wmsg))
+		os.Exit(1)
+	}
+
 	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
 		fmt.Fprintf(os.Stderr, "transport protocol not supported yet for target %s\n", dstAddr)
 		os.Exit(-1)
 	}
+
 	tchan := make(chan int, 1)
 	go SIPGetSendUDP(dstSockAddr, tplstr, tplfields, tchan)
 	tret := <-tchan
