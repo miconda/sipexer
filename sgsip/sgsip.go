@@ -388,7 +388,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	return SGSIPRetOK
 }
 
-// SGSIPParseURI --
+// SGSIPURIToSocketAddress --
 func SGSIPURIToSocketAddress(uri *SGSIPURI, sockaddr *SGSIPSocketAddress) int {
 	if len(uri.Proto) > 0 {
 		sockaddr.Proto = uri.Proto
@@ -409,6 +409,49 @@ func SGSIPURIToSocketAddress(uri *SGSIPURI, sockaddr *SGSIPSocketAddress) int {
 		sockaddr.Port = "5060"
 		sockaddr.PortNo = 5060
 	}
+	sockaddr.Val = sockaddr.Proto + ":" + sockaddr.Addr + ":" + sockaddr.Port
+	return SGSIPRetOK
+}
+
+// SGSocketAddressToSIPURI --
+func SGSocketAddressToSIPURI(sockaddr *SGSIPSocketAddress, tmode int, uri *SGSIPURI) int {
+	if len(sockaddr.Proto) > 0 {
+		uri.Proto = sockaddr.Proto
+		uri.ProtoId = sockaddr.ProtoId
+	} else {
+		uri.Proto = "udp"
+		uri.ProtoId = ProtoUDP
+	}
+	if len(sockaddr.Addr) > 0 {
+		uri.Addr = sockaddr.Addr
+	} else {
+		uri.Addr = "127.0.0.1"
+	}
+	if uri.Addr[0:1] == "[" && uri.Addr[len(uri.Addr)-1:] == "]" {
+		// assuming only IPv6 address -- fill with defaults
+		uri.AType = SGAddrType(uri.Addr[1 : len(uri.Addr)-1])
+		if uri.AType != AFIPv6 {
+			return SGSIPRetErr
+		}
+	} else {
+		uri.AType = SGAddrType(uri.Addr[1 : len(uri.Addr)-1])
+	}
+	if len(sockaddr.Port) > 0 {
+		uri.Port = sockaddr.Port
+		uri.PortNo = sockaddr.PortNo
+	} else {
+		uri.Port = "5060"
+		uri.PortNo = 5060
+	}
+	uri.Schema = "sip"
+	uri.SchemaId = SchemaSIP
+
+	if tmode == 0 && uri.ProtoId == ProtoUDP {
+		uri.Val = uri.Schema + ":" + sockaddr.Addr + ":" + sockaddr.Port
+	} else {
+		uri.Val = uri.Schema + ":" + sockaddr.Addr + ":" + sockaddr.Port + ";transport=" + sockaddr.Proto
+	}
+
 	return SGSIPRetOK
 }
 
