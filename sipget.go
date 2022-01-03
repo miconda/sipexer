@@ -347,21 +347,41 @@ func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfield
 	} else {
 		conn, err = net.ListenUDP(strAFProto, srcaddr)
 	}
+	defer conn.Close()
 	if err != nil {
 		tchan <- -103
 		return
 	}
 
-	fmt.Printf("local address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
 	var ok bool
 	_, ok = tplfields["viaaddr"]
 	if !ok {
-		tplfields["viaaddr"] = conn.LocalAddr().String()
+		lAddr0 := conn.LocalAddr().String()
+		if strings.HasPrefix(lAddr0, "0.0.0.0:") ||
+			strings.HasPrefix(lAddr0, "[::]:") {
+			// try a connect-udp to learn local ip
+			var conn1 *net.UDPConn
+			conn1, err = net.DialUDP(strAFProto, nil, dstaddr)
+			if err != nil {
+				tchan <- -104
+				return
+			}
+			lAddr1 := conn1.LocalAddr().String()
+			lIdx0 := strings.LastIndex(lAddr0, ":")
+			lIdx1 := strings.LastIndex(lAddr1, ":")
+			tplfields["viaaddr"] = lAddr1[:lIdx1] + lAddr0[lIdx0:]
+			conn1.Close()
+		} else {
+			tplfields["viaaddr"] = conn.LocalAddr().String()
+		}
 	}
 	_, ok = tplfields["viaproto"]
 	if !ok {
 		tplfields["viaproto"] = "UDP"
 	}
+
+	fmt.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
+	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
 
 	var buf bytes.Buffer
 	var tpl = template.Must(template.New("wsout").Parse(tplstr))
@@ -397,7 +417,7 @@ func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfield
 
 		err = conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(timeoutStep)))
 		if err != nil {
-			tchan <- -104
+			tchan <- -106
 			return
 		}
 		nRead, rcvAddr, err = conn.ReadFromUDP(rmsg)
@@ -406,7 +426,7 @@ func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfield
 			if cliops.connectudp {
 				if strings.Contains(err.Error(), "recvfrom: connection refused") {
 					fmt.Fprintf(os.Stderr, "stop receiving - ICMP error\n")
-					tchan <- -106
+					tchan <- -107
 					return
 				}
 			}
@@ -421,7 +441,7 @@ func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfield
 				continue
 			}
 			fmt.Fprintf(os.Stderr, "error reading - bytes %d - %v\n", nRead, err)
-			tchan <- -107
+			tchan <- -108
 			return
 		}
 		break
@@ -429,6 +449,5 @@ func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfield
 
 	fmt.Printf("packet-received: from=%s bytes=%d data=%s\n",
 		rcvAddr.String(), nRead, string(rmsg))
-	defer conn.Close()
 	tchan <- 0
 }
