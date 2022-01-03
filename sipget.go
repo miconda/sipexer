@@ -28,7 +28,7 @@ import (
 
 const sipgetVersion = "1.0.0"
 
-var templateDefaultText string = `{{.method}} sip:{{.callee}}@{{.domain}} SIP/2.0
+var templateDefaultText string = `{{.method}} {{.ruri}} SIP/2.0
 Via: SIP/2.0/{{.viaproto}} {{.viaaddr}}{{.rport}};branch=z9hG4bKSG.{{.viabranch}}
 From: "{{.caller}}" <sip:{{.caller}}@{{.domain}}>;tag={{.fromtag}}
 To: "{{.callee}}" <sip:{{.callee}}@{{.domain}}>
@@ -101,7 +101,7 @@ type CLIOptions struct {
 }
 
 var cliops = CLIOptions{
-	ruri:             "sip:127.0.0.1:5060",
+	ruri:             "",
 	laddr:            "",
 	template:         "",
 	templaterun:      false,
@@ -277,10 +277,14 @@ func main() {
 		}
 	} else {
 		fmt.Printf("parsed socket address argument (%+v)\n", dstSockAddr)
+		sgsip.SGSocketAddressToSIPURI(&dstSockAddr, 0, &dstURI)
 	}
-
+	var ok bool
+	_, ok = tplfields["ruri"]
+	if !ok {
+		tplfields["ruri"] = dstURI.Val
+	}
 	if cliops.templaterun {
-		var ok bool
 		_, ok = tplfields["viaaddr"]
 		if !ok {
 			if len(cliops.laddr) > 0 {
