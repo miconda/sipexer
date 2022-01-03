@@ -28,8 +28,6 @@ import (
 
 const sipgetVersion = "1.0.0"
 
-const maxBufferSize = 64 * 1024
-
 var templateDefaultText string = `{{.method}} sip:{{.callee}}@{{.domain}} SIP/2.0
 Via: SIP/2.0/{{.viaproto}} {{.viaaddr}};rport;branch=z9hG4bKSG.{{.viabranch}}
 From: "{{.caller}}" <sip:{{.caller}}@{{.domain}}>;tag={{.fromtag}}
@@ -94,6 +92,10 @@ type CLIOptions struct {
 	crlf             bool
 	flagdefaults     bool
 	templatedefaults bool
+	timert1          int
+	timert2          int
+	timeout          int
+	buffersize       int
 	version          bool
 }
 
@@ -107,6 +109,10 @@ var cliops = CLIOptions{
 	crlf:             false,
 	flagdefaults:     false,
 	templatedefaults: false,
+	timert1:          500,
+	timert2:          4000,
+	timeout:          32000,
+	buffersize:       32 * 1024,
 	version:          false,
 }
 
@@ -131,6 +137,10 @@ func init() {
 	flag.BoolVar(&cliops.flagdefaults, "flag-defaults", cliops.flagdefaults, "print flag (cli param) default values")
 	flag.BoolVar(&cliops.templatedefaults, "template-defaults", cliops.templatedefaults, "print default (internal) template data")
 	flag.BoolVar(&cliops.templaterun, "template-run", cliops.templaterun, "run template execution and print the result")
+
+	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
+	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
+	flag.IntVar(&cliops.timeout, "timeout", cliops.timeout, "timeout trying to send data (milliseconds)")
 
 	flag.Var(&paramFields, "field-val", "field value in format 'name:value' (can be provided many times)")
 
@@ -307,16 +317,6 @@ func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfield
 		return
 	}
 
-	// Set a deadline for the ReadOperation so that we don't
-	// wait forever for a server that might not respond on
-	// a resonable amount of time.
-	timeoutVal := time.Now().Add(time.Millisecond * 500)
-	err = conn.SetReadDeadline(timeoutVal)
-	if err != nil {
-		tchan <- -104
-		return
-	}
-
 	var buf bytes.Buffer
 	var tpl = template.Must(template.New("wsout").Parse(tplstr))
 	tpl.Execute(&buf, tplfields)
@@ -327,18 +327,49 @@ func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfield
 	} else {
 		wmsg = []byte(strings.Replace(buf.String(), "$rmeol\n", "", -1))
 	}
-	_, err = conn.Write(wmsg)
-	rmsg := make([]byte, maxBufferSize)
 
-	nRead, addr, err := conn.ReadFrom(rmsg)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error - bytes %d - %v\n", nRead, err)
-		tchan <- -105
-		return
+	timeoutStep := cliops.timert1
+	timeoutVal := timeoutStep
+	rmsg := make([]byte, cliops.buffersize)
+	nRead := 0
+	var rcvAddr net.Addr
+
+	// retransmissions loop
+	for {
+		_, err = conn.WriteToUDP(wmsg, dstaddr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error writing - %v\n", err)
+			tchan <- -105
+			return
+		}
+
+		err = conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(timeoutStep)))
+		if err != nil {
+			tchan <- -104
+			return
+		}
+		nRead, rcvAddr, err = conn.ReadFromUDP(rmsg)
+		fmt.Fprintf(os.Stderr, "not receiving after %dms (bytes %d - %v)\n", timeoutVal, nRead, err)
+		if err != nil {
+			if timeoutStep < cliops.timert2 {
+				timeoutStep *= 2
+			} else {
+				timeoutStep = cliops.timert2
+			}
+			timeoutVal += timeoutStep
+			if timeoutVal <= cliops.timeout {
+				fmt.Fprintf(os.Stderr, "trying again - new timeout at %dms\n", timeoutVal)
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "error reading - bytes %d - %v\n", nRead, err)
+			tchan <- -106
+			return
+		}
+		break
 	}
 
 	fmt.Printf("packet-received: from=%s bytes=%d data=%s\n",
-		addr.String(), nRead, string(rmsg))
+		rcvAddr.String(), nRead, string(rmsg))
 	defer conn.Close()
 	tchan <- 0
 }
