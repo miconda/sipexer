@@ -48,8 +48,6 @@ var templateDefaultJSONFields string = `{
 	"callee": "bob",
 	"domain": "localhost",
 	"viabranch": "$uuid",
-	"viaproto": "UDP",
-	"viaaddr": "127.0.0.1:15060",
 	"fromtag": "$uuid",
 	"callid": "$uuid",
 	"cseqnum": "$randseq",
@@ -247,6 +245,19 @@ func main() {
 		}
 	}
 	if cliops.templaterun {
+		var ok bool
+		_, ok = tplfields["viaaddr"]
+		if !ok {
+			if len(cliops.laddr) > 0 {
+				tplfields["viaaddr"] = cliops.laddr
+			} else {
+				tplfields["viaaddr"] = "127.0.0.1:55060"
+			}
+		}
+		_, ok = tplfields["viaproto"]
+		if !ok {
+			tplfields["viaproto"] = "UDP"
+		}
 		var buf bytes.Buffer
 		var tpl = template.Must(template.New("wsout").Parse(tplstr))
 		tpl.Execute(&buf, tplfields)
@@ -339,6 +350,17 @@ func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfield
 	if err != nil {
 		tchan <- -103
 		return
+	}
+
+	fmt.Printf("local address: %v\n", conn.LocalAddr())
+	var ok bool
+	_, ok = tplfields["viaaddr"]
+	if !ok {
+		tplfields["viaaddr"] = conn.LocalAddr().String()
+	}
+	_, ok = tplfields["viaproto"]
+	if !ok {
+		tplfields["viaproto"] = "UDP"
 	}
 
 	var buf bytes.Buffer
