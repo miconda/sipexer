@@ -14,6 +14,7 @@ import (
 	"io/ioutil"
 	"log"
 	mathrand "math/rand"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -26,6 +27,8 @@ import (
 )
 
 const sipgetVersion = "1.0.0"
+
+const maxBufferSize = 64 * 1024
 
 var templateDefaultText string = `{{.method}} sip:{{.callee}}@{{.domain}} SIP/2.0
 Via: SIP/2.0/{{.viaproto}} {{.viaaddr}};rport;branch=z9hG4bKSG.{{.viabranch}}
@@ -161,8 +164,6 @@ func main() {
 	// enable file name and line numbers in logging
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	// buffer to send over SIP link
-	var buf bytes.Buffer
 	var tplstr = ""
 	if len(cliops.template) > 0 {
 		tpldata, err1 := ioutil.ReadFile(cliops.template)
@@ -228,17 +229,18 @@ func main() {
 			tplfields[k] = paramFields[k]
 		}
 	}
-	var tpl = template.Must(template.New("wsout").Parse(tplstr))
-	tpl.Execute(&buf, tplfields)
-
-	var wmsg []byte
-	if cliops.crlf {
-		wmsg = []byte(strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1))
-	} else {
-		wmsg = []byte(strings.Replace(buf.String(), "$rmeol\n", "", -1))
-	}
-
 	if cliops.templaterun {
+		var buf bytes.Buffer
+		var tpl = template.Must(template.New("wsout").Parse(tplstr))
+		tpl.Execute(&buf, tplfields)
+
+		var wmsg []byte
+		if cliops.crlf {
+			wmsg = []byte(strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1))
+		} else {
+			wmsg = []byte(strings.Replace(buf.String(), "$rmeol\n", "", -1))
+		}
+
 		fmt.Println(string(wmsg))
 		os.Exit(1)
 	}
@@ -269,5 +271,74 @@ func main() {
 	} else {
 		fmt.Printf("parsed socket address argument (%+v)\n", dstSockAddr)
 	}
-	os.Exit(0)
+
+	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
+		fmt.Fprintf(os.Stderr, "transport protocol not supported yet for target %s\n", dstAddr)
+		os.Exit(-1)
+	}
+	tchan := make(chan int, 1)
+	go SIPGetSendUDP(dstSockAddr, tplstr, tplfields, tchan)
+	tret := <-tchan
+	close(tchan)
+	fmt.Printf("return code: %d\n", tret)
+	os.Exit(tret)
+}
+
+func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]interface{}, tchan chan int) {
+	var srcaddr *net.UDPAddr = nil
+	var dstaddr *net.UDPAddr = nil
+	var err error
+	if len(cliops.laddr) > 0 {
+		srcaddr, err = net.ResolveUDPAddr("udp", cliops.laddr)
+		if err != nil {
+			tchan <- -100
+			return
+		}
+	}
+	dstaddr, err = net.ResolveUDPAddr("udp", dstSockAddr.Addr+":"+dstSockAddr.Port)
+	if err != nil {
+		tchan <- -101
+		return
+	}
+	var conn *net.UDPConn
+	conn, err = net.DialUDP("udp", srcaddr, dstaddr)
+	if err != nil {
+		tchan <- -103
+		return
+	}
+
+	// Set a deadline for the ReadOperation so that we don't
+	// wait forever for a server that might not respond on
+	// a resonable amount of time.
+	timeoutVal := time.Now().Add(time.Millisecond * 500)
+	err = conn.SetReadDeadline(timeoutVal)
+	if err != nil {
+		tchan <- -104
+		return
+	}
+
+	var buf bytes.Buffer
+	var tpl = template.Must(template.New("wsout").Parse(tplstr))
+	tpl.Execute(&buf, tplfields)
+
+	var wmsg []byte
+	if cliops.crlf {
+		wmsg = []byte(strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1))
+	} else {
+		wmsg = []byte(strings.Replace(buf.String(), "$rmeol\n", "", -1))
+	}
+	_, err = conn.Write(wmsg)
+	rmsg := make([]byte, maxBufferSize)
+
+	nRead, addr, err := conn.ReadFrom(rmsg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error - bytes %d - %v\n", nRead, err)
+		tchan <- -105
+		return
+	}
+
+	fmt.Printf("packet-received: from=%s bytes=%d data=%s\n",
+		addr.String(), nRead, string(rmsg))
+	defer conn.Close()
+	tchan <- 0
 }
