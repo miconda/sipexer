@@ -29,7 +29,7 @@ import (
 const sipgetVersion = "1.0.0"
 
 var templateDefaultText string = `{{.method}} sip:{{.callee}}@{{.domain}} SIP/2.0
-Via: SIP/2.0/{{.viaproto}} {{.viaaddr}};rport;branch=z9hG4bKSG.{{.viabranch}}
+Via: SIP/2.0/{{.viaproto}} {{.viaaddr}}{{.rport}};branch=z9hG4bKSG.{{.viabranch}}
 From: "{{.caller}}" <sip:{{.caller}}@{{.domain}}>;tag={{.fromtag}}
 To: "{{.callee}}" <sip:{{.callee}}@{{.domain}}>
 Call-ID: {{.callid}}
@@ -48,6 +48,7 @@ var templateDefaultJSONFields string = `{
 	"callee": "bob",
 	"domain": "localhost",
 	"viabranch": "$uuid",
+	"rport": ";rport",
 	"fromtag": "$uuid",
 	"callid": "$uuid",
 	"cseqnum": "$randseq",
@@ -241,7 +242,13 @@ func main() {
 	}
 	if len(paramFields) > 0 {
 		for k := range paramFields {
-			tplfields[k] = paramFields[k]
+			if k == "rport" {
+				if strings.Trim(paramFields[k], " \t\r\n") == "no" {
+					tplfields[k] = ""
+				}
+			} else {
+				tplfields[k] = paramFields[k]
+			}
 		}
 	}
 
