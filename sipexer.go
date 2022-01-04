@@ -308,7 +308,11 @@ func main() {
 			wmsg = []byte(strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1))
 		}
 
-		fmt.Println(string(wmsg))
+		fmt.Printf("%+v\n\n", string(wmsg))
+		var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
+		sgsip.SGSIPParseMessage(string(wmsg), &msgVal)
+		fmt.Printf("%+v\n\n", msgVal)
+
 		os.Exit(1)
 	}
 
