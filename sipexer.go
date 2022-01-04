@@ -30,8 +30,8 @@ const sipexerVersion = "1.0.0"
 
 var templateDefaultText string = `{{.method}} {{.ruri}} SIP/2.0
 Via: SIP/2.0/{{.viaproto}} {{.viaaddr}}{{.rport}};branch=z9hG4bKSG.{{.viabranch}}
-From: "{{.caller}}" <sip:{{.caller}}@{{.domain}}>;tag={{.fromtag}}
-To: "{{.callee}}" <sip:{{.callee}}@{{.domain}}>
+From: {{if .fname}}"{{.fname}}" {{end}}<sip:{{if .fuser}}{{.fuser}}@{{end}}{{.fdomain}}>;tag={{.fromtag}}
+To: {{if .tname}}"{{.tname}}" {{end}}<sip:{{if .tuser}}{{.tuser}}@{{end}}{{.tdomain}}>
 Call-ID: {{.callid}}
 CSeq: {{.cseqnum}} {{.method}}
 {{if .subject}}Subject: {{.subject}}{{else}}$rmeol{{end}}
@@ -45,9 +45,10 @@ Content-Length: 0
 
 var templateDefaultJSONFields string = `{
 	"method": "OPTIONS",
-	"caller": "alice",
-	"callee": "bob",
-	"domain": "localhost",
+	"fuser": "alice",
+	"fdomain": "localhost",
+	"tuser": "bob",
+	"tdomain": "localhost",
 	"viabranch": "$uuid",
 	"rport": ";rport",
 	"fromtag": "$uuid",
