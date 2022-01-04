@@ -1,4 +1,4 @@
-module github.com/miconda/sipget
+module github.com/miconda/sipexer
 
 go 1.17
 
