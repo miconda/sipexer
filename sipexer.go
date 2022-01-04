@@ -130,17 +130,21 @@ func init() {
 		os.Exit(1)
 	}
 	flag.StringVar(&cliops.ruri, "ruri", cliops.ruri, "request uri (r-uri)")
-	flag.StringVar(&cliops.template, "template", cliops.template, "path to template file")
-	flag.StringVar(&cliops.template, "t", cliops.template, "path to template file")
-	flag.StringVar(&cliops.fields, "fields", cliops.fields, "path to the json fields file")
-	flag.StringVar(&cliops.fields, "f", cliops.fields, "path to the json fields file")
+	flag.StringVar(&cliops.template, "template-file", cliops.template, "path to template file")
+	flag.StringVar(&cliops.template, "tf", cliops.template, "path to template file")
+	flag.StringVar(&cliops.fields, "fields-file", cliops.fields, "path to the json fields file")
+	flag.StringVar(&cliops.fields, "ff", cliops.fields, "path to the json fields file")
 	flag.StringVar(&cliops.laddr, "laddr", cliops.laddr, "local address (`ip:port` or `:port`)")
 
 	flag.BoolVar(&cliops.fieldseval, "fields-eval", cliops.fieldseval, "evaluate expression in fields file")
+	flag.BoolVar(&cliops.fieldseval, "fe", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.nocrlf, "no-crlf", cliops.nocrlf, "do not replace '\\n' with '\\r\\n' inside the data to be sent (true|false)")
 	flag.BoolVar(&cliops.flagdefaults, "flag-defaults", cliops.flagdefaults, "print flag (cli param) default values")
+	flag.BoolVar(&cliops.flagdefaults, "fd", cliops.flagdefaults, "print flag (cli param) default values")
 	flag.BoolVar(&cliops.templatedefaults, "template-defaults", cliops.templatedefaults, "print default (internal) template data")
+	flag.BoolVar(&cliops.templatedefaults, "td", cliops.templatedefaults, "print default (internal) template data")
 	flag.BoolVar(&cliops.templaterun, "template-run", cliops.templaterun, "run template execution and print the result")
+	flag.BoolVar(&cliops.templaterun, "tr", cliops.templaterun, "run template execution and print the result")
 	flag.BoolVar(&cliops.connectudp, "connect-udp", cliops.connectudp, "attempt first a connect for UDP (dial ICMP connect)")
 
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
@@ -149,6 +153,7 @@ func init() {
 	flag.IntVar(&cliops.af, "af", cliops.af, "enforce address family for socket (4 or 6)")
 
 	flag.Var(&paramFields, "field-val", "field value in format 'name:value' (can be provided many times)")
+	flag.Var(&paramFields, "fv", "field value in format 'name:value' (can be provided many times)")
 
 	flag.BoolVar(&cliops.version, "version", cliops.version, "print version")
 }
