@@ -96,6 +96,7 @@ type SGSIPParam struct {
 }
 
 type SGSIPFirstLine struct {
+	Val      string
 	MType    int
 	Proto    string
 	Method   string
@@ -550,6 +551,7 @@ func SGSIPParseFirstLine(inputStr string, flineVal *SGSIPFirstLine) int {
 	} else {
 		return SGSIPRetErrFLineFormat
 	}
+	flineVal.Val = strFLine
 	if flineVal.MType == FLineResponse {
 		strCR := strFLine[8:]
 		if len(strCR) < 5 {
@@ -678,5 +680,26 @@ func SGSIPParseMessage(inputStr string, msgVal *SGSIPMessage) int {
 		return ret
 	}
 	ret = SGSIPParseBody(inputStr, &msgVal.Body)
+	return SGSIPRetOK
+}
+
+// SGSIPMessageToString --
+func SGSIPMessageToString(msgVal *SGSIPMessage, outputStr *string) int {
+	var sb strings.Builder
+	if len(msgVal.FLine.Val) == 0 || len(msgVal.Headers) == 0 {
+		return SGSIPRetErr
+	}
+	sb.WriteString(msgVal.FLine.Val + "\r\n")
+
+	for _, h := range msgVal.Headers {
+		sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+	}
+	sb.WriteString("\r\n")
+
+	if msgVal.Body.ContentLen > 0 {
+		sb.WriteString(msgVal.Body.Content)
+	}
+
+	*outputStr = sb.String()
 	return SGSIPRetOK
 }
