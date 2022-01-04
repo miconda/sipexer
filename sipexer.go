@@ -301,16 +301,16 @@ func main() {
 		var tpl = template.Must(template.New("wsout").Parse(tplstr))
 		tpl.Execute(&buf, tplfields)
 
-		var wmsg []byte
+		var smsg string
 		if cliops.nocrlf {
-			wmsg = []byte(strings.Replace(buf.String(), "$rmeol\n", "", -1))
+			smsg = strings.Replace(buf.String(), "$rmeol\n", "", -1)
 		} else {
-			wmsg = []byte(strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1))
+			smsg = strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1)
 		}
 
-		fmt.Printf("%+v\n\n", string(wmsg))
+		fmt.Printf("%+v\n\n", smsg)
 		var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
-		sgsip.SGSIPParseMessage(string(wmsg), &msgVal)
+		sgsip.SGSIPParseMessage(smsg, &msgVal)
 		fmt.Printf("%+v\n\n", msgVal)
 
 		os.Exit(1)
