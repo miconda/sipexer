@@ -1,6 +1,6 @@
 /**
- * WebSocket Command Line Tool
- * (C) Copyright 2021 Daniel-Constantin Mierla (asipto.com)
+ * SIP (RFC3261) Command Line Tool
+ * (C) Copyright 2021-2022 Daniel-Constantin Mierla (asipto.com)
  * License: GPLv3
  */
 
@@ -23,10 +23,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/miconda/sipget/sgsip"
+	"github.com/miconda/sipexer/sgsip"
 )
 
-const sipgetVersion = "1.0.0"
+const sipexerVersion = "1.0.0"
 
 var templateDefaultText string = `{{.method}} {{.ruri}} SIP/2.0
 Via: SIP/2.0/{{.viaproto}} {{.viaaddr}}{{.rport}};branch=z9hG4bKSG.{{.viabranch}}
@@ -124,7 +124,7 @@ var cliops = CLIOptions{
 func init() {
 	// command line arguments
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage of %s (v%s):\n", filepath.Base(os.Args[0]), sipgetVersion)
+		fmt.Fprintf(os.Stderr, "Usage of %s (v%s):\n", filepath.Base(os.Args[0]), sipexerVersion)
 		fmt.Fprintf(os.Stderr, "    (some options have short and long version)\n")
 		flag.PrintDefaults()
 		os.Exit(1)
@@ -154,7 +154,7 @@ func init() {
 }
 
 //
-// sipget application
+// sipexer application
 func main() {
 
 	flag.Parse()
@@ -162,7 +162,7 @@ func main() {
 	fmt.Printf("\n")
 
 	if cliops.version {
-		fmt.Printf("%s v%s\n", filepath.Base(os.Args[0]), sipgetVersion)
+		fmt.Printf("%s v%s\n", filepath.Base(os.Args[0]), sipexerVersion)
 		os.Exit(1)
 	}
 
@@ -318,14 +318,14 @@ func main() {
 	}
 
 	tchan := make(chan int, 1)
-	go SIPGetSendUDP(dstSockAddr, tplstr, tplfields, tchan)
+	go SIPExerSendUDP(dstSockAddr, tplstr, tplfields, tchan)
 	tret := <-tchan
 	close(tchan)
 	fmt.Printf("return code: %d\n", tret)
 	os.Exit(tret)
 }
 
-func SIPGetSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]interface{}, tchan chan int) {
+func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]interface{}, tchan chan int) {
 	var srcaddr *net.UDPAddr = nil
 	var dstaddr *net.UDPAddr = nil
 	var err error
