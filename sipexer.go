@@ -37,8 +37,9 @@ CSeq: {{.cseqnum}} {{.method}}
 {{if .subject}}Subject: {{.subject}}{{else}}$rmeol{{end}}
 Date: {{.date}}
 {{if .contacturi}}Contact: {{.contacturi}}{{else}}$rmeol{{end}}
-{{if .expires}}Contact: {{.expires}}{{else}}$rmeol{{end}}
-Content-Length: {{if .contentlength}}{{.contentlength}}{{else}}0{{end}}
+{{if .expires}}Expires: {{.expires}}{{else}}$rmeol{{end}}
+{{if .useragent}}User-Agent: {{.useragent}}{{else}}$rmeol{{end}}
+Content-Length: 0
 
 `
 
@@ -85,6 +86,7 @@ var headerFields = make(paramFieldsType)
 type CLIOptions struct {
 	ruri             string
 	laddr            string
+	useragent        string
 	template         string
 	templaterun      bool
 	fields           string
@@ -104,6 +106,7 @@ type CLIOptions struct {
 var cliops = CLIOptions{
 	ruri:             "",
 	laddr:            "",
+	useragent:        "",
 	template:         "",
 	templaterun:      false,
 	fields:           "",
@@ -136,6 +139,8 @@ func init() {
 	flag.StringVar(&cliops.fields, "fields-file", cliops.fields, "path to the json fields file")
 	flag.StringVar(&cliops.fields, "ff", cliops.fields, "path to the json fields file")
 	flag.StringVar(&cliops.laddr, "laddr", cliops.laddr, "local address (`ip:port` or `:port`)")
+	flag.StringVar(&cliops.useragent, "user-agent", cliops.useragent, "user agent value")
+	flag.StringVar(&cliops.useragent, "ua", cliops.useragent, "user agent value")
 
 	flag.BoolVar(&cliops.fieldseval, "fields-eval", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.fieldseval, "fe", cliops.fieldseval, "evaluate expression in fields file")
@@ -289,9 +294,20 @@ func main() {
 		sgsip.SGSocketAddressToSIPURI(&dstSockAddr, 0, &dstURI)
 	}
 	var ok bool
-	_, ok = tplfields["ruri"]
-	if !ok {
-		tplfields["ruri"] = dstURI.Val
+	if len(cliops.ruri) > 0 {
+		tplfields["ruri"] = cliops.ruri
+	} else {
+		_, ok = tplfields["ruri"]
+		if !ok {
+			tplfields["ruri"] = dstURI.Val
+		}
+	}
+	if len(cliops.useragent) > 0 {
+		if cliops.useragent != "no" {
+			tplfields["useragent"] = cliops.useragent
+		}
+	} else {
+		tplfields["useragent"] = "SIPExer v" + sipexerVersion
 	}
 	var tret int
 	if cliops.templaterun {
