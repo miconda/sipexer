@@ -101,6 +101,7 @@ type CLIOptions struct {
 	buffersize       int
 	connectudp       bool
 	af               int
+	setdomains       bool
 	version          bool
 }
 
@@ -121,6 +122,7 @@ var cliops = CLIOptions{
 	buffersize:       32 * 1024,
 	connectudp:       false,
 	af:               0,
+	setdomains:       false,
 	version:          false,
 }
 
@@ -153,6 +155,8 @@ func init() {
 	flag.BoolVar(&cliops.templaterun, "template-run", cliops.templaterun, "run template execution and print the result")
 	flag.BoolVar(&cliops.templaterun, "tr", cliops.templaterun, "run template execution and print the result")
 	flag.BoolVar(&cliops.connectudp, "connect-udp", cliops.connectudp, "attempt first a connect for UDP (dial ICMP connect)")
+	flag.BoolVar(&cliops.setdomains, "set-domains", cliops.setdomains, "set From/To domains based on R-URI")
+	flag.BoolVar(&cliops.setdomains, "sd", cliops.setdomains, "set From/To domains based on R-URI")
 
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
 	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
@@ -302,6 +306,15 @@ func main() {
 		if !ok {
 			tplfields["ruri"] = dstURI.Val
 		}
+	}
+	if cliops.setdomains {
+		var rURI = sgsip.SGSIPURI{}
+		if sgsip.SGSIPParseURI(fmt.Sprint(tplfields["ruri"]), &rURI) != sgsip.SGSIPRetOK {
+			fmt.Fprintf(os.Stderr, "invalid ruri: %v\n", tplfields["ruri"])
+			os.Exit(-1)
+		}
+		tplfields["fdomain"] = rURI.Addr
+		tplfields["tdomain"] = rURI.Addr
 	}
 	if len(cliops.useragent) > 0 {
 		if cliops.useragent != "no" {
