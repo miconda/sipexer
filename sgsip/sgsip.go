@@ -1,3 +1,5 @@
+// SIPExer Generic SIP Parsing Library
+//
 package sgsip
 
 import (
@@ -102,6 +104,27 @@ type SGSIPFirstLine struct {
 	Code     int    // status code number
 	CodeVal  string // status code string
 	Reason   string
+}
+
+type SGSIPHeader struct {
+	Name  string
+	Body  string
+	HType int
+}
+
+type SGSIPBody struct {
+	Content     string
+	ContentLen  int
+	ContentType string
+}
+
+type SGSIPMessage struct {
+	Data    string
+	FLine   SGSIPFirstLine
+	RURI    SGSIPURI
+	Headers []SGSIPHeader
+	Body    SGSIPBody
+	MFlags  int
 }
 
 // Quick detection of ip/address type
@@ -552,5 +575,108 @@ func SGSIPParseFirstLine(inputStr string, flineVal *SGSIPFirstLine) int {
 	}
 	flineVal.Method = strings.Trim(strArray[0], " \t\r")
 	flineVal.URI = strings.Trim(strArray[1], " \t\r")
+	return SGSIPRetOK
+}
+
+// SGSIPValidHeaderName --
+func SGSIPValidHeaderName(name string) bool {
+	for i, r := range name {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+			if i == 0 {
+				return false
+			}
+			if (r < '0' || r > '9') && (r != '-') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// SGSIPParseHeader --
+func SGSIPParseHeaders(inputStr string, pMode int, headersList *[]SGSIPHeader) int {
+	var strArray []string
+	var strHeaders string
+	if pMode == 0 {
+		strArray = strings.SplitN(inputStr, "\n", 2)
+		if len(strArray) < 2 {
+			return SGSIPRetErr
+		}
+		strHeaders = strArray[1]
+	} else {
+		strHeaders = strings.TrimLeft(inputStr, " \t\r\n")
+	}
+	if len(strHeaders) == 0 || strHeaders[0:1] == "\r" || strHeaders[0:1] == "\n" {
+		// empty or first char is an EoL
+		return SGSIPRetErr
+	}
+	for {
+		var hdrItem SGSIPHeader = SGSIPHeader{}
+		// split name: body
+		strArray = strings.SplitN(strHeaders, ":", 2)
+		if len(strArray) < 2 || len(strArray[0]) == 0 || len(strArray[1]) == 0 {
+			return SGSIPRetErr
+		}
+		if !SGSIPValidHeaderName(strArray[0]) {
+			return SGSIPRetErr
+		}
+		hdrItem.Name = strings.TrimRight(strArray[0], " \t")
+		hdrItem.Body = ""
+		for {
+			strArray = strings.SplitN(strArray[1], "\n", 2)
+			if len(strArray) < 2 {
+				return SGSIPRetErr
+			}
+			hdrItem.Body += strArray[0]
+			if len(strArray[1]) == 0 {
+				break
+			}
+			// check if body spans over next line
+			if strArray[1][0:1] != " " && strArray[1][0:1] != "\t" {
+				break
+			}
+		}
+		hdrItem.Body = strings.Trim(hdrItem.Body, " \t\r")
+		*headersList = append(*headersList, hdrItem)
+		strHeaders = strArray[1]
+		if len(strHeaders) == 0 || strHeaders[0:1] == "\r" || strHeaders[0:1] == "\n" {
+			// EoH
+			break
+		}
+	}
+	return SGSIPRetOK
+}
+
+// SGSIPParseBody --
+func SGSIPParseBody(inputStr string, bodyVal *SGSIPBody) int {
+	strArray := strings.SplitN(inputStr, "\r\n\r\n", 2)
+	if len(strArray) < 2 {
+		strArray := strings.SplitN(inputStr, "\n\n", 2)
+		if len(strArray) < 2 {
+			return SGSIPRetErr
+		}
+	}
+	bodyVal.Content = strArray[1]
+	bodyVal.ContentLen = len(strArray[1])
+	return SGSIPRetOK
+}
+
+// SGSIPParseMessage --
+func SGSIPParseMessage(inputStr string, msgVal *SGSIPMessage) int {
+	ret := SGSIPParseFirstLine(inputStr, &msgVal.FLine)
+	if ret != SGSIPRetOK {
+		return ret
+	}
+	if msgVal.FLine.MType == FLineRequest {
+		ret = SGSIPParseURI(msgVal.FLine.URI, &msgVal.RURI)
+		if ret != SGSIPRetOK {
+			return ret
+		}
+	}
+	ret = SGSIPParseHeaders(inputStr, 0, &msgVal.Headers)
+	if ret != SGSIPRetOK {
+		return ret
+	}
+	ret = SGSIPParseBody(inputStr, &msgVal.Body)
 	return SGSIPRetOK
 }
