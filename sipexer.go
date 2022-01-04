@@ -293,6 +293,7 @@ func main() {
 	if !ok {
 		tplfields["ruri"] = dstURI.Val
 	}
+	var tret int
 	if cliops.templaterun {
 		_, ok = tplfields["viaaddr"]
 		if !ok {
@@ -306,34 +307,15 @@ func main() {
 		if !ok {
 			tplfields["viaproto"] = strings.ToUpper(dstSockAddr.Proto)
 		}
-		var buf bytes.Buffer
-		var tpl = template.Must(template.New("wsout").Parse(tplstr))
-		tpl.Execute(&buf, tplfields)
-
-		var smsg string
-		if cliops.nocrlf {
-			smsg = strings.Replace(buf.String(), "$rmeol\n", "", -1)
-		} else {
-			smsg = strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1)
+		var smsg string = ""
+		tret = SIPExerPrepareMessage(tplstr, tplfields, &smsg)
+		if tret != 0 {
+			os.Exit(tret)
 		}
-
 		var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
 		if sgsip.SGSIPParseMessage(smsg, &msgVal) != sgsip.SGSIPRetOK {
 			fmt.Fprintf(os.Stderr, "failed to parse sip message\n%+v\n\n", smsg)
 			os.Exit(-1)
-		}
-		if len(headerFields) > 0 {
-			for hname, hbody := range headerFields {
-				var hdrItem sgsip.SGSIPHeader = sgsip.SGSIPHeader{}
-				hdrItem.Name = hname
-				hdrItem.Body = hbody
-				msgVal.Headers = append(msgVal.Headers, hdrItem)
-			}
-
-			if sgsip.SGSIPMessageToString(&msgVal, &smsg) != sgsip.SGSIPRetOK {
-				fmt.Fprintf(os.Stderr, "failed to rebuild sip message\n")
-				os.Exit(-1)
-			}
 		}
 		fmt.Printf("%+v\n\n", smsg)
 		fmt.Printf("%+v\n\n", msgVal)
@@ -348,10 +330,45 @@ func main() {
 
 	tchan := make(chan int, 1)
 	go SIPExerSendUDP(dstSockAddr, tplstr, tplfields, tchan)
-	tret := <-tchan
+	tret = <-tchan
 	close(tchan)
 	fmt.Printf("return code: %d\n\n", tret)
 	os.Exit(tret)
+}
+
+func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, outstr *string) int {
+	var buf bytes.Buffer
+	var tpl = template.Must(template.New("wsout").Parse(tplstr))
+	tpl.Execute(&buf, tplfields)
+
+	var smsg string
+	if cliops.nocrlf {
+		smsg = strings.Replace(buf.String(), "$rmeol\n", "", -1)
+	} else {
+		smsg = strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1)
+	}
+
+	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
+	if sgsip.SGSIPParseMessage(smsg, &msgVal) != sgsip.SGSIPRetOK {
+		fmt.Fprintf(os.Stderr, "failed to parse sip message\n%+v\n\n", smsg)
+		return -200
+	}
+
+	if len(headerFields) > 0 {
+		for hname, hbody := range headerFields {
+			var hdrItem sgsip.SGSIPHeader = sgsip.SGSIPHeader{}
+			hdrItem.Name = hname
+			hdrItem.Body = hbody
+			msgVal.Headers = append(msgVal.Headers, hdrItem)
+		}
+
+		if sgsip.SGSIPMessageToString(&msgVal, &smsg) != sgsip.SGSIPRetOK {
+			fmt.Fprintf(os.Stderr, "failed to rebuild sip message\n")
+			return -201
+		}
+	}
+	*outstr = smsg
+	return 0
 }
 
 func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]interface{}, tchan chan int) {
@@ -425,37 +442,11 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	fmt.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
 	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
 
-	var buf bytes.Buffer
-	var tpl = template.Must(template.New("wsout").Parse(tplstr))
-	tpl.Execute(&buf, tplfields)
-
-	var smsg string
-	if cliops.nocrlf {
-		smsg = strings.Replace(buf.String(), "$rmeol\n", "", -1)
-	} else {
-		smsg = strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1)
-	}
-
-	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
-	if sgsip.SGSIPParseMessage(smsg, &msgVal) != sgsip.SGSIPRetOK {
-		fmt.Fprintf(os.Stderr, "failed to parse sip message\n%+v\n\n", smsg)
-		tchan <- -200
+	var smsg string = ""
+	ret := SIPExerPrepareMessage(tplstr, tplfields, &smsg)
+	if ret != 0 {
+		tchan <- ret
 		return
-	}
-
-	if len(headerFields) > 0 {
-		for hname, hbody := range headerFields {
-			var hdrItem sgsip.SGSIPHeader = sgsip.SGSIPHeader{}
-			hdrItem.Name = hname
-			hdrItem.Body = hbody
-			msgVal.Headers = append(msgVal.Headers, hdrItem)
-		}
-
-		if sgsip.SGSIPMessageToString(&msgVal, &smsg) != sgsip.SGSIPRetOK {
-			fmt.Fprintf(os.Stderr, "failed to rebuild sip message\n")
-			tchan <- -201
-			return
-		}
 	}
 	fmt.Printf("sending: [[\n%s]]\n\n", smsg)
 
