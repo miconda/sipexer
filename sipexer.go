@@ -78,6 +78,7 @@ func (m paramFieldsType) Set(value string) error {
 }
 
 var paramFields = make(paramFieldsType)
+var headerFields = make(paramFieldsType)
 
 //
 // CLIOptions - structure for command line options
@@ -154,6 +155,9 @@ func init() {
 
 	flag.Var(&paramFields, "field-val", "field value in format 'name:value' (can be provided many times)")
 	flag.Var(&paramFields, "fv", "field value in format 'name:value' (can be provided many times)")
+
+	flag.Var(&headerFields, "extra-header", "extra header in format 'name:body' (can be provided many times)")
+	flag.Var(&headerFields, "xh", "extra header in format 'name:body' (can be provided many times)")
 
 	flag.BoolVar(&cliops.version, "version", cliops.version, "print version")
 }
@@ -313,9 +317,25 @@ func main() {
 			smsg = strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1)
 		}
 
-		fmt.Printf("%+v\n\n", smsg)
 		var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
-		sgsip.SGSIPParseMessage(smsg, &msgVal)
+		if sgsip.SGSIPParseMessage(smsg, &msgVal) != sgsip.SGSIPRetOK {
+			fmt.Fprintf(os.Stderr, "failed to parse sip message\n%+v\n\n", smsg)
+			os.Exit(-1)
+		}
+		if len(headerFields) > 0 {
+			for hname, hbody := range headerFields {
+				var hdrItem sgsip.SGSIPHeader = sgsip.SGSIPHeader{}
+				hdrItem.Name = hname
+				hdrItem.Body = hbody
+				msgVal.Headers = append(msgVal.Headers, hdrItem)
+			}
+
+			if sgsip.SGSIPMessageToString(&msgVal, &smsg) != sgsip.SGSIPRetOK {
+				fmt.Fprintf(os.Stderr, "failed to rebuild sip message\n")
+				os.Exit(-1)
+			}
+		}
+		fmt.Printf("%+v\n\n", smsg)
 		fmt.Printf("%+v\n\n", msgVal)
 
 		os.Exit(1)
@@ -330,7 +350,7 @@ func main() {
 	go SIPExerSendUDP(dstSockAddr, tplstr, tplfields, tchan)
 	tret := <-tchan
 	close(tchan)
-	fmt.Printf("return code: %d\n", tret)
+	fmt.Printf("return code: %d\n\n", tret)
 	os.Exit(tret)
 }
 
@@ -409,14 +429,38 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	var tpl = template.Must(template.New("wsout").Parse(tplstr))
 	tpl.Execute(&buf, tplfields)
 
-	var wmsg []byte
+	var smsg string
 	if cliops.nocrlf {
-		wmsg = []byte(strings.Replace(buf.String(), "$rmeol\n", "", -1))
+		smsg = strings.Replace(buf.String(), "$rmeol\n", "", -1)
 	} else {
-		wmsg = []byte(strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1))
+		smsg = strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1)
 	}
 
-	fmt.Printf("sending: [[%s]]\n\n", string(wmsg))
+	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
+	if sgsip.SGSIPParseMessage(smsg, &msgVal) != sgsip.SGSIPRetOK {
+		fmt.Fprintf(os.Stderr, "failed to parse sip message\n%+v\n\n", smsg)
+		tchan <- -200
+		return
+	}
+
+	if len(headerFields) > 0 {
+		for hname, hbody := range headerFields {
+			var hdrItem sgsip.SGSIPHeader = sgsip.SGSIPHeader{}
+			hdrItem.Name = hname
+			hdrItem.Body = hbody
+			msgVal.Headers = append(msgVal.Headers, hdrItem)
+		}
+
+		if sgsip.SGSIPMessageToString(&msgVal, &smsg) != sgsip.SGSIPRetOK {
+			fmt.Fprintf(os.Stderr, "failed to rebuild sip message\n")
+			tchan <- -201
+			return
+		}
+	}
+	fmt.Printf("sending: [[\n%s]]\n\n", smsg)
+
+	var wmsg []byte
+	wmsg = []byte(smsg)
 
 	timeoutStep := cliops.timert1
 	timeoutVal := timeoutStep
@@ -469,7 +513,7 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		break
 	}
 
-	fmt.Printf("packet-received: from=%s bytes=%d data=%s\n",
+	fmt.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
 		rcvAddr.String(), nRead, string(rmsg))
 	tchan <- 0
 }
