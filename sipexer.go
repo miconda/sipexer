@@ -35,7 +35,7 @@ To: {{if .tname}}"{{.tname}}" {{end}}<sip:{{if .tuser}}{{.tuser}}@{{end}}{{.tdom
 Call-ID: {{.callid}}
 CSeq: {{.cseqnum}} {{.method}}
 {{if .subject}}Subject: {{.subject}}{{else}}$rmeol{{end}}
-Date: {{.date}}
+{{if .date}}Date: {{.date}}{{else}}$rmeol{{end}}
 {{if .contacturi}}Contact: {{.contacturi}}{{else}}$rmeol{{end}}
 {{if .expires}}Expires: {{.expires}}{{else}}$rmeol{{end}}
 {{if .useragent}}User-Agent: {{.useragent}}{{else}}$rmeol{{end}}
@@ -264,6 +264,10 @@ func main() {
 			if k == "rport" {
 				if strings.Trim(paramFields[k], " \t\r\n") == "no" {
 					tplfields[k] = ""
+				}
+			} else if k == "date" {
+				if strings.Trim(paramFields[k], " \t\r\n") == "no" {
+					delete(tplfields, "date")
 				}
 			} else {
 				tplfields[k] = paramFields[k]
