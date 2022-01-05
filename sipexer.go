@@ -576,12 +576,14 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	if len(cliops.laddr) > 0 {
 		srcaddr, err = net.ResolveTCPAddr(strAFProto, cliops.laddr)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			tchan <- -100
 			return
 		}
 	}
 	dstaddr, err = net.ResolveTCPAddr(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		tchan <- -101
 		return
 	}
@@ -591,6 +593,7 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 
 	defer conn.Close()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		tchan <- -103
 		return
 	}
@@ -632,6 +635,7 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	}
 	err = conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		tchan <- -106
 		return
 	}
@@ -671,6 +675,7 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 
 	conn, err = tls.Dial(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port, &tlc)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		tchan <- -103
 		return
 	}
