@@ -105,6 +105,8 @@ type CLIOptions struct {
 	af               int
 	setdomains       bool
 	tlsinsecure      bool
+	tlscertificate   string
+	tlskey           string
 	version          bool
 }
 
@@ -127,6 +129,8 @@ var cliops = CLIOptions{
 	af:               0,
 	setdomains:       false,
 	tlsinsecure:      false,
+	tlscertificate:   "",
+	tlskey:           "",
 	version:          false,
 }
 
@@ -148,6 +152,10 @@ func init() {
 	flag.StringVar(&cliops.laddr, "laddr", cliops.laddr, "local address (`ip:port` or `:port`)")
 	flag.StringVar(&cliops.useragent, "user-agent", cliops.useragent, "user agent value")
 	flag.StringVar(&cliops.useragent, "ua", cliops.useragent, "user agent value")
+	flag.StringVar(&cliops.tlscertificate, "tls-certificate", cliops.tlscertificate, "path to TLS public certificate")
+	flag.StringVar(&cliops.tlscertificate, "tc", cliops.tlscertificate, "path to TLS public certificate")
+	flag.StringVar(&cliops.tlskey, "tls-key", cliops.tlskey, "path to TLS private key")
+	flag.StringVar(&cliops.tlskey, "tk", cliops.tlskey, "path to TLS private key")
 
 	flag.BoolVar(&cliops.fieldseval, "fields-eval", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.fieldseval, "fe", cliops.fieldseval, "evaluate expression in fields file")
@@ -665,8 +673,20 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 			strAFProto = "tcp6"
 		}
 	}
-	tlc := tls.Config{
-		InsecureSkipVerify: false,
+	var tlc tls.Config
+	if len(cliops.tlscertificate) > 0 && len(cliops.tlskey) > 0 {
+		var tlscert tls.Certificate
+		tlscert, err = tls.LoadX509KeyPair(cliops.tlscertificate, cliops.tlskey)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			tchan <- -102
+			return
+		}
+		tlc = tls.Config{Certificates: []tls.Certificate{tlscert}, InsecureSkipVerify: false}
+	} else {
+		tlc = tls.Config{
+			InsecureSkipVerify: false,
+		}
 	}
 	if cliops.tlsinsecure {
 		tlc.InsecureSkipVerify = true
