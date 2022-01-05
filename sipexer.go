@@ -8,6 +8,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -102,6 +104,7 @@ type CLIOptions struct {
 	connectudp       bool
 	af               int
 	setdomains       bool
+	tlsinsecure      bool
 	version          bool
 }
 
@@ -123,6 +126,7 @@ var cliops = CLIOptions{
 	connectudp:       false,
 	af:               0,
 	setdomains:       false,
+	tlsinsecure:      false,
 	version:          false,
 }
 
@@ -157,6 +161,8 @@ func init() {
 	flag.BoolVar(&cliops.connectudp, "connect-udp", cliops.connectudp, "attempt first a connect for UDP (dial ICMP connect)")
 	flag.BoolVar(&cliops.setdomains, "set-domains", cliops.setdomains, "set From/To domains based on R-URI")
 	flag.BoolVar(&cliops.setdomains, "sd", cliops.setdomains, "set From/To domains based on R-URI")
+	flag.BoolVar(&cliops.tlsinsecure, "tls-insecure", cliops.tlsinsecure, "skip tls certificate validation (true|false)")
+	flag.BoolVar(&cliops.tlsinsecure, "ti", cliops.tlsinsecure, "skip tls certificate validation (true|false)")
 
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
 	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
@@ -357,7 +363,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if (dstSockAddr.ProtoId != sgsip.ProtoUDP) && (dstSockAddr.ProtoId != sgsip.ProtoTCP) {
+	if (dstSockAddr.ProtoId != sgsip.ProtoUDP) && (dstSockAddr.ProtoId != sgsip.ProtoTCP) &&
+		(dstSockAddr.ProtoId != sgsip.ProtoTLS) {
 		fmt.Fprintf(os.Stderr, "transport protocol not supported yet for target %s\n", dstAddr)
 		os.Exit(-1)
 	}
@@ -365,6 +372,8 @@ func main() {
 	tchan := make(chan int, 1)
 	if dstSockAddr.ProtoId == sgsip.ProtoTCP {
 		go SIPExerSendTCP(dstSockAddr, tplstr, tplfields, tchan)
+	} else if dstSockAddr.ProtoId == sgsip.ProtoTLS {
+		go SIPExerSendTLS(dstSockAddr, tplstr, tplfields, tchan)
 	} else {
 		go SIPExerSendUDP(dstSockAddr, tplstr, tplfields, tchan)
 	}
@@ -634,5 +643,95 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	}
 	fmt.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
 		dstaddr.String(), nRead, string(rmsg))
+	tchan <- 0
+}
+
+func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]interface{}, tchan chan int) {
+	var err error
+
+	strAFProto := "tcp"
+	if dstSockAddr.AType == sgsip.AFIPv4 {
+		strAFProto = "tcp4"
+	} else if dstSockAddr.AType == sgsip.AFIPv6 {
+		strAFProto = "tcp6"
+	} else {
+		if cliops.af == sgsip.AFIPv4 {
+			strAFProto = "tcp4"
+		} else if cliops.af == sgsip.AFIPv6 {
+			strAFProto = "tcp6"
+		}
+	}
+	tlc := tls.Config{
+		InsecureSkipVerify: false,
+	}
+	if cliops.tlsinsecure {
+		tlc.InsecureSkipVerify = true
+	}
+	var conn *tls.Conn
+
+	conn, err = tls.Dial(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port, &tlc)
+	if err != nil {
+		tchan <- -103
+		return
+	}
+	defer conn.Close()
+
+	fmt.Println("client: ", conn.LocalAddr(), "connected to: ", conn.RemoteAddr())
+	state := conn.ConnectionState()
+	for _, v := range state.PeerCertificates {
+		fmt.Println(x509.MarshalPKIXPublicKey(v.PublicKey))
+		fmt.Println(v.Subject)
+	}
+	log.Println("client: handshake: ", state.HandshakeComplete)
+	log.Println("client: mutual: ", state.NegotiatedProtocolIsMutual)
+
+	var ok bool
+	_, ok = tplfields["viaaddr"]
+	if !ok {
+		tplfields["viaaddr"] = conn.LocalAddr().String()
+	}
+	_, ok = tplfields["viaproto"]
+	if !ok {
+		tplfields["viaproto"] = "TLS"
+	}
+
+	fmt.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
+	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
+
+	var smsg string = ""
+	ret := SIPExerPrepareMessage(tplstr, tplfields, &smsg)
+	if ret != 0 {
+		tchan <- ret
+		return
+	}
+	fmt.Printf("sending: [[\n%s]]\n\n", smsg)
+
+	var wmsg []byte
+	wmsg = []byte(smsg)
+
+	rmsg := make([]byte, cliops.buffersize)
+	nRead := 0
+
+	err = conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+	_, err = conn.Write(wmsg)
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error writing - %v\n", err)
+		tchan <- -105
+		return
+	}
+	err = conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+	if err != nil {
+		tchan <- -106
+		return
+	}
+	nRead, err = conn.Read(rmsg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, nRead, err)
+		tchan <- -107
+		return
+	}
+	fmt.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
+		conn.RemoteAddr().String(), nRead, string(rmsg))
 	tchan <- 0
 }
