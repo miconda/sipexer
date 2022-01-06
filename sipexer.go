@@ -8,11 +8,15 @@ package main
 
 import (
 	"bytes"
+	"crypto/md5"
+	cryptorand "crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -116,6 +120,8 @@ type CLIOptions struct {
 	tlskey           string
 	wsorigin         string
 	wsproto          string
+	authuser         string
+	authapassword    string
 	version          bool
 }
 
@@ -145,6 +151,8 @@ var cliops = CLIOptions{
 	tlskey:           "",
 	wsorigin:         "http://127.0.0.1",
 	wsproto:          "sip",
+	authuser:         "",
+	authapassword:    "",
 	version:          false,
 }
 
@@ -181,6 +189,10 @@ func init() {
 	flag.StringVar(&cliops.wsorigin, "wso", cliops.wsorigin, "websocket origin http url")
 	flag.StringVar(&cliops.wsproto, "websocket-proto", cliops.wsproto, "websocket sub-protocol")
 	flag.StringVar(&cliops.wsproto, "wsp", cliops.wsproto, "websocket sub-protocol")
+	flag.StringVar(&cliops.authuser, "auth-user", cliops.authuser, "authentication user")
+	flag.StringVar(&cliops.authuser, "au", cliops.authuser, "authentication user")
+	flag.StringVar(&cliops.authapassword, "auth-password", cliops.authapassword, "authentication password")
+	flag.StringVar(&cliops.authapassword, "ap", cliops.authapassword, "authentication password")
 
 	flag.BoolVar(&cliops.fieldseval, "fields-eval", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.fieldseval, "fe", cliops.fieldseval, "evaluate expression in fields file")
@@ -228,9 +240,9 @@ func main() {
 	}
 
 	if cliops.templatedefaults {
-		fmt.Println("Default template:\n")
+		fmt.Printf("Default template:\n\n")
 		fmt.Println(templateDefaultText)
-		fmt.Println("Default fields:\n")
+		fmt.Printf("Default fields:\n\n")
 		fmt.Println(templateDefaultJSONFields)
 		os.Exit(1)
 	}
@@ -400,12 +412,14 @@ func main() {
 		if !ok {
 			tplfields["viaproto"] = strings.ToUpper(dstSockAddr.Proto)
 		}
+		var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
 		var smsg string = ""
-		tret = SIPExerPrepareMessage(tplstr, tplfields, &smsg)
+		tret = SIPExerPrepareMessage(tplstr, tplfields, &msgVal)
 		if tret != 0 {
 			os.Exit(tret)
 		}
-		var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
+		smsg = msgVal.Data
+		msgVal = sgsip.SGSIPMessage{}
 		if sgsip.SGSIPParseMessage(smsg, &msgVal) != sgsip.SGSIPRetOK {
 			fmt.Fprintf(os.Stderr, "failed to parse sip message\n%+v\n\n", smsg)
 			os.Exit(-1)
@@ -438,7 +452,7 @@ func main() {
 	os.Exit(tret)
 }
 
-func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, outstr *string) int {
+func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, msgVal *sgsip.SGSIPMessage) int {
 	var buf bytes.Buffer
 	var tpl = template.Must(template.New("wsout").Parse(tplstr))
 	var msgrebuild bool = false
@@ -452,8 +466,7 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, outs
 		smsg = strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1)
 	}
 
-	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
-	if sgsip.SGSIPParseMessage(smsg, &msgVal) != sgsip.SGSIPRetOK {
+	if sgsip.SGSIPParseMessage(smsg, msgVal) != sgsip.SGSIPRetOK {
 		fmt.Fprintf(os.Stderr, "failed to parse sip message\n%+v\n\n", smsg)
 		return -200
 	}
@@ -478,12 +491,12 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, outs
 		msgrebuild = true
 	}
 	if msgrebuild {
-		if sgsip.SGSIPMessageToString(&msgVal, &smsg) != sgsip.SGSIPRetOK {
+		if sgsip.SGSIPMessageToString(msgVal, &smsg) != sgsip.SGSIPRetOK {
 			fmt.Fprintf(os.Stderr, "failed to rebuild sip message\n")
 			return -201
 		}
 	}
-	*outstr = smsg
+	msgVal.Data = smsg
 	return 0
 }
 
@@ -558,12 +571,14 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	fmt.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
 	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
 
+	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
 	var smsg string = ""
-	ret := SIPExerPrepareMessage(tplstr, tplfields, &smsg)
+	ret := SIPExerPrepareMessage(tplstr, tplfields, &msgVal)
 	if ret != 0 {
 		tchan <- ret
 		return
 	}
+	smsg = msgVal.Data
 	fmt.Printf("sending: [[\n%s]]\n\n", smsg)
 
 	var wmsg []byte
@@ -574,18 +589,20 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	rmsg := make([]byte, cliops.buffersize)
 	nRead := 0
 	var rcvAddr net.Addr
-
+	var resend bool = true
 	// retransmissions loop
 	for {
-		if cliops.connectudp {
-			_, err = conn.Write(wmsg)
-		} else {
-			_, err = conn.WriteToUDP(wmsg, dstaddr)
-		}
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error writing - %v\n", err)
-			tchan <- -105
-			return
+		if resend {
+			if cliops.connectudp {
+				_, err = conn.Write(wmsg)
+			} else {
+				_, err = conn.WriteToUDP(wmsg, dstaddr)
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error writing - %v\n", err)
+				tchan <- -105
+				return
+			}
 		}
 
 		err = conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(timeoutStep)))
@@ -616,6 +633,82 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 			fmt.Fprintf(os.Stderr, "error reading - bytes %d - %v\n", nRead, err)
 			tchan <- -108
 			return
+		} else {
+			// absorb 1xx responses or deal with 401/407 auth challenges
+			if nRead > 0 {
+				var sipRes sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
+				if sgsip.SGSIPParseMessage(string(rmsg), &sipRes) != sgsip.SGSIPRetOK {
+					fmt.Fprintf(os.Stderr, "failed to parse sip response\n%+v\n\n", string(rmsg))
+					tchan <- -109
+					return
+				}
+				if sipRes.FLine.MType != sgsip.FLineResponse {
+					break
+				}
+				fmt.Printf("response-received: from=%s bytes=%d data=[[\n%s]]\n",
+					rcvAddr.String(), nRead, string(rmsg))
+				if sipRes.FLine.Code >= 100 && sipRes.FLine.Code <= 199 {
+					resend = false
+					continue
+				}
+				if (sipRes.FLine.Code == 401) || (sipRes.FLine.Code == 407) {
+					var hbody string = ""
+					if sipRes.FLine.Code == 401 {
+						if sgsip.SGSIPMessageHeaderGet(&sipRes, "WWW-Authenticate", &hbody) != sgsip.SGSIPRetOK {
+							fmt.Fprintf(os.Stderr, "failed to get WWW-Authenticate\n")
+							tchan <- -109
+							return
+						}
+					} else {
+						if sgsip.SGSIPMessageHeaderGet(&sipRes, "Proxy-Authenticate", &hbody) != sgsip.SGSIPRetOK {
+							fmt.Fprintf(os.Stderr, "failed to get Proxy-Authenticate\n")
+							tchan <- -109
+							return
+						}
+					}
+					hparams := sgsip.SGSIPHeaderParseDigestAuthBody(hbody)
+					if hparams == nil {
+						fmt.Fprintf(os.Stderr, "failed to parse WWW/Proxy-Authenticate\n")
+						tchan <- -109
+						return
+					}
+					s := strings.SplitN(smsg, " ", 3)
+					if len(s) != 3 {
+						fmt.Fprintf(os.Stderr, "failed to get method and r-uri\n")
+						tchan <- -109
+						return
+					}
+
+					hparams["method"] = s[0]
+					hparams["uri"] = s[1]
+					fmt.Printf("\nAuth params map:\n    %+v\n\n", hparams)
+					authResponse := SIPExerBuildAuthResponseBody(cliops.authuser, cliops.authapassword, hparams)
+					if len(authResponse) > 0 {
+						fmt.Printf("authentication header body: [[%s]]\n", authResponse)
+						if sipRes.FLine.Code == 401 {
+							sgsip.SGSIPMessageHeaderSet(&msgVal, "Authorization", authResponse)
+						} else {
+							sgsip.SGSIPMessageHeaderSet(&msgVal, "Proxy-Authorization", authResponse)
+						}
+						sgsip.SGSIPMessageCSeqUpdate(&msgVal, 1)
+						if sgsip.SGSIPMessageToString(&msgVal, &smsg) != sgsip.SGSIPRetOK {
+							fmt.Fprintf(os.Stderr, "failed to rebuild sip message\n")
+							tchan <- -109
+							return
+						}
+						// send the new message
+						wmsg = []byte(smsg)
+						fmt.Printf("sending: [[\n%s]]\n\n", smsg)
+						timeoutStep = cliops.timert1
+						timeoutVal = timeoutStep
+						resend = true
+					} else {
+						fmt.Fprintf(os.Stderr, "failed to get authentication response header\n")
+						tchan <- -109
+						return
+					}
+				}
+			}
 		}
 		break
 	}
@@ -680,12 +773,14 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	fmt.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
 	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
 
+	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
 	var smsg string = ""
-	ret := SIPExerPrepareMessage(tplstr, tplfields, &smsg)
+	ret := SIPExerPrepareMessage(tplstr, tplfields, &msgVal)
 	if ret != 0 {
 		tchan <- ret
 		return
 	}
+	smsg = msgVal.Data
 	fmt.Printf("sending: [[\n%s]]\n\n", smsg)
 
 	var wmsg []byte
@@ -784,12 +879,14 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	fmt.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
 	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
 
+	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
 	var smsg string = ""
-	ret := SIPExerPrepareMessage(tplstr, tplfields, &smsg)
+	ret := SIPExerPrepareMessage(tplstr, tplfields, &msgVal)
 	if ret != 0 {
 		tchan <- ret
 		return
 	}
+	smsg = msgVal.Data
 	fmt.Printf("sending: [[\n%s]]\n\n", smsg)
 
 	var wmsg []byte
@@ -892,12 +989,14 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 	fmt.Printf("local socket address: %v (%v)\n", ws.LocalAddr(), ws.LocalAddr().Network())
 	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
 
+	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
 	var smsg string = ""
-	ret := SIPExerPrepareMessage(tplstr, tplfields, &smsg)
+	ret := SIPExerPrepareMessage(tplstr, tplfields, &msgVal)
 	if ret != 0 {
 		tchan <- ret
 		return
 	}
+	smsg = msgVal.Data
 	fmt.Printf("sending: [[\n%s]]\n\n", smsg)
 
 	var wmsg []byte
@@ -928,4 +1027,60 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 	fmt.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
 		ws.RemoteAddr().String(), nRead, string(rmsg))
 	tchan <- 0
+}
+
+//
+// BuildAuthResponseBody - return the body for auth header in response
+func SIPExerBuildAuthResponseBody(username string, password string, hparams map[string]string) string {
+	// https://en.wikipedia.org/wiki/Digest_access_authentication
+	// HA1
+	h := md5.New()
+	A1 := fmt.Sprintf("%s:%s:%s", username, hparams["realm"], password)
+	io.WriteString(h, A1)
+	HA1 := fmt.Sprintf("%x", h.Sum(nil))
+
+	// HA2
+	h = md5.New()
+	A2 := fmt.Sprintf("%s:%s", hparams["method"], hparams["uri"])
+	io.WriteString(h, A2)
+	HA2 := fmt.Sprintf("%x", h.Sum(nil))
+
+	var AuthHeader string
+	if _, ok := hparams["qop"]; !ok {
+		// build digest response
+		response := SIPExerHMD5(strings.Join([]string{HA1, hparams["nonce"], HA2}, ":"))
+		// build header body
+		AuthHeader = fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", algorithm=MD5, response="%s"`,
+			username, hparams["realm"], hparams["nonce"], hparams["uri"], response)
+	} else {
+		// build digest response
+		cnonce := SIPExerRandomKey()
+		response := SIPExerHMD5(strings.Join([]string{HA1, hparams["nonce"], "00000001", cnonce, hparams["qop"], HA2}, ":"))
+		// build header body
+		AuthHeader = fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", cnonce="%s", nc=00000001, qop=%s, opaque="%s", algorithm=MD5, response="%s"`,
+			username, hparams["realm"], hparams["nonce"], hparams["uri"], cnonce, hparams["qop"], hparams["opaque"], response)
+	}
+	return AuthHeader
+}
+
+//
+// SIPExerRandomKey - return random key (used for cnonce)
+func SIPExerRandomKey() string {
+	key := make([]byte, 12)
+	for b := 0; b < len(key); {
+		n, err := cryptorand.Read(key[b:])
+		if err != nil {
+			panic("failed to get random bytes")
+		}
+		b += n
+	}
+	return base64.StdEncoding.EncodeToString(key)
+}
+
+//
+// SIPExerHMD5 - return a lower-case hex MD5 digest of the parameter
+func SIPExerHMD5(data string) string {
+	md5d := md5.New()
+	md5d.Write([]byte(data))
+	return fmt.Sprintf("%x", md5d.Sum(nil))
 }
