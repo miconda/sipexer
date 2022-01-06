@@ -593,6 +593,26 @@ func SGSIPHeaderValidName(name string) bool {
 	return true
 }
 
+//
+// SGSIPHeaderParseDigestAuthBody - parse www/proxy-authenticate header body.
+// Return a map of parameters or nil if the header is not Digest auth header.
+func SGSIPHeaderParseDigestAuthBody(hbody string) map[string]string {
+	s := strings.SplitN(strings.Trim(hbody, " "), " ", 2)
+	if len(s) != 2 || s[0] != "Digest" {
+		return nil
+	}
+
+	params := map[string]string{}
+	for _, kv := range strings.Split(s[1], ",") {
+		parts := strings.SplitN(kv, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		params[strings.Trim(parts[0], "\" ")] = strings.Trim(parts[1], "\" ")
+	}
+	return params
+}
+
 // SGSIPParseHeader --
 func SGSIPParseHeaders(inputStr string, pMode int, headersList *[]SGSIPHeader) int {
 	var strArray []string
@@ -675,6 +695,35 @@ func SGSIPMessageHeaderSet(msgVal *SGSIPMessage, hname string, hbody string) int
 	msgVal.Headers = append(msgVal.Headers, hdrItem)
 
 	return SGSIPRetOK
+}
+
+// SGSIPMessageHeaderGet --
+func SGSIPMessageHeaderGet(msgVal *SGSIPMessage, hname string, hbody *string) int {
+	for i, hdr := range msgVal.Headers {
+		if hdr.Name == hname {
+			*hbody = msgVal.Headers[i].Body
+			return SGSIPRetOK
+		}
+	}
+
+	return SGSIPRetErr
+}
+
+// SGSIPMessageCSeqUpdate --
+func SGSIPMessageCSeqUpdate(msgVal *SGSIPMessage, ival int) int {
+	for i, hdr := range msgVal.Headers {
+		if hdr.Name == "CSeq" || hdr.Name == "s" {
+			slist := strings.SplitN(msgVal.Headers[i].Body, " ", 2)
+			if len(slist) != 2 {
+				return SGSIPRetErr
+			}
+			csn, _ := strconv.Atoi(slist[0])
+
+			msgVal.Headers[i].Body = strconv.Itoa(csn+ival) + " " + slist[1]
+			return SGSIPRetOK
+		}
+	}
+	return SGSIPRetErr
 }
 
 // SGSIPParseMessage --
