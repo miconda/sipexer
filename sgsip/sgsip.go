@@ -3,7 +3,6 @@
 package sgsip
 
 import (
-	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -374,7 +373,6 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		uri.AType = SGAddrType(uri.Addr)
 		pPortParams = pHostPP[scPos:]
 	}
-	fmt.Printf("--- pPortParams: %v\n", pPortParams)
 	pParams := ""
 	if pPortParams[0:1] == ":" {
 		// port
