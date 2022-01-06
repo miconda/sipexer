@@ -510,11 +510,11 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 	}
 
 	if sipRes.FLine.Code >= 100 && sipRes.FLine.Code <= 199 {
-		return 100
+		return sipRes.FLine.Code
 	}
 	if (sipRes.FLine.Code == 401) || (sipRes.FLine.Code == 407) {
 		if *skipauth {
-			return 0
+			return sipRes.FLine.Code
 		}
 		var hbody string = ""
 		if sipRes.FLine.Code == 401 {
@@ -555,7 +555,7 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 				fmt.Fprintf(os.Stderr, "failed to rebuild sip message\n")
 				return -109
 			}
-			return 401
+			return sipRes.FLine.Code
 		} else {
 			fmt.Fprintf(os.Stderr, "failed to get authentication response header\n")
 			return -109
@@ -709,13 +709,17 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 				}
 				fmt.Printf("response-received: from=%s bytes=%d data=[[\n%s]]\n",
 					rcvAddr.String(), nRead, string(rmsg))
-				if ret == 100 {
+				if ret/100 == 1 {
 					// 1xx response - read again, but do not send request
 					resend = false
 					rmsg = make([]byte, cliops.buffersize)
 					continue
 				}
-				if ret == 401 {
+				if (ret == 401) || (ret == 407) {
+					if skipauth {
+						tchan <- ret
+						return
+					}
 					// authentication - send the new message
 					wmsg = []byte(smsg)
 					fmt.Printf("sending: [[\n%s]]\n\n", smsg)
@@ -726,6 +730,8 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 					rmsg = make([]byte, cliops.buffersize)
 					continue
 				}
+				tchan <- ret
+				return
 			}
 		}
 		break
@@ -807,25 +813,60 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	rmsg := make([]byte, cliops.buffersize)
 	nRead := 0
 
-	err = conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
-	_, err = conn.Write(wmsg)
+	var skipauth bool = false
+	for {
+		err = conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+		_, err = conn.Write(wmsg)
 
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error writing - %v\n", err)
-		tchan <- -105
-		return
-	}
-	err = conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		tchan <- -106
-		return
-	}
-	nRead, err = conn.Read(rmsg)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, nRead, err)
-		tchan <- -107
-		return
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error writing - %v\n", err)
+			tchan <- -105
+			return
+		}
+
+		err = conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			tchan <- -106
+			return
+		}
+		nRead, err = conn.Read(rmsg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, nRead, err)
+			tchan <- -107
+			return
+		}
+		if nRead > 0 {
+			// absorb 1xx responses or deal with 401/407 auth challenges
+			var sipRes sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
+			ret = SIPExerProcessResponse(&msgVal, rmsg, &sipRes, &skipauth, &smsg)
+			if ret < 0 {
+				tchan <- ret
+				return
+			}
+			fmt.Printf("response-received: from=%s bytes=%d data=[[\n%s]]\n",
+				dstaddr.String(), nRead, string(rmsg))
+			if ret == 100 {
+				// 1xx response - read again, but do not send request
+				rmsg = make([]byte, cliops.buffersize)
+				continue
+			}
+			if (ret == 401) || (ret == 407) {
+				if skipauth {
+					tchan <- ret
+					return
+				}
+				// authentication - send the new message
+				wmsg = []byte(smsg)
+				fmt.Printf("sending: [[\n%s]]\n\n", smsg)
+				skipauth = true
+				rmsg = make([]byte, cliops.buffersize)
+				continue
+			}
+			tchan <- ret
+			return
+		}
+		break
 	}
 	fmt.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
 		dstaddr.String(), nRead, string(rmsg))
