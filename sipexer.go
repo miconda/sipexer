@@ -91,6 +91,7 @@ var headerFields = make(paramFieldsType)
 //
 // CLIOptions - structure for command line options
 type CLIOptions struct {
+	method           string
 	ruri             string
 	body             string
 	contenttype      string
@@ -119,6 +120,7 @@ type CLIOptions struct {
 }
 
 var cliops = CLIOptions{
+	method:           "",
 	ruri:             "",
 	body:             "",
 	contenttype:      "",
@@ -156,7 +158,10 @@ func init() {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
+	flag.StringVar(&cliops.method, "method", cliops.method, "SIP method")
+	flag.StringVar(&cliops.method, "mt", cliops.method, "SIP method")
 	flag.StringVar(&cliops.ruri, "ruri", cliops.ruri, "request uri (r-uri)")
+	flag.StringVar(&cliops.ruri, "ru", cliops.ruri, "request uri (r-uri)")
 	flag.StringVar(&cliops.template, "template-file", cliops.template, "path to template file")
 	flag.StringVar(&cliops.template, "tf", cliops.template, "path to template file")
 	flag.StringVar(&cliops.fields, "fields-file", cliops.fields, "path to the json fields file")
@@ -309,6 +314,10 @@ func main() {
 				tplfields[k] = paramFields[k]
 			}
 		}
+	}
+
+	if len(cliops.method) > 0 {
+		tplfields["method"] = strings.ToUpper(cliops.method)
 	}
 
 	var wsurlp *url.URL = nil
