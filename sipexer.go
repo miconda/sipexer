@@ -92,6 +92,8 @@ var headerFields = make(paramFieldsType)
 // CLIOptions - structure for command line options
 type CLIOptions struct {
 	ruri             string
+	body             string
+	contenttype      string
 	laddr            string
 	useragent        string
 	template         string
@@ -118,6 +120,8 @@ type CLIOptions struct {
 
 var cliops = CLIOptions{
 	ruri:             "",
+	body:             "",
+	contenttype:      "",
 	laddr:            "",
 	useragent:        "",
 	template:         "",
@@ -164,6 +168,10 @@ func init() {
 	flag.StringVar(&cliops.tlscertificate, "tc", cliops.tlscertificate, "path to TLS public certificate")
 	flag.StringVar(&cliops.tlskey, "tls-key", cliops.tlskey, "path to TLS private key")
 	flag.StringVar(&cliops.tlskey, "tk", cliops.tlskey, "path to TLS private key")
+	flag.StringVar(&cliops.body, "message-body", cliops.body, "message body")
+	flag.StringVar(&cliops.body, "mb", cliops.body, "message body")
+	flag.StringVar(&cliops.contenttype, "content-type", cliops.contenttype, "content type")
+	flag.StringVar(&cliops.contenttype, "ct", cliops.contenttype, "content type")
 
 	flag.BoolVar(&cliops.fieldseval, "fields-eval", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.fieldseval, "fe", cliops.fieldseval, "evaluate expression in fields file")
@@ -420,6 +428,8 @@ func main() {
 func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, outstr *string) int {
 	var buf bytes.Buffer
 	var tpl = template.Must(template.New("wsout").Parse(tplstr))
+	var msgrebuild bool = false
+
 	tpl.Execute(&buf, tplfields)
 
 	var smsg string
@@ -442,7 +452,19 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, outs
 			hdrItem.Body = hbody
 			msgVal.Headers = append(msgVal.Headers, hdrItem)
 		}
-
+		msgrebuild = true
+	}
+	if len(cliops.body) > 0 {
+		msgVal.Body.Content = cliops.body
+		msgVal.Body.ContentLen = len(msgVal.Body.Content)
+		if len(cliops.contenttype) > 0 {
+			msgVal.Body.ContentType = cliops.contenttype
+		} else {
+			msgVal.Body.ContentType = "text/plain"
+		}
+		msgrebuild = true
+	}
+	if msgrebuild {
 		if sgsip.SGSIPMessageToString(&msgVal, &smsg) != sgsip.SGSIPRetOK {
 			fmt.Fprintf(os.Stderr, "failed to rebuild sip message\n")
 			return -201
