@@ -172,6 +172,10 @@ func init() {
 	flag.StringVar(&cliops.body, "mb", cliops.body, "message body")
 	flag.StringVar(&cliops.contenttype, "content-type", cliops.contenttype, "content type")
 	flag.StringVar(&cliops.contenttype, "ct", cliops.contenttype, "content type")
+	flag.StringVar(&cliops.wsorigin, "websocket-origin", cliops.wsorigin, "websocket origin http url")
+	flag.StringVar(&cliops.wsorigin, "wso", cliops.wsorigin, "websocket origin http url")
+	flag.StringVar(&cliops.wsproto, "websocket-proto", cliops.wsproto, "websocket sub-protocol")
+	flag.StringVar(&cliops.wsproto, "wsp", cliops.wsproto, "websocket sub-protocol")
 
 	flag.BoolVar(&cliops.fieldseval, "fields-eval", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.fieldseval, "fe", cliops.fieldseval, "evaluate expression in fields file")
