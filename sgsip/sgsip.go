@@ -579,7 +579,7 @@ func SGSIPParseFirstLine(inputStr string, flineVal *SGSIPFirstLine) int {
 }
 
 // SGSIPValidHeaderName --
-func SGSIPValidHeaderName(name string) bool {
+func SGSIPHeaderValidName(name string) bool {
 	for i, r := range name {
 		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
 			if i == 0 {
@@ -617,7 +617,7 @@ func SGSIPParseHeaders(inputStr string, pMode int, headersList *[]SGSIPHeader) i
 		if len(strArray) < 2 || len(strArray[0]) == 0 || len(strArray[1]) == 0 {
 			return SGSIPRetErr
 		}
-		if !SGSIPValidHeaderName(strArray[0]) {
+		if !SGSIPHeaderValidName(strArray[0]) {
 			return SGSIPRetErr
 		}
 		hdrItem.Name = strings.TrimRight(strArray[0], " \t")
@@ -661,6 +661,22 @@ func SGSIPParseBody(inputStr string, bodyVal *SGSIPBody) int {
 	return SGSIPRetOK
 }
 
+// SGSIPMessageHeaderSet --
+func SGSIPMessageHeaderSet(msgVal *SGSIPMessage, hname string, hbody string) int {
+	for i, hdr := range msgVal.Headers {
+		if hdr.Name == hname {
+			msgVal.Headers[i].Body = strings.Trim(hbody, " \t\r")
+			return SGSIPRetOK
+		}
+	}
+	var hdrItem SGSIPHeader = SGSIPHeader{}
+	hdrItem.Name = strings.Trim(hname, " \t\r")
+	hdrItem.Body = strings.Trim(hbody, " \t\r")
+	msgVal.Headers = append(msgVal.Headers, hdrItem)
+
+	return SGSIPRetOK
+}
+
 // SGSIPParseMessage --
 func SGSIPParseMessage(inputStr string, msgVal *SGSIPMessage) int {
 	ret := SGSIPParseFirstLine(inputStr, &msgVal.FLine)
@@ -688,6 +704,13 @@ func SGSIPMessageToString(msgVal *SGSIPMessage, outputStr *string) int {
 		return SGSIPRetErr
 	}
 	sb.WriteString(msgVal.FLine.Val + "\r\n")
+
+	if msgVal.Body.ContentLen > 0 {
+		SGSIPMessageHeaderSet(msgVal, "Content-Length", strconv.Itoa(msgVal.Body.ContentLen))
+		if len(msgVal.Body.ContentType) > 0 {
+			SGSIPMessageHeaderSet(msgVal, "Content-Type", msgVal.Body.ContentType)
+		}
+	}
 
 	for _, h := range msgVal.Headers {
 		sb.WriteString(h.Name + ": " + h.Body + "\r\n")
