@@ -122,6 +122,7 @@ type CLIOptions struct {
 	wsproto          string
 	authuser         string
 	authapassword    string
+	noval            string
 	version          bool
 }
 
@@ -153,6 +154,7 @@ var cliops = CLIOptions{
 	wsproto:          "sip",
 	authuser:         "",
 	authapassword:    "",
+	noval:            "no",
 	version:          false,
 }
 
@@ -193,6 +195,7 @@ func init() {
 	flag.StringVar(&cliops.authuser, "au", cliops.authuser, "authentication user")
 	flag.StringVar(&cliops.authapassword, "auth-password", cliops.authapassword, "authentication password")
 	flag.StringVar(&cliops.authapassword, "ap", cliops.authapassword, "authentication password")
+	flag.StringVar(&cliops.noval, "no-val", cliops.noval, "no value string")
 
 	flag.BoolVar(&cliops.fieldseval, "fields-eval", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.fieldseval, "fe", cliops.fieldseval, "evaluate expression in fields file")
@@ -315,11 +318,11 @@ func main() {
 	if len(paramFields) > 0 {
 		for k := range paramFields {
 			if k == "rport" {
-				if strings.Trim(paramFields[k], " \t\r\n") == "no" {
+				if strings.Trim(paramFields[k], " \t\r\n") == cliops.noval {
 					tplfields[k] = ""
 				}
 			} else if k == "date" {
-				if strings.Trim(paramFields[k], " \t\r\n") == "no" {
+				if strings.Trim(paramFields[k], " \t\r\n") == cliops.noval {
 					delete(tplfields, "date")
 				}
 			} else {
@@ -392,7 +395,7 @@ func main() {
 		tplfields["tdomain"] = rURI.Addr
 	}
 	if len(cliops.useragent) > 0 {
-		if cliops.useragent != "no" {
+		if cliops.useragent != cliops.noval {
 			tplfields["useragent"] = cliops.useragent
 		}
 	} else {
