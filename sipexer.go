@@ -15,8 +15,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	mathrand "math/rand"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -26,6 +29,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/miconda/sipexer/sgsip"
+	"golang.org/x/net/websocket"
 )
 
 const sipexerVersion = "1.0.0"
@@ -107,6 +111,8 @@ type CLIOptions struct {
 	tlsinsecure      bool
 	tlscertificate   string
 	tlskey           string
+	wsorigin         string
+	wsproto          string
 	version          bool
 }
 
@@ -131,6 +137,8 @@ var cliops = CLIOptions{
 	tlsinsecure:      false,
 	tlscertificate:   "",
 	tlskey:           "",
+	wsorigin:         "http://127.0.0.1",
+	wsproto:          "sip",
 	version:          false,
 }
 
@@ -184,6 +192,9 @@ func init() {
 	flag.Var(&headerFields, "xh", "extra header in format 'name:body' (can be provided many times)")
 
 	flag.BoolVar(&cliops.version, "version", cliops.version, "print version")
+
+	rand.Seed(time.Now().UnixNano())
+
 }
 
 //
@@ -252,7 +263,6 @@ func main() {
 				if tplfields[k] == "$uuid" {
 					tplfields[k] = uuid.New().String()
 				} else if tplfields[k] == "$randseq" {
-					mathrand.Seed(time.Now().Unix())
 					tplfields[k] = strconv.Itoa(1 + mathrand.Intn(999999))
 				} else if tplfields[k] == "$datefull" {
 					tplfields[k] = time.Now().String()
@@ -289,10 +299,24 @@ func main() {
 		}
 	}
 
+	var wsurlp *url.URL = nil
 	dstAddr := "udp:127.0.0.1:5060"
 	if len(flag.Args()) > 0 {
 		if len(flag.Args()) == 1 {
 			dstAddr = flag.Arg(0)
+			if strings.HasPrefix(dstAddr, "wss://") ||
+				strings.HasPrefix(dstAddr, "ws://") {
+				wsurlp, err = url.Parse(dstAddr)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "invalid websocket target: %v\n", dstAddr)
+					os.Exit(-1)
+				}
+				if strings.HasPrefix(dstAddr, "wss://") {
+					dstAddr = "wss:" + wsurlp.Host
+				} else {
+					dstAddr = "ws:" + wsurlp.Host
+				}
+			}
 		} else if len(flag.Args()) == 2 {
 			dstAddr = "upd:" + flag.Arg(0) + ":" + flag.Arg(1)
 		} else if len(flag.Args()) == 3 {
@@ -372,7 +396,7 @@ func main() {
 	}
 
 	if (dstSockAddr.ProtoId != sgsip.ProtoUDP) && (dstSockAddr.ProtoId != sgsip.ProtoTCP) &&
-		(dstSockAddr.ProtoId != sgsip.ProtoTLS) {
+		(dstSockAddr.ProtoId != sgsip.ProtoTLS) && (dstSockAddr.ProtoId != sgsip.ProtoWSS) {
 		fmt.Fprintf(os.Stderr, "transport protocol not supported yet for target %s\n", dstAddr)
 		os.Exit(-1)
 	}
@@ -382,6 +406,8 @@ func main() {
 		go SIPExerSendTCP(dstSockAddr, tplstr, tplfields, tchan)
 	} else if dstSockAddr.ProtoId == sgsip.ProtoTLS {
 		go SIPExerSendTLS(dstSockAddr, tplstr, tplfields, tchan)
+	} else if dstSockAddr.ProtoId == sgsip.ProtoWSS {
+		go SIPExerSendWSS(dstSockAddr, wsurlp, tplstr, tplfields, tchan)
 	} else {
 		go SIPExerSendUDP(dstSockAddr, tplstr, tplfields, tchan)
 	}
@@ -758,5 +784,113 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	}
 	fmt.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
 		conn.RemoteAddr().String(), nRead, string(rmsg))
+	tchan <- 0
+}
+
+func SIPExerRandAlphaString(n int) string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
+}
+
+func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, tplfields map[string]interface{}, tchan chan int) {
+	var err error
+	var wsorgp *url.URL = nil
+
+	wsorgp, err = url.Parse(cliops.wsorigin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		tchan <- -100
+		return
+	}
+
+	var tlc tls.Config
+	if len(cliops.tlscertificate) > 0 && len(cliops.tlskey) > 0 {
+		var tlscert tls.Certificate
+		tlscert, err = tls.LoadX509KeyPair(cliops.tlscertificate, cliops.tlskey)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			tchan <- -102
+			return
+		}
+		tlc = tls.Config{Certificates: []tls.Certificate{tlscert}, InsecureSkipVerify: false}
+	} else {
+		tlc = tls.Config{
+			InsecureSkipVerify: false,
+		}
+	}
+	if cliops.tlsinsecure {
+		tlc.InsecureSkipVerify = true
+	}
+
+	// open ws connection
+	// ws, err := websocket.Dial(wsurl, "", wsorigin)
+	var ws *websocket.Conn = nil
+	ws, err = websocket.DialConfig(&websocket.Config{
+		Location:  wsurlp,
+		Origin:    wsorgp,
+		Protocol:  []string{cliops.wsproto},
+		Version:   13,
+		TlsConfig: &tlc,
+		Header:    http.Header{"User-Agent": {"sipexer v" + sipexerVersion}},
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		tchan <- -103
+		return
+	}
+
+	var ok bool
+	_, ok = tplfields["viaaddr"]
+	if !ok {
+		tplfields["viaaddr"] = SIPExerRandAlphaString(10) + ".invalid"
+	}
+	_, ok = tplfields["viaproto"]
+	if !ok {
+		tplfields["viaproto"] = "WSS"
+	}
+
+	fmt.Printf("local socket address: %v (%v)\n", ws.LocalAddr(), ws.LocalAddr().Network())
+	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
+
+	var smsg string = ""
+	ret := SIPExerPrepareMessage(tplstr, tplfields, &smsg)
+	if ret != 0 {
+		tchan <- ret
+		return
+	}
+	fmt.Printf("sending: [[\n%s]]\n\n", smsg)
+
+	var wmsg []byte
+	wmsg = []byte(smsg)
+
+	rmsg := make([]byte, cliops.buffersize)
+	nRead := 0
+
+	err = ws.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+	_, err = ws.Write(wmsg)
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error writing - %v\n", err)
+		tchan <- -105
+		return
+	}
+	err = ws.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+	if err != nil {
+		tchan <- -106
+		return
+	}
+	nRead, err = ws.Read(rmsg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, nRead, err)
+		tchan <- -107
+		return
+	}
+	fmt.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
+		ws.RemoteAddr().String(), nRead, string(rmsg))
 	tchan <- 0
 }
