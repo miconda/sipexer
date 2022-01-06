@@ -500,6 +500,70 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, msgV
 	return 0
 }
 
+func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgsip.SGSIPMessage, skipauth *bool, smsg *string) int {
+	if sgsip.SGSIPParseMessage(string(rmsg), sipRes) != sgsip.SGSIPRetOK {
+		fmt.Fprintf(os.Stderr, "failed to parse sip response\n%+v\n\n", string(rmsg))
+		return -109
+	}
+	if sipRes.FLine.MType != sgsip.FLineResponse {
+		return 0
+	}
+
+	if sipRes.FLine.Code >= 100 && sipRes.FLine.Code <= 199 {
+		return 100
+	}
+	if (sipRes.FLine.Code == 401) || (sipRes.FLine.Code == 407) {
+		if *skipauth {
+			return 0
+		}
+		var hbody string = ""
+		if sipRes.FLine.Code == 401 {
+			if sgsip.SGSIPMessageHeaderGet(sipRes, "WWW-Authenticate", &hbody) != sgsip.SGSIPRetOK {
+				fmt.Fprintf(os.Stderr, "failed to get WWW-Authenticate\n")
+				return -109
+			}
+		} else {
+			if sgsip.SGSIPMessageHeaderGet(sipRes, "Proxy-Authenticate", &hbody) != sgsip.SGSIPRetOK {
+				fmt.Fprintf(os.Stderr, "failed to get Proxy-Authenticate\n")
+				return -109
+			}
+		}
+		hparams := sgsip.SGSIPHeaderParseDigestAuthBody(hbody)
+		if hparams == nil {
+			fmt.Fprintf(os.Stderr, "failed to parse WWW/Proxy-Authenticate\n")
+			return -109
+		}
+		s := strings.SplitN(*smsg, " ", 3)
+		if len(s) != 3 {
+			fmt.Fprintf(os.Stderr, "failed to get method and r-uri\n")
+			return -109
+		}
+
+		hparams["method"] = s[0]
+		hparams["uri"] = s[1]
+		fmt.Printf("\nAuth params map:\n    %+v\n\n", hparams)
+		authResponse := SIPExerBuildAuthResponseBody(cliops.authuser, cliops.authapassword, hparams)
+		if len(authResponse) > 0 {
+			fmt.Printf("authentication header body: [[%s]]\n", authResponse)
+			if sipRes.FLine.Code == 401 {
+				sgsip.SGSIPMessageHeaderSet(msgVal, "Authorization", authResponse)
+			} else {
+				sgsip.SGSIPMessageHeaderSet(msgVal, "Proxy-Authorization", authResponse)
+			}
+			sgsip.SGSIPMessageCSeqUpdate(msgVal, 1)
+			if sgsip.SGSIPMessageToString(msgVal, smsg) != sgsip.SGSIPRetOK {
+				fmt.Fprintf(os.Stderr, "failed to rebuild sip message\n")
+				return -109
+			}
+			return 401
+		} else {
+			fmt.Fprintf(os.Stderr, "failed to get authentication response header\n")
+			return -109
+		}
+	}
+	return sipRes.FLine.Code
+}
+
 func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]interface{}, tchan chan int) {
 	var srcaddr *net.UDPAddr = nil
 	var dstaddr *net.UDPAddr = nil
@@ -590,6 +654,7 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	nRead := 0
 	var rcvAddr net.Addr
 	var resend bool = true
+	var skipauth bool = false
 	// retransmissions loop
 	for {
 		if resend {
@@ -634,79 +699,32 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 			tchan <- -108
 			return
 		} else {
-			// absorb 1xx responses or deal with 401/407 auth challenges
 			if nRead > 0 {
+				// absorb 1xx responses or deal with 401/407 auth challenges
 				var sipRes sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
-				if sgsip.SGSIPParseMessage(string(rmsg), &sipRes) != sgsip.SGSIPRetOK {
-					fmt.Fprintf(os.Stderr, "failed to parse sip response\n%+v\n\n", string(rmsg))
-					tchan <- -109
+				ret = SIPExerProcessResponse(&msgVal, rmsg, &sipRes, &skipauth, &smsg)
+				if ret < 0 {
+					tchan <- ret
 					return
-				}
-				if sipRes.FLine.MType != sgsip.FLineResponse {
-					break
 				}
 				fmt.Printf("response-received: from=%s bytes=%d data=[[\n%s]]\n",
 					rcvAddr.String(), nRead, string(rmsg))
-				if sipRes.FLine.Code >= 100 && sipRes.FLine.Code <= 199 {
+				if ret == 100 {
+					// 1xx response - read again, but do not send request
 					resend = false
+					rmsg = make([]byte, cliops.buffersize)
 					continue
 				}
-				if (sipRes.FLine.Code == 401) || (sipRes.FLine.Code == 407) {
-					var hbody string = ""
-					if sipRes.FLine.Code == 401 {
-						if sgsip.SGSIPMessageHeaderGet(&sipRes, "WWW-Authenticate", &hbody) != sgsip.SGSIPRetOK {
-							fmt.Fprintf(os.Stderr, "failed to get WWW-Authenticate\n")
-							tchan <- -109
-							return
-						}
-					} else {
-						if sgsip.SGSIPMessageHeaderGet(&sipRes, "Proxy-Authenticate", &hbody) != sgsip.SGSIPRetOK {
-							fmt.Fprintf(os.Stderr, "failed to get Proxy-Authenticate\n")
-							tchan <- -109
-							return
-						}
-					}
-					hparams := sgsip.SGSIPHeaderParseDigestAuthBody(hbody)
-					if hparams == nil {
-						fmt.Fprintf(os.Stderr, "failed to parse WWW/Proxy-Authenticate\n")
-						tchan <- -109
-						return
-					}
-					s := strings.SplitN(smsg, " ", 3)
-					if len(s) != 3 {
-						fmt.Fprintf(os.Stderr, "failed to get method and r-uri\n")
-						tchan <- -109
-						return
-					}
-
-					hparams["method"] = s[0]
-					hparams["uri"] = s[1]
-					fmt.Printf("\nAuth params map:\n    %+v\n\n", hparams)
-					authResponse := SIPExerBuildAuthResponseBody(cliops.authuser, cliops.authapassword, hparams)
-					if len(authResponse) > 0 {
-						fmt.Printf("authentication header body: [[%s]]\n", authResponse)
-						if sipRes.FLine.Code == 401 {
-							sgsip.SGSIPMessageHeaderSet(&msgVal, "Authorization", authResponse)
-						} else {
-							sgsip.SGSIPMessageHeaderSet(&msgVal, "Proxy-Authorization", authResponse)
-						}
-						sgsip.SGSIPMessageCSeqUpdate(&msgVal, 1)
-						if sgsip.SGSIPMessageToString(&msgVal, &smsg) != sgsip.SGSIPRetOK {
-							fmt.Fprintf(os.Stderr, "failed to rebuild sip message\n")
-							tchan <- -109
-							return
-						}
-						// send the new message
-						wmsg = []byte(smsg)
-						fmt.Printf("sending: [[\n%s]]\n\n", smsg)
-						timeoutStep = cliops.timert1
-						timeoutVal = timeoutStep
-						resend = true
-					} else {
-						fmt.Fprintf(os.Stderr, "failed to get authentication response header\n")
-						tchan <- -109
-						return
-					}
+				if ret == 401 {
+					// authentication - send the new message
+					wmsg = []byte(smsg)
+					fmt.Printf("sending: [[\n%s]]\n\n", smsg)
+					timeoutStep = cliops.timert1
+					timeoutVal = timeoutStep
+					resend = true
+					skipauth = true
+					rmsg = make([]byte, cliops.buffersize)
+					continue
 				}
 			}
 		}
