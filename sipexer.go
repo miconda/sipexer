@@ -124,6 +124,7 @@ type CLIOptions struct {
 	connectudp       bool
 	af               int
 	setdomains       bool
+	setuser          bool
 	tlsinsecure      bool
 	tlscertificate   string
 	tlskey           string
@@ -160,6 +161,7 @@ var cliops = CLIOptions{
 	connectudp:       false,
 	af:               0,
 	setdomains:       false,
+	setuser:          false,
 	tlsinsecure:      false,
 	tlscertificate:   "",
 	tlskey:           "",
@@ -199,8 +201,8 @@ func init() {
 	flag.StringVar(&cliops.method, "mt", cliops.method, "SIP method")
 	flag.StringVar(&cliops.ruri, "ruri", cliops.ruri, "request uri (r-uri)")
 	flag.StringVar(&cliops.ruri, "ru", cliops.ruri, "request uri (r-uri)")
-	flag.StringVar(&cliops.ruser, "ruser", cliops.ruser, "request uri username for destination address")
-	flag.StringVar(&cliops.ruser, "rn", cliops.ruser, "request uri username for destination address")
+	flag.StringVar(&cliops.ruser, "ruser", cliops.ruser, "request uri username for destination proxy address")
+	flag.StringVar(&cliops.ruser, "rn", cliops.ruser, "request uri username for destination proxy address")
 	flag.StringVar(&cliops.template, "template-file", cliops.template, "path to template file")
 	flag.StringVar(&cliops.template, "tf", cliops.template, "path to template file")
 	flag.StringVar(&cliops.fields, "fields-file", cliops.fields, "path to the json fields file")
@@ -242,6 +244,8 @@ func init() {
 	flag.BoolVar(&cliops.connectudp, "connect-udp", cliops.connectudp, "attempt first a connect for UDP (dial ICMP connect)")
 	flag.BoolVar(&cliops.setdomains, "set-domains", cliops.setdomains, "set From/To domains based on R-URI")
 	flag.BoolVar(&cliops.setdomains, "sd", cliops.setdomains, "set From/To domains based on R-URI")
+	flag.BoolVar(&cliops.setuser, "set-user", cliops.setuser, "set R-URI user to To-URI user for destination proxy address")
+	flag.BoolVar(&cliops.setuser, "su", cliops.setuser, "set R-URI user to To-URI user for destination proxy address")
 	flag.BoolVar(&cliops.tlsinsecure, "tls-insecure", cliops.tlsinsecure, "skip tls certificate validation (true|false)")
 	flag.BoolVar(&cliops.tlsinsecure, "ti", cliops.tlsinsecure, "skip tls certificate validation (true|false)")
 	flag.BoolVar(&cliops.register, "register", cliops.register, "set method to REGISTER")
@@ -461,7 +465,14 @@ func main() {
 		}
 	} else {
 		fmt.Printf("parsed socket address argument (%+v)\n", dstSockAddr)
-		sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.ruser, 0, &dstURI)
+		if cliops.setuser {
+			_, ok = tplfields["tuser"]
+			if ok {
+				sgsip.SGSocketAddressToSIPURI(&dstSockAddr, fmt.Sprint(tplfields["tuser"]), 0, &dstURI)
+			}
+		} else {
+			sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.ruser, 0, &dstURI)
+		}
 	}
 	if len(cliops.ruri) > 0 {
 		tplfields["ruri"] = cliops.ruri
