@@ -1093,16 +1093,6 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	tchan <- 0
 }
 
-func SIPExerRandAlphaString(n int) string {
-	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(b)
-}
-
 func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, tplfields map[string]interface{}, tchan chan int) {
 	var err error
 	var wsorgp *url.URL = nil
@@ -1238,7 +1228,19 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 }
 
 //
-// BuildAuthResponseBody - return the body for auth header in response
+// SIPExerRandAlphaString - return random alphabetic string
+func SIPExerRandAlphaString(olen int) string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+	b := make([]rune, olen)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
+}
+
+//
+// SIPExerBuildAuthResponseBody - return the body for auth header in response
 func SIPExerBuildAuthResponseBody(username string, password string, hparams map[string]string) string {
 	// https://en.wikipedia.org/wiki/Digest_access_authentication
 	// HA1
