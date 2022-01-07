@@ -269,6 +269,7 @@ func init() {
 	flag.Var(&headerFields, "xh", "extra header in format 'name:body' (can be provided many times)")
 
 	flag.BoolVar(&cliops.version, "version", cliops.version, "print version")
+	flag.BoolVar(&cliops.version, "v", cliops.version, "print version")
 
 	rand.Seed(time.Now().UnixNano())
 
@@ -286,7 +287,7 @@ func main() {
 	fmt.Printf("\n")
 
 	if cliops.version {
-		fmt.Printf("%s v%s\n", filepath.Base(os.Args[0]), sipexerVersion)
+		fmt.Printf("%s v%s\n\n", filepath.Base(os.Args[0]), sipexerVersion)
 		os.Exit(1)
 	}
 
