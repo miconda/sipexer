@@ -186,10 +186,10 @@ var cliops = CLIOptions{
 func init() {
 	// command line arguments
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage of %s (v%s):\n", filepath.Base(os.Args[0]), sipexerVersion)
-		fmt.Fprintf(os.Stderr, "    %s [options] [target]\n", filepath.Base(os.Args[0]))
-		fmt.Fprintf(os.Stderr, "    (target can be: 'host', 'proto:host', 'host:port', 'proto:host:port' or sip-uri)\n")
-		fmt.Fprintf(os.Stderr, "    (some options have short and long version)\n")
+		fmt.Fprintf(os.Stderr, "Usage of %s (v%s):\n\n", filepath.Base(os.Args[0]), sipexerVersion)
+		fmt.Fprintf(os.Stderr, "    %s [options] [target]\n\n", filepath.Base(os.Args[0]))
+		fmt.Fprintf(os.Stderr, "      * target can be: 'host', 'proto:host', 'host:port', 'proto:host:port' or sip-uri\n")
+		fmt.Fprintf(os.Stderr, "      * some options have short and long version\n\n")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
