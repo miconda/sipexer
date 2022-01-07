@@ -46,7 +46,7 @@ Call-ID: {{.callid}}
 CSeq: {{.cseqnum}} {{.method}}
 {{if .subject}}Subject: {{.subject}}{{else}}$rmeol{{end}}
 {{if .date}}Date: {{.date}}{{else}}$rmeol{{end}}
-{{if .contacturi}}Contact: {{.contacturi}}{{else}}$rmeol{{end}}
+{{if .contactbody}}Contact: {{.contactbody}}{{else}}$rmeol{{end}}
 {{if .expires}}Expires: {{.expires}}{{else}}$rmeol{{end}}
 {{if .useragent}}User-Agent: {{.useragent}}{{else}}$rmeol{{end}}
 Content-Length: 0
@@ -124,6 +124,8 @@ type CLIOptions struct {
 	authuser         string
 	authapassword    string
 	noval            string
+	contacturi       string
+	expires          string
 	version          bool
 }
 
@@ -156,6 +158,8 @@ var cliops = CLIOptions{
 	authuser:         "",
 	authapassword:    "",
 	noval:            "no",
+	contacturi:       "",
+	expires:          "",
 	version:          false,
 }
 
@@ -201,6 +205,10 @@ func init() {
 	flag.StringVar(&cliops.authapassword, "auth-password", cliops.authapassword, "authentication password")
 	flag.StringVar(&cliops.authapassword, "ap", cliops.authapassword, "authentication password")
 	flag.StringVar(&cliops.noval, "no-val", cliops.noval, "no value string")
+	flag.StringVar(&cliops.contacturi, "contact-uri", cliops.contacturi, "contact uri")
+	flag.StringVar(&cliops.contacturi, "cu", cliops.contacturi, "contact uri")
+	flag.StringVar(&cliops.expires, "expires", cliops.expires, "expires header value")
+	flag.StringVar(&cliops.expires, "ex", cliops.expires, "expires header value")
 
 	flag.BoolVar(&cliops.fieldseval, "fields-eval", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.fieldseval, "fe", cliops.fieldseval, "evaluate expression in fields file")
@@ -237,6 +245,9 @@ func init() {
 //
 // sipexer application
 func main() {
+	var err error
+	var ival int
+	var ok bool
 
 	flag.Parse()
 
@@ -273,7 +284,7 @@ func main() {
 	} else {
 		log.Fatal("missing data template file ('-t' or '--template' parameter must be provided)")
 	}
-	var err error
+
 	tplfields := make(map[string]interface{})
 	if len(cliops.fields) > 0 {
 		fieldsdata, err1 := ioutil.ReadFile(cliops.fields)
@@ -339,6 +350,24 @@ func main() {
 	if len(cliops.method) > 0 {
 		tplfields["method"] = strings.ToUpper(cliops.method)
 	}
+	if len(cliops.expires) > 0 {
+		ival, err = strconv.Atoi(cliops.expires)
+		if err != nil || ival < 0 {
+			fmt.Fprintf(os.Stderr, "invalid expires value: %s\n", cliops.expires)
+			os.Exit(-1)
+		}
+		tplfields["expires"] = cliops.expires
+	}
+	_, ok = tplfields["contactbody"]
+	if !ok {
+		if len(cliops.contacturi) > 0 {
+			if cliops.contacturi[0:1] == "<" && cliops.contacturi[len(cliops.contacturi)-1:] == ">" {
+				tplfields["contactbody"] = cliops.contacturi
+			} else {
+				tplfields["contactbody"] = "<" + cliops.contacturi + ">"
+			}
+		}
+	}
 
 	var wsurlp *url.URL = nil
 	dstAddr := "udp:127.0.0.1:5060"
@@ -381,7 +410,6 @@ func main() {
 		fmt.Printf("parsed socket address argument (%+v)\n", dstSockAddr)
 		sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.ruser, 0, &dstURI)
 	}
-	var ok bool
 	if len(cliops.ruri) > 0 {
 		tplfields["ruri"] = cliops.ruri
 	} else {
