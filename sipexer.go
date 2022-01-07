@@ -133,6 +133,7 @@ type CLIOptions struct {
 	authapassword    string
 	noval            string
 	contacturi       string
+	contactbuild     bool
 	expires          string
 	version          bool
 }
@@ -167,6 +168,7 @@ var cliops = CLIOptions{
 	authapassword:    "",
 	noval:            "no",
 	contacturi:       "",
+	contactbuild:     false,
 	expires:          "",
 	register:         false,
 	message:          false,
@@ -252,6 +254,8 @@ func init() {
 	flag.BoolVar(&cliops.publish, "publish", cliops.publish, "set method to PUBLISH")
 	flag.BoolVar(&cliops.subscribe, "subscribe", cliops.subscribe, "set method to SUBSCRIBE")
 	flag.BoolVar(&cliops.notify, "notify", cliops.notify, "set method to NOTIFY")
+	flag.BoolVar(&cliops.contactbuild, "contact-build", cliops.contactbuild, "build contact header based on local address")
+	flag.BoolVar(&cliops.contactbuild, "cb", cliops.contactbuild, "build contact header based on local address")
 
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
 	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
@@ -481,21 +485,15 @@ func main() {
 	}
 	var tret int
 	if cliops.templaterun {
-		_, ok = tplfields["viaaddr"]
-		if !ok {
-			if len(cliops.laddr) > 0 {
-				tplfields["viaaddr"] = cliops.laddr
-			} else {
-				tplfields["viaaddr"] = "127.0.0.1:55060"
-			}
-		}
-		_, ok = tplfields["viaproto"]
-		if !ok {
-			tplfields["viaproto"] = strings.ToUpper(dstSockAddr.Proto)
+		lTAddr := ""
+		if len(cliops.laddr) > 0 {
+			lTAddr = cliops.laddr
+		} else {
+			lTAddr = "127.0.0.1:55060"
 		}
 		var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
 		var smsg string = ""
-		tret = SIPExerPrepareMessage(tplstr, tplfields, &msgVal)
+		tret = SIPExerPrepareMessage(tplstr, tplfields, dstSockAddr.Proto, lTAddr, dstSockAddr.Addr+":"+dstSockAddr.Port, &msgVal)
 		if tret != 0 {
 			os.Exit(tret)
 		}
@@ -533,10 +531,20 @@ func main() {
 	os.Exit(tret)
 }
 
-func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, msgVal *sgsip.SGSIPMessage) int {
+func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rProto string, lAddr string, rAddr string, msgVal *sgsip.SGSIPMessage) int {
 	var buf bytes.Buffer
 	var tpl = template.Must(template.New("wsout").Parse(tplstr))
 	var msgrebuild bool = false
+	var ok bool = false
+
+	_, ok = tplfields["viaaddr"]
+	if !ok {
+		tplfields["viaaddr"] = lAddr
+	}
+	_, ok = tplfields["viaproto"]
+	if !ok {
+		tplfields["viaproto"] = strings.ToUpper(rProto)
+	}
 
 	tpl.Execute(&buf, tplfields)
 
@@ -686,44 +694,35 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		return
 	}
 
-	var ok bool
-	_, ok = tplfields["viaaddr"]
-	if !ok {
-		lAddr0 := conn.LocalAddr().String()
-		if strings.HasPrefix(lAddr0, "0.0.0.0:") ||
-			strings.HasPrefix(lAddr0, "[::]:") {
-			// try a connect-udp to learn local ip
-			var conn1 *net.UDPConn
-			conn1, err = net.DialUDP(strAFProto, nil, dstaddr)
-			if err != nil {
-				tchan <- -104
-				return
-			}
-			lAddr1 := conn1.LocalAddr().String()
-			lIdx0 := strings.LastIndex(lAddr0, ":")
-			lIdx1 := strings.LastIndex(lAddr1, ":")
-			tplfields["viaaddr"] = lAddr1[:lIdx1] + lAddr0[lIdx0:]
-			conn1.Close()
-		} else {
-			tplfields["viaaddr"] = conn.LocalAddr().String()
+	// get local address
+	lAddr := conn.LocalAddr().String()
+	if strings.HasPrefix(lAddr, "0.0.0.0:") ||
+		strings.HasPrefix(lAddr, "[::]:") {
+		// try a connect-udp to learn local ip
+		var conn1 *net.UDPConn
+		conn1, err = net.DialUDP(strAFProto, nil, dstaddr)
+		if err != nil {
+			tchan <- -104
+			return
 		}
+		lAddr1 := conn1.LocalAddr().String()
+		lIdx0 := strings.LastIndex(lAddr, ":")
+		lIdx1 := strings.LastIndex(lAddr1, ":")
+		lAddr = lAddr1[:lIdx1] + lAddr[lIdx0:]
+		conn1.Close()
 	}
-	_, ok = tplfields["viaproto"]
-	if !ok {
-		tplfields["viaproto"] = "UDP"
-	}
-
-	fmt.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
-	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
 
 	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
 	var smsg string = ""
-	ret := SIPExerPrepareMessage(tplstr, tplfields, &msgVal)
+	ret := SIPExerPrepareMessage(tplstr, tplfields, "udp", lAddr, dstaddr.String(), &msgVal)
 	if ret != 0 {
 		tchan <- ret
 		return
 	}
 	smsg = msgVal.Data
+
+	fmt.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
+	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
 	fmt.Printf("sending: [[\n%s]]\n\n", smsg)
 
 	var wmsg []byte
@@ -865,27 +864,17 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		return
 	}
 
-	var ok bool
-	_, ok = tplfields["viaaddr"]
-	if !ok {
-		tplfields["viaaddr"] = conn.LocalAddr().String()
-	}
-	_, ok = tplfields["viaproto"]
-	if !ok {
-		tplfields["viaproto"] = "TCP"
-	}
-
-	fmt.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
-	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
-
 	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
 	var smsg string = ""
-	ret := SIPExerPrepareMessage(tplstr, tplfields, &msgVal)
+	ret := SIPExerPrepareMessage(tplstr, tplfields, "tcp", conn.LocalAddr().String(), conn.RemoteAddr().String(), &msgVal)
 	if ret != 0 {
 		tchan <- ret
 		return
 	}
 	smsg = msgVal.Data
+
+	fmt.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
+	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
 	fmt.Printf("sending: [[\n%s]]\n\n", smsg)
 
 	var wmsg []byte
@@ -1006,27 +995,17 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	log.Println("client: handshake: ", state.HandshakeComplete)
 	log.Println("client: mutual: ", state.NegotiatedProtocolIsMutual)
 
-	var ok bool
-	_, ok = tplfields["viaaddr"]
-	if !ok {
-		tplfields["viaaddr"] = conn.LocalAddr().String()
-	}
-	_, ok = tplfields["viaproto"]
-	if !ok {
-		tplfields["viaproto"] = "TLS"
-	}
-
-	fmt.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
-	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
-
 	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
 	var smsg string = ""
-	ret := SIPExerPrepareMessage(tplstr, tplfields, &msgVal)
+	ret := SIPExerPrepareMessage(tplstr, tplfields, "tls", conn.LocalAddr().String(), conn.RemoteAddr().String(), &msgVal)
 	if ret != 0 {
 		tchan <- ret
 		return
 	}
 	smsg = msgVal.Data
+
+	fmt.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
+	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
 	fmt.Printf("sending: [[\n%s]]\n\n", smsg)
 
 	var wmsg []byte
@@ -1140,27 +1119,17 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 		return
 	}
 
-	var ok bool
-	_, ok = tplfields["viaaddr"]
-	if !ok {
-		tplfields["viaaddr"] = SIPExerRandAlphaString(10) + ".invalid"
-	}
-	_, ok = tplfields["viaproto"]
-	if !ok {
-		tplfields["viaproto"] = "WSS"
-	}
-
-	fmt.Printf("local socket address: %v (%v)\n", ws.LocalAddr(), ws.LocalAddr().Network())
-	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
-
 	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
 	var smsg string = ""
-	ret := SIPExerPrepareMessage(tplstr, tplfields, &msgVal)
+	ret := SIPExerPrepareMessage(tplstr, tplfields, "tls", ws.LocalAddr().String(), ws.RemoteAddr().String(), &msgVal)
 	if ret != 0 {
 		tchan <- ret
 		return
 	}
 	smsg = msgVal.Data
+
+	fmt.Printf("local socket address: %v (%v)\n", ws.LocalAddr(), ws.LocalAddr().Network())
+	fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
 	fmt.Printf("sending: [[\n%s]]\n\n", smsg)
 
 	var wmsg []byte
