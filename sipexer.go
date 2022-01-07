@@ -96,6 +96,14 @@ var headerFields = make(paramFieldsType)
 // CLIOptions - structure for command line options
 type CLIOptions struct {
 	method           string
+	register         bool
+	message          bool
+	options          bool
+	invite           bool
+	info             bool
+	subscribe        bool
+	publish          bool
+	notify           bool
 	ruri             string
 	ruser            string
 	body             string
@@ -160,6 +168,14 @@ var cliops = CLIOptions{
 	noval:            "no",
 	contacturi:       "",
 	expires:          "",
+	register:         false,
+	message:          false,
+	options:          false,
+	invite:           false,
+	info:             false,
+	subscribe:        false,
+	publish:          false,
+	notify:           false,
 	version:          false,
 }
 
@@ -224,6 +240,18 @@ func init() {
 	flag.BoolVar(&cliops.setdomains, "sd", cliops.setdomains, "set From/To domains based on R-URI")
 	flag.BoolVar(&cliops.tlsinsecure, "tls-insecure", cliops.tlsinsecure, "skip tls certificate validation (true|false)")
 	flag.BoolVar(&cliops.tlsinsecure, "ti", cliops.tlsinsecure, "skip tls certificate validation (true|false)")
+	flag.BoolVar(&cliops.register, "register", cliops.register, "set method to REGISTER")
+	flag.BoolVar(&cliops.register, "r", cliops.register, "set method to REGISTER")
+	flag.BoolVar(&cliops.options, "options", cliops.options, "set method to OPTIONS")
+	flag.BoolVar(&cliops.options, "o", cliops.options, "set method to OPTIONS")
+	flag.BoolVar(&cliops.message, "message", cliops.message, "set method to MESSAGE")
+	flag.BoolVar(&cliops.message, "m", cliops.message, "set method to MESSAGE")
+	flag.BoolVar(&cliops.invite, "invite", cliops.invite, "set method to INVITE")
+	flag.BoolVar(&cliops.invite, "i", cliops.invite, "set method to INVITE")
+	flag.BoolVar(&cliops.info, "info", cliops.info, "set method to INFO")
+	flag.BoolVar(&cliops.publish, "publish", cliops.publish, "set method to PUBLISH")
+	flag.BoolVar(&cliops.subscribe, "subscribe", cliops.subscribe, "set method to SUBSCRIBE")
+	flag.BoolVar(&cliops.notify, "notify", cliops.notify, "set method to NOTIFY")
 
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
 	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
@@ -347,9 +375,26 @@ func main() {
 		}
 	}
 
-	if len(cliops.method) > 0 {
+	if cliops.register {
+		tplfields["method"] = "REGISTER"
+	} else if cliops.message {
+		tplfields["method"] = "MESSAGE"
+	} else if cliops.options {
+		tplfields["method"] = "OPTIONS"
+	} else if cliops.invite {
+		tplfields["method"] = "INVITE"
+	} else if cliops.info {
+		tplfields["method"] = "INFO"
+	} else if cliops.subscribe {
+		tplfields["method"] = "SUBSCRIBE"
+	} else if cliops.publish {
+		tplfields["method"] = "PUBLISH"
+	} else if cliops.notify {
+		tplfields["method"] = "NOTIFY"
+	} else if len(cliops.method) > 0 {
 		tplfields["method"] = strings.ToUpper(cliops.method)
 	}
+
 	if len(cliops.expires) > 0 {
 		ival, err = strconv.Atoi(cliops.expires)
 		if err != nil || ival < 0 {
