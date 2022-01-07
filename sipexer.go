@@ -134,6 +134,7 @@ type CLIOptions struct {
 	noval            string
 	contacturi       string
 	contactbuild     bool
+	registerparty    bool
 	expires          string
 	version          bool
 }
@@ -178,6 +179,7 @@ var cliops = CLIOptions{
 	subscribe:        false,
 	publish:          false,
 	notify:           false,
+	registerparty:    false,
 	version:          false,
 }
 
@@ -256,6 +258,7 @@ func init() {
 	flag.BoolVar(&cliops.notify, "notify", cliops.notify, "set method to NOTIFY")
 	flag.BoolVar(&cliops.contactbuild, "contact-build", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.contactbuild, "cb", cliops.contactbuild, "build contact header based on local address")
+	flag.BoolVar(&cliops.registerparty, "register-party", cliops.registerparty, "register a third party To user")
 
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
 	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
@@ -545,6 +548,15 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 	_, ok = tplfields["viaproto"]
 	if !ok {
 		tplfields["viaproto"] = strings.ToUpper(rProto)
+	}
+
+	if cliops.register && !cliops.registerparty {
+		_, ok = tplfields["fname"]
+		if ok {
+			tplfields["tname"] = tplfields["fname"]
+		}
+		tplfields["tuser"] = tplfields["fuser"]
+		tplfields["tdomain"] = tplfields["fdomain"]
 	}
 
 	if cliops.contactbuild {
