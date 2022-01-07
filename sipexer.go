@@ -546,6 +546,10 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 		tplfields["viaproto"] = strings.ToUpper(rProto)
 	}
 
+	if cliops.contactbuild {
+		tplfields["contactbody"] = "<sip:" + lAddr + ";transport=" + strings.ToLower(rProto) + ">"
+	}
+
 	tpl.Execute(&buf, tplfields)
 
 	var smsg string
