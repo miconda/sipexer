@@ -46,7 +46,7 @@ Call-ID: {{.callid}}
 CSeq: {{.cseqnum}} {{.method}}
 {{if .subject}}Subject: {{.subject}}{{else}}$rmeol{{end}}
 {{if .date}}Date: {{.date}}{{else}}$rmeol{{end}}
-{{if .contactbody}}Contact: {{.contactbody}}{{else}}$rmeol{{end}}
+{{if .contacturi}}Contact: {{.contacturi}}{{if .contactparams}};{{.contactparams}}{{end}}{{else}}$rmeol{{end}}
 {{if .expires}}Expires: {{.expires}}{{else}}$rmeol{{end}}
 {{if .useragent}}User-Agent: {{.useragent}}{{else}}$rmeol{{end}}
 Content-Length: 0
@@ -407,13 +407,13 @@ func main() {
 		}
 		tplfields["expires"] = cliops.expires
 	}
-	_, ok = tplfields["contactbody"]
+	_, ok = tplfields["contacturi"]
 	if !ok {
 		if len(cliops.contacturi) > 0 {
 			if cliops.contacturi[0:1] == "<" && cliops.contacturi[len(cliops.contacturi)-1:] == ">" {
-				tplfields["contactbody"] = cliops.contacturi
+				tplfields["contacturi"] = cliops.contacturi
 			} else {
-				tplfields["contactbody"] = "<" + cliops.contacturi + ">"
+				tplfields["contacturi"] = "<" + cliops.contacturi + ">"
 			}
 		}
 	}
@@ -547,7 +547,7 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 	}
 
 	if cliops.contactbuild {
-		tplfields["contactbody"] = "<sip:" + lAddr + ";transport=" + strings.ToLower(rProto) + ">"
+		tplfields["contacturi"] = "<sip:" + lAddr + ";transport=" + strings.ToLower(rProto) + ">"
 	}
 
 	tpl.Execute(&buf, tplfields)
