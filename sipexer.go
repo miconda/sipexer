@@ -97,6 +97,7 @@ var headerFields = make(paramFieldsType)
 type CLIOptions struct {
 	method           string
 	ruri             string
+	ruser            string
 	body             string
 	contenttype      string
 	laddr            string
@@ -172,6 +173,8 @@ func init() {
 	flag.StringVar(&cliops.method, "mt", cliops.method, "SIP method")
 	flag.StringVar(&cliops.ruri, "ruri", cliops.ruri, "request uri (r-uri)")
 	flag.StringVar(&cliops.ruri, "ru", cliops.ruri, "request uri (r-uri)")
+	flag.StringVar(&cliops.ruser, "ruser", cliops.ruser, "request uri username for destination address")
+	flag.StringVar(&cliops.ruser, "rn", cliops.ruser, "request uri username for destination address")
 	flag.StringVar(&cliops.template, "template-file", cliops.template, "path to template file")
 	flag.StringVar(&cliops.template, "tf", cliops.template, "path to template file")
 	flag.StringVar(&cliops.fields, "fields-file", cliops.fields, "path to the json fields file")
@@ -374,7 +377,7 @@ func main() {
 		}
 	} else {
 		fmt.Printf("parsed socket address argument (%+v)\n", dstSockAddr)
-		sgsip.SGSocketAddressToSIPURI(&dstSockAddr, 0, &dstURI)
+		sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.ruser, 0, &dstURI)
 	}
 	var ok bool
 	if len(cliops.ruri) > 0 {
