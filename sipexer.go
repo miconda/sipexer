@@ -1101,24 +1101,58 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 	rmsg := make([]byte, cliops.buffersize)
 	nRead := 0
 
-	err = ws.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
-	_, err = ws.Write(wmsg)
+	var skipauth bool = false
+	for {
+		err = ws.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+		_, err = ws.Write(wmsg)
 
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error writing - %v\n", err)
-		tchan <- -105
-		return
-	}
-	err = ws.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
-	if err != nil {
-		tchan <- -106
-		return
-	}
-	nRead, err = ws.Read(rmsg)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, nRead, err)
-		tchan <- -107
-		return
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error writing - %v\n", err)
+			tchan <- -105
+			return
+		}
+		err = ws.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+		if err != nil {
+			tchan <- -106
+			return
+		}
+		nRead, err = ws.Read(rmsg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, nRead, err)
+			tchan <- -107
+			return
+		}
+		if nRead > 0 {
+			// absorb 1xx responses or deal with 401/407 auth challenges
+			var sipRes sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
+			ret = SIPExerProcessResponse(&msgVal, rmsg, &sipRes, &skipauth, &smsg)
+			if ret < 0 {
+				tchan <- ret
+				return
+			}
+			fmt.Printf("response-received: from=%s bytes=%d data=[[\n%s]]\n",
+				ws.RemoteAddr().String(), nRead, string(rmsg))
+			if ret == 100 {
+				// 1xx response - read again, but do not send request
+				rmsg = make([]byte, cliops.buffersize)
+				continue
+			}
+			if (ret == 401) || (ret == 407) {
+				if skipauth {
+					tchan <- ret
+					return
+				}
+				// authentication - send the new message
+				wmsg = []byte(smsg)
+				fmt.Printf("sending: [[\n%s]]\n\n", smsg)
+				skipauth = true
+				rmsg = make([]byte, cliops.buffersize)
+				continue
+			}
+			tchan <- ret
+			return
+		}
+		break
 	}
 	fmt.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
 		ws.RemoteAddr().String(), nRead, string(rmsg))
