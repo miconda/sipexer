@@ -454,13 +454,18 @@ func SGSIPURIToSocketAddress(uri *SGSIPURI, sockaddr *SGSIPSocketAddress) int {
 }
 
 // SGSocketAddressToSIPURI --
-func SGSocketAddressToSIPURI(sockaddr *SGSIPSocketAddress, tmode int, uri *SGSIPURI) int {
+func SGSocketAddressToSIPURI(sockaddr *SGSIPSocketAddress, user string, tmode int, uri *SGSIPURI) int {
 	if len(sockaddr.Proto) > 0 {
 		uri.Proto = sockaddr.Proto
 		uri.ProtoId = sockaddr.ProtoId
 	} else {
 		uri.Proto = "udp"
 		uri.ProtoId = ProtoUDP
+	}
+	upart := ""
+	if len(user) > 0 {
+		uri.User = user
+		upart = user + "@"
 	}
 	if len(sockaddr.Addr) > 0 {
 		uri.Addr = sockaddr.Addr
@@ -480,9 +485,9 @@ func SGSocketAddressToSIPURI(sockaddr *SGSIPSocketAddress, tmode int, uri *SGSIP
 	uri.SchemaId = SchemaSIP
 
 	if tmode == 0 && uri.ProtoId == ProtoUDP {
-		uri.Val = uri.Schema + ":" + sockaddr.Addr + ":" + sockaddr.Port
+		uri.Val = uri.Schema + ":" + upart + sockaddr.Addr + ":" + sockaddr.Port
 	} else {
-		uri.Val = uri.Schema + ":" + sockaddr.Addr + ":" + sockaddr.Port + ";transport=" + sockaddr.Proto
+		uri.Val = uri.Schema + ":" + upart + sockaddr.Addr + ":" + sockaddr.Port + ";transport=" + sockaddr.Proto
 	}
 
 	return SGSIPRetOK
