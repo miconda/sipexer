@@ -137,6 +137,7 @@ type CLIOptions struct {
 	contactbuild     bool
 	registerparty    bool
 	expires          string
+	raw              bool
 	version          bool
 }
 
@@ -182,6 +183,7 @@ var cliops = CLIOptions{
 	publish:          false,
 	notify:           false,
 	registerparty:    false,
+	raw:              false,
 	version:          false,
 }
 
@@ -263,6 +265,7 @@ func init() {
 	flag.BoolVar(&cliops.contactbuild, "contact-build", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.contactbuild, "cb", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.registerparty, "register-party", cliops.registerparty, "register a third party To user")
+	flag.BoolVar(&cliops.raw, "raw", cliops.registerparty, "sent raw template content (no evaluation)")
 
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
 	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
@@ -552,6 +555,11 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 	var msgrebuild bool = false
 	var ok bool = false
 
+	if cliops.raw {
+		msgVal.Data = tplstr
+		return 0
+	}
+
 	_, ok = tplfields["viaaddr"]
 	if !ok {
 		tplfields["viaaddr"] = lAddr
@@ -626,9 +634,14 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 		return 0
 	}
 
+	if cliops.raw {
+		return sipRes.FLine.Code
+	}
+
 	if sipRes.FLine.Code >= 100 && sipRes.FLine.Code <= 199 {
 		return sipRes.FLine.Code
 	}
+
 	if (sipRes.FLine.Code == 401) || (sipRes.FLine.Code == 407) {
 		if *skipauth {
 			return sipRes.FLine.Code
