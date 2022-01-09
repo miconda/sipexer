@@ -155,15 +155,17 @@ When the `--fields-eval` of `-fe` cli option is provided, `sipexer` evaluates th
 fields in the root structure of the JSON document. That means special tokens (expressions)
 are replaced if the value of the field is a string matching one of the next:
 
-  * `"$uuid"` - replace with a UUID value
-  * `"$randseq"` - replace with a random number from `1` to `1 000 000`.
+  * `"$cr"` - replace with `\r`
+  * `"$dateansic"` - replace with output of `time.Now().Format(time.ANSIC)`
   * `"$datefull"` - replace with output of `time.Now().String()`
   * `"$daterfc1123"` - replace with output of `time.Now().Format(time.RFC1123)`
-  * `"$dateansic"` - replace with output of `time.Now().Format(time.ANSIC)`
   * `"$dateunix"` - replace with output of `time.Now().Format(time.UnixDate)`
+  * `"$randseq"` - replace with a random number from `1` to `1 000 000`
+  * `"$rand(max)"` - replace with a random number from `0` to `max`
+  * `"$rand(min,max)"` - replace with a random number from `min` to `max`
   * `"$timestamp"` - replace with output of `time.Now().Unix()`
-  * `"$cr"` - replace with `\r`
   * `"$lf"` - replace with `\n`
+  * `"$uuid"` - replace with a UUID value
 
 When internal template is used, `--fields-eval` is turned on.
 
@@ -198,7 +200,8 @@ The value provided via `--field-val` overwrites the value provided in the
 JSON fields file.
 
 When sending out, before the template is evaluated, the following fields are also
-added internally and will replace the corresponding `{{.name}}` in the template:
+added internally and will replace the corresponding `{{.name}}` (e.g., `{{.proto}}`)
+in the template:
 
   * `proto` - lower(`proto`)
   * `protoup` - upper(`proto`)
