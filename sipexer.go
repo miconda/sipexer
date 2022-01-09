@@ -138,6 +138,7 @@ type CLIOptions struct {
 	registerparty    bool
 	expires          string
 	raw              bool
+	noparse          bool
 	version          bool
 }
 
@@ -184,6 +185,7 @@ var cliops = CLIOptions{
 	notify:           false,
 	registerparty:    false,
 	raw:              false,
+	noparse:          false,
 	version:          false,
 }
 
@@ -266,6 +268,7 @@ func init() {
 	flag.BoolVar(&cliops.contactbuild, "cb", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.registerparty, "register-party", cliops.registerparty, "register a third party To user")
 	flag.BoolVar(&cliops.raw, "raw", cliops.registerparty, "sent raw template content (no evaluation)")
+	flag.BoolVar(&cliops.noparse, "no-parse", cliops.noparse, "no SIP message parsing of input template result")
 
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
 	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
@@ -585,10 +588,33 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 	tpl.Execute(&buf, tplfields)
 
 	var smsg string
-	if cliops.nocrlf {
-		smsg = strings.Replace(buf.String(), "$rmeol\n", "", -1)
-	} else {
-		smsg = strings.Replace(strings.Replace(buf.String(), "$rmeol\n", "", -1), "\n", "\r\n", -1)
+	smsg = strings.Replace(buf.String(), "$rmeol\n", "", -1)
+	if !cliops.nocrlf {
+		eohPos := strings.Index(smsg, "\r\n\r\n")
+		if eohPos < 0 {
+			// replace LF (\n) with CRLF (\r\n) over the headers part
+			eohPos = strings.Index(smsg, "\n\n")
+			if eohPos < 0 {
+				// set proper end of headers
+				if smsg[len(smsg)-1:] == "\n" {
+					smsg += "\n"
+				} else {
+					smsg += "\n\n"
+				}
+				smsg = strings.Replace(smsg, "\n", "\r\n", -1)
+			} else {
+				if eohPos == len(smsg)-2 {
+					smsg = strings.Replace(smsg, "\n", "\r\n", -1)
+				} else {
+					smsg = strings.Replace(smsg[0:eohPos+2], "\n", "\r\n", -1) + smsg[eohPos+2:]
+				}
+			}
+		}
+	}
+
+	if cliops.noparse {
+		msgVal.Data = smsg
+		return 0
 	}
 
 	if sgsip.SGSIPParseMessage(smsg, msgVal) != sgsip.SGSIPRetOK {
@@ -634,7 +660,8 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 		return 0
 	}
 
-	if cliops.raw {
+	if cliops.raw || cliops.noparse {
+		// input not parsed -- no further processing
 		return sipRes.FLine.Code
 	}
 
