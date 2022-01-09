@@ -197,6 +197,22 @@ sipexer --field-val="domain:openrcs.com" ...
 The value provided via `--field-val` overwrites the value provided in the
 JSON fields file.
 
+When sending out, before the template is evaluated, the following fields are also
+added internally and will replace the corresponding `{{.name}}` in the template:
+
+  * `proto` - lower(`proto`)
+  * `protoup` - upper(`proto`)
+  * `localaddr` - local address - `ip:port`
+  * `localip` - local ip
+  * `localport` - local port
+  * `targetaddr` - remote address - `ip:port`
+  * `targetip` - remote ip
+  * `targetport` - remote port
+  * `cr` - `\r`
+  * `lf` - `\n`
+  * `tab` - `\t`
+
+
 ## Alternatives ##
 
 There are several alternatives that might be useful to consider:
