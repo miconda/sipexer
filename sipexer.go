@@ -372,6 +372,20 @@ func main() {
 					tplfields[k] = "\r"
 				} else if tplfields[k] == "$lf" {
 					tplfields[k] = "\n"
+				} else {
+					sVal := fmt.Sprint(tplfields[k])
+					if strings.Index(sVal, "$rand(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
+						sVal = sVal[6 : len(sVal)-1]
+						sArr := strings.Split(sVal, ",")
+						if len(sArr) == 1 {
+							nVal, _ := strconv.Atoi(sArr[0])
+							tplfields[k] = strconv.Itoa(mathrand.Intn(nVal))
+						} else {
+							nValA, _ := strconv.Atoi(sArr[0])
+							nValB, _ := strconv.Atoi(sArr[1])
+							tplfields[k] = strconv.Itoa(nValA + mathrand.Intn(nValB-nValA))
+						}
+					}
 				}
 				break
 			}
