@@ -563,6 +563,20 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 		return 0
 	}
 
+	tplfields["proto"] = strings.ToLower(rProto)
+	tplfields["protoup"] = strings.ToUpper(rProto)
+	tplfields["localaddr"] = lAddr
+	colPos := strings.LastIndex(lAddr, ":")
+	tplfields["localip"] = lAddr[0:colPos]
+	tplfields["localport"] = lAddr[colPos+1:]
+	tplfields["targetaddr"] = rAddr
+	colPos = strings.LastIndex(rAddr, ":")
+	tplfields["targetip"] = rAddr[0:colPos]
+	tplfields["targetport"] = rAddr[colPos+1:]
+	tplfields["cr"] = "\r"
+	tplfields["lf"] = "\n"
+	tplfields["tab"] = "\t"
+
 	_, ok = tplfields["viaaddr"]
 	if !ok {
 		tplfields["viaaddr"] = lAddr
