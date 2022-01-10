@@ -327,7 +327,7 @@ func main() {
 		tpldata, err1 := ioutil.ReadFile(cliops.template)
 		if err1 != nil {
 			if cliops.verbosity > 0 {
-				log.Fatal(err1)
+				log.Printf("error: %v\n", err1)
 			}
 			os.Exit(-1)
 		}
@@ -336,7 +336,7 @@ func main() {
 		tplstr = templateDefaultText
 	} else {
 		if cliops.verbosity > 0 {
-			log.Fatal("missing data template file ('-t' or '--template' parameter must be provided)")
+			log.Printf("missing data template file ('-tf' or '--template' parameter must be provided)\n")
 		}
 		os.Exit(-1)
 	}
@@ -346,14 +346,14 @@ func main() {
 		fieldsdata, err1 := ioutil.ReadFile(cliops.fields)
 		if err1 != nil {
 			if cliops.verbosity > 0 {
-				log.Fatal(err1)
+				log.Printf("error: %v\n", err1)
 			}
 			os.Exit(-1)
 		}
 		err = json.Unmarshal(fieldsdata, &tplfields)
 		if err != nil {
 			if cliops.verbosity > 0 {
-				log.Fatal(err)
+				log.Printf("error: %v\n", err)
 			}
 			os.Exit(-1)
 		}
@@ -361,7 +361,7 @@ func main() {
 		err = json.Unmarshal([]byte(templateDefaultJSONFields), &tplfields)
 		if err != nil {
 			if cliops.verbosity > 0 {
-				log.Fatal(err)
+				log.Printf("error: %v\n", err)
 			}
 			os.Exit(-1)
 		}
@@ -455,7 +455,7 @@ func main() {
 		ival, err = strconv.Atoi(cliops.expires)
 		if err != nil || ival < 0 {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "invalid expires value: %s\n", cliops.expires)
+				log.Printf("invalid expires value: %s\n", cliops.expires)
 			}
 			os.Exit(-1)
 		}
@@ -482,7 +482,7 @@ func main() {
 				wsurlp, err = url.Parse(dstAddr)
 				if err != nil {
 					if cliops.verbosity > 0 {
-						fmt.Fprintf(os.Stderr, "invalid websocket target: %v\n", dstAddr)
+						log.Printf("invalid websocket target: %v\n", dstAddr)
 					}
 					os.Exit(-1)
 				}
@@ -498,7 +498,7 @@ func main() {
 			dstAddr = flag.Arg(0) + ":" + flag.Arg(1) + ":" + flag.Arg(2)
 		} else {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "invalid number of arguments : %d\n", len(flag.Args()))
+				log.Printf("invalid number of arguments : %d\n", len(flag.Args()))
 			}
 			os.Exit(-1)
 		}
@@ -508,18 +508,18 @@ func main() {
 	if sgsip.SGSIPParseSocketAddress(dstAddr, &dstSockAddr) != sgsip.SGSIPRetOK {
 		if sgsip.SGSIPParseURI(dstAddr, &dstURI) != sgsip.SGSIPRetOK {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "invalid destination address: %s\n", dstAddr)
+				log.Printf("invalid destination address: %s\n", dstAddr)
 			}
 			os.Exit(-1)
 		} else {
 			if cliops.verbosity > 2 {
-				fmt.Printf("parsed SIP URI argument (%+v)\n", dstURI)
+				log.Printf("parsed SIP URI argument (%+v)\n", dstURI)
 			}
 			sgsip.SGSIPURIToSocketAddress(&dstURI, &dstSockAddr)
 		}
 	} else {
 		if cliops.verbosity > 2 {
-			fmt.Printf("parsed socket address argument (%+v)\n", dstSockAddr)
+			log.Printf("parsed socket address argument (%+v)\n", dstSockAddr)
 		}
 		if cliops.setuser {
 			_, ok = tplfields["tuser"]
@@ -542,7 +542,7 @@ func main() {
 		var rURI = sgsip.SGSIPURI{}
 		if sgsip.SGSIPParseURI(fmt.Sprint(tplfields["ruri"]), &rURI) != sgsip.SGSIPRetOK {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "invalid ruri: %v\n", tplfields["ruri"])
+				log.Printf("invalid ruri: %v\n", tplfields["ruri"])
 			}
 			os.Exit(-1)
 		}
@@ -574,7 +574,7 @@ func main() {
 		msgVal = sgsip.SGSIPMessage{}
 		if sgsip.SGSIPParseMessage(smsg, &msgVal) != sgsip.SGSIPRetOK {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "failed to parse sip message\n%+v\n\n", smsg)
+				log.Printf("failed to parse sip message\n%+v\n\n", smsg)
 			}
 			os.Exit(-1)
 		}
@@ -589,7 +589,7 @@ func main() {
 	if (dstSockAddr.ProtoId != sgsip.ProtoUDP) && (dstSockAddr.ProtoId != sgsip.ProtoTCP) &&
 		(dstSockAddr.ProtoId != sgsip.ProtoTLS) && (dstSockAddr.ProtoId != sgsip.ProtoWSS) {
 		if cliops.verbosity > 0 {
-			fmt.Fprintf(os.Stderr, "transport protocol not supported yet for target %s\n", dstAddr)
+			log.Printf("transport protocol not supported yet for target %s\n", dstAddr)
 		}
 		os.Exit(-1)
 	}
@@ -607,7 +607,7 @@ func main() {
 	tret = <-tchan
 	close(tchan)
 	if cliops.verbosity > 2 {
-		fmt.Printf("return code: %d\n\n", tret)
+		log.Printf("return code: %d\n\n", tret)
 	}
 	os.Exit(tret)
 }
@@ -693,7 +693,7 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 
 	if sgsip.SGSIPParseMessage(smsg, msgVal) != sgsip.SGSIPRetOK {
 		if cliops.verbosity > 0 {
-			fmt.Fprintf(os.Stderr, "failed to parse sip message\n%+v\n\n", smsg)
+			log.Printf("failed to parse sip message\n%+v\n\n", smsg)
 		}
 		return -200
 	}
@@ -720,7 +720,7 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 	if msgrebuild {
 		if sgsip.SGSIPMessageToString(msgVal, &smsg) != sgsip.SGSIPRetOK {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "failed to rebuild sip message\n")
+				log.Printf("failed to rebuild sip message\n")
 			}
 			return -201
 		}
@@ -732,7 +732,7 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgsip.SGSIPMessage, skipauth *bool, smsg *string) int {
 	if sgsip.SGSIPParseMessage(string(rmsg), sipRes) != sgsip.SGSIPRetOK {
 		if cliops.verbosity > 0 {
-			fmt.Fprintf(os.Stderr, "failed to parse sip response\n%+v\n\n", string(rmsg))
+			log.Printf("failed to parse sip response\n%+v\n\n", string(rmsg))
 		}
 		return -109
 	}
@@ -757,14 +757,14 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 		if sipRes.FLine.Code == 401 {
 			if sgsip.SGSIPMessageHeaderGet(sipRes, "WWW-Authenticate", &hbody) != sgsip.SGSIPRetOK {
 				if cliops.verbosity > 0 {
-					fmt.Fprintf(os.Stderr, "failed to get WWW-Authenticate\n")
+					log.Printf("failed to get WWW-Authenticate\n")
 				}
 				return -109
 			}
 		} else {
 			if sgsip.SGSIPMessageHeaderGet(sipRes, "Proxy-Authenticate", &hbody) != sgsip.SGSIPRetOK {
 				if cliops.verbosity > 0 {
-					fmt.Fprintf(os.Stderr, "failed to get Proxy-Authenticate\n")
+					log.Printf("failed to get Proxy-Authenticate\n")
 				}
 				return -109
 			}
@@ -772,25 +772,27 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 		hparams := sgsip.SGSIPHeaderParseDigestAuthBody(hbody)
 		if hparams == nil {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "failed to parse WWW/Proxy-Authenticate\n")
+				log.Printf("failed to parse WWW/Proxy-Authenticate\n")
 			}
 			return -109
 		}
 		s := strings.SplitN(*smsg, " ", 3)
 		if len(s) != 3 {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "failed to get method and r-uri\n")
+				log.Printf("failed to get method and r-uri\n")
 			}
 			return -109
 		}
 
 		hparams["method"] = s[0]
 		hparams["uri"] = s[1]
-		fmt.Printf("\nAuth params map:\n    %+v\n\n", hparams)
+		if cliops.verbosity > 2 {
+			log.Printf("\nAuth params map:\n    %+v\n\n", hparams)
+		}
 		authResponse := SIPExerBuildAuthResponseBody(cliops.authuser, cliops.authapassword, hparams)
 		if len(authResponse) > 0 {
 			if cliops.verbosity > 2 {
-				fmt.Printf("authentication header body: [[%s]]\n", authResponse)
+				log.Printf("authentication header body: [[%s]]\n", authResponse)
 			}
 			if sipRes.FLine.Code == 401 {
 				sgsip.SGSIPMessageHeaderSet(msgVal, "Authorization", authResponse)
@@ -800,14 +802,14 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 			sgsip.SGSIPMessageCSeqUpdate(msgVal, 1)
 			if sgsip.SGSIPMessageToString(msgVal, smsg) != sgsip.SGSIPRetOK {
 				if cliops.verbosity > 0 {
-					fmt.Fprintf(os.Stderr, "failed to rebuild sip message\n")
+					log.Printf("failed to rebuild sip message\n")
 				}
 				return -109
 			}
 			return sipRes.FLine.Code
 		} else {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "failed to get authentication response header\n")
+				log.Printf("failed to get authentication response header\n")
 			}
 			return -109
 		}
@@ -883,9 +885,9 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	}
 	smsg = msgVal.Data
 	if cliops.verbosity > 1 {
-		fmt.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
-		fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
-		fmt.Printf("sending: [[\n%s]]\n\n", smsg)
+		log.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
+		log.Printf("local via address: %v\n", tplfields["viaaddr"])
+		log.Printf("sending: [[\n%s]]\n\n", smsg)
 	}
 
 	var wmsg []byte
@@ -908,7 +910,7 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 			}
 			if err != nil {
 				if cliops.verbosity > 0 {
-					fmt.Fprintf(os.Stderr, "error writing - %v\n", err)
+					log.Printf("error writing - %v\n", err)
 				}
 				tchan <- -105
 				return
@@ -923,12 +925,12 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		nRead, rcvAddr, err = conn.ReadFromUDP(rmsg)
 		if err != nil {
 			if cliops.verbosity > 2 {
-				fmt.Fprintf(os.Stderr, "not receiving after %dms (bytes %d - %v)\n", timeoutVal, nRead, err)
+				log.Printf("not receiving after %dms (bytes %d - %v)\n", timeoutVal, nRead, err)
 			}
 			if cliops.connectudp {
 				if strings.Contains(err.Error(), "recvfrom: connection refused") {
 					if cliops.verbosity > 0 {
-						fmt.Fprintf(os.Stderr, "stop receiving - ICMP error\n")
+						log.Printf("stop receiving - ICMP error\n")
 					}
 					tchan <- -107
 					return
@@ -942,12 +944,12 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 			timeoutVal += timeoutStep
 			if timeoutVal <= cliops.timeout {
 				if cliops.verbosity > 1 {
-					fmt.Fprintf(os.Stderr, "trying again - new timeout at %dms\n", timeoutVal)
+					log.Printf("trying again - new timeout at %dms\n", timeoutVal)
 				}
 				continue
 			}
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "error reading - bytes %d - %v\n", nRead, err)
+				log.Printf("error reading - bytes %d - %v\n", nRead, err)
 			}
 			tchan <- -108
 			return
@@ -961,7 +963,7 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 					return
 				}
 				if cliops.verbosity > 1 {
-					fmt.Printf("response-received: from=%s bytes=%d data=[[\n%s]]\n",
+					log.Printf("response-received: from=%s bytes=%d data=[[\n%s]]\n",
 						rcvAddr.String(), nRead, string(rmsg))
 				}
 				if ret/100 == 1 {
@@ -978,7 +980,7 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 					// authentication - send the new message
 					wmsg = []byte(smsg)
 					if cliops.verbosity > 1 {
-						fmt.Printf("sending: [[\n%s]]\n\n", smsg)
+						log.Printf("sending: [[\n%s]]\n\n", smsg)
 					}
 					timeoutStep = cliops.timert1
 					timeoutVal = timeoutStep
@@ -995,7 +997,7 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	}
 
 	if cliops.verbosity > 1 {
-		fmt.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
+		log.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
 			rcvAddr.String(), nRead, string(rmsg))
 	}
 	tchan <- 0
@@ -1022,7 +1024,7 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		srcaddr, err = net.ResolveTCPAddr(strAFProto, cliops.laddr)
 		if err != nil {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				log.Printf("error: %v\n", err)
 			}
 			tchan <- -100
 			return
@@ -1031,7 +1033,7 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	dstaddr, err = net.ResolveTCPAddr(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port)
 	if err != nil {
 		if cliops.verbosity > 0 {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			log.Printf("error: %v\n", err)
 		}
 		tchan <- -101
 		return
@@ -1043,7 +1045,7 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	defer conn.Close()
 	if err != nil {
 		if cliops.verbosity > 0 {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			log.Printf("error: %v\n", err)
 		}
 		tchan <- -103
 		return
@@ -1059,9 +1061,9 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	smsg = msgVal.Data
 
 	if cliops.verbosity > 1 {
-		fmt.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
-		fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
-		fmt.Printf("sending: [[\n%s]]\n\n", smsg)
+		log.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
+		log.Printf("local via address: %v\n", tplfields["viaaddr"])
+		log.Printf("sending: [[\n%s]]\n\n", smsg)
 	}
 
 	var wmsg []byte
@@ -1077,7 +1079,7 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 
 		if err != nil {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "error writing - %v\n", err)
+				log.Printf("error writing - %v\n", err)
 			}
 			tchan <- -105
 			return
@@ -1086,7 +1088,7 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		err = conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
 		if err != nil {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				log.Printf("error: %v\n", err)
 			}
 			tchan <- -106
 			return
@@ -1094,7 +1096,7 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		nRead, err = conn.Read(rmsg)
 		if err != nil {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, nRead, err)
+				log.Printf("not receiving after %dms (bytes %d - %v)\n", cliops.timeout, nRead, err)
 			}
 			tchan <- -107
 			return
@@ -1108,7 +1110,7 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 				return
 			}
 			if cliops.verbosity > 1 {
-				fmt.Printf("response-received: from=%s bytes=%d data=[[\n%s]]\n",
+				log.Printf("response-received: from=%s bytes=%d data=[[\n%s]]\n",
 					dstaddr.String(), nRead, string(rmsg))
 			}
 			if ret == 100 {
@@ -1124,7 +1126,7 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 				// authentication - send the new message
 				wmsg = []byte(smsg)
 				if cliops.verbosity > 1 {
-					fmt.Printf("sending: [[\n%s]]\n\n", smsg)
+					log.Printf("sending: [[\n%s]]\n\n", smsg)
 				}
 				skipauth = true
 				rmsg = make([]byte, cliops.buffersize)
@@ -1136,7 +1138,7 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		break
 	}
 	if cliops.verbosity > 1 {
-		fmt.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
+		log.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
 			dstaddr.String(), nRead, string(rmsg))
 	}
 	tchan <- 0
@@ -1163,7 +1165,7 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		tlscert, err = tls.LoadX509KeyPair(cliops.tlscertificate, cliops.tlskey)
 		if err != nil {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				log.Printf("error: %v\n", err)
 			}
 			tchan <- -102
 			return
@@ -1182,7 +1184,7 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	conn, err = tls.Dial(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port, &tlc)
 	if err != nil {
 		if cliops.verbosity > 0 {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			log.Printf("error: %v\n", err)
 		}
 		tchan <- -103
 		return
@@ -1190,11 +1192,11 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	defer conn.Close()
 
 	if cliops.verbosity > 2 {
-		fmt.Println("client: ", conn.LocalAddr(), "connected to: ", conn.RemoteAddr())
+		log.Println("client: ", conn.LocalAddr(), "connected to: ", conn.RemoteAddr())
 		state := conn.ConnectionState()
 		for _, v := range state.PeerCertificates {
-			fmt.Println(x509.MarshalPKIXPublicKey(v.PublicKey))
-			fmt.Println(v.Subject)
+			log.Println(x509.MarshalPKIXPublicKey(v.PublicKey))
+			log.Println(v.Subject)
 		}
 		log.Println("client: handshake: ", state.HandshakeComplete)
 		log.Println("client: mutual: ", state.NegotiatedProtocolIsMutual)
@@ -1210,9 +1212,9 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	smsg = msgVal.Data
 
 	if cliops.verbosity > 1 {
-		fmt.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
-		fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
-		fmt.Printf("sending: [[\n%s]]\n\n", smsg)
+		log.Printf("local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
+		log.Printf("local via address: %v\n", tplfields["viaaddr"])
+		log.Printf("sending: [[\n%s]]\n\n", smsg)
 	}
 
 	var wmsg []byte
@@ -1228,7 +1230,7 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 
 		if err != nil {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "error writing - %v\n", err)
+				log.Printf("error writing - %v\n", err)
 			}
 			tchan <- -105
 			return
@@ -1241,7 +1243,7 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		nRead, err = conn.Read(rmsg)
 		if err != nil {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, nRead, err)
+				log.Printf("not receiving after %dms (bytes %d - %v)\n", cliops.timeout, nRead, err)
 			}
 			tchan <- -107
 			return
@@ -1255,7 +1257,7 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 				return
 			}
 			if cliops.verbosity > 1 {
-				fmt.Printf("response-received: from=%s bytes=%d data=[[\n%s]]\n",
+				log.Printf("response-received: from=%s bytes=%d data=[[\n%s]]\n",
 					conn.RemoteAddr().String(), nRead, string(rmsg))
 			}
 			if ret == 100 {
@@ -1271,7 +1273,7 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 				// authentication - send the new message
 				wmsg = []byte(smsg)
 				if cliops.verbosity > 0 {
-					fmt.Printf("sending: [[\n%s]]\n\n", smsg)
+					log.Printf("sending: [[\n%s]]\n\n", smsg)
 				}
 				skipauth = true
 				rmsg = make([]byte, cliops.buffersize)
@@ -1283,7 +1285,7 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		break
 	}
 	if cliops.verbosity > 0 {
-		fmt.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
+		log.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
 			conn.RemoteAddr().String(), nRead, string(rmsg))
 	}
 	tchan <- 0
@@ -1296,7 +1298,7 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 	wsorgp, err = url.Parse(cliops.wsorigin)
 	if err != nil {
 		if cliops.verbosity > 0 {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			log.Printf("error: %v\n", err)
 		}
 		tchan <- -100
 		return
@@ -1308,7 +1310,7 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 		tlscert, err = tls.LoadX509KeyPair(cliops.tlscertificate, cliops.tlskey)
 		if err != nil {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				log.Printf("error: %v\n", err)
 			}
 			tchan <- -102
 			return
@@ -1336,7 +1338,7 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 	})
 	if err != nil {
 		if cliops.verbosity > 0 {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			log.Printf("error: %v\n", err)
 		}
 		tchan <- -103
 		return
@@ -1352,9 +1354,9 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 	smsg = msgVal.Data
 
 	if cliops.verbosity > 1 {
-		fmt.Printf("local socket address: %v (%v)\n", ws.LocalAddr(), ws.LocalAddr().Network())
-		fmt.Printf("local via address: %v\n", tplfields["viaaddr"])
-		fmt.Printf("sending: [[\n%s]]\n\n", smsg)
+		log.Printf("local socket address: %v (%v)\n", ws.LocalAddr(), ws.LocalAddr().Network())
+		log.Printf("local via address: %v\n", tplfields["viaaddr"])
+		log.Printf("sending: [[\n%s]]\n\n", smsg)
 	}
 
 	var wmsg []byte
@@ -1370,7 +1372,7 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 
 		if err != nil {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "error writing - %v\n", err)
+				log.Printf("error writing - %v\n", err)
 			}
 			tchan <- -105
 			return
@@ -1383,7 +1385,7 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 		nRead, err = ws.Read(rmsg)
 		if err != nil {
 			if cliops.verbosity > 0 {
-				fmt.Fprintf(os.Stderr, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, nRead, err)
+				log.Printf("not receiving after %dms (bytes %d - %v)\n", cliops.timeout, nRead, err)
 			}
 			tchan <- -107
 			return
@@ -1397,7 +1399,7 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 				return
 			}
 			if cliops.verbosity > 1 {
-				fmt.Printf("response-received: from=%s bytes=%d data=[[\n%s]]\n",
+				log.Printf("response-received: from=%s bytes=%d data=[[\n%s]]\n",
 					ws.RemoteAddr().String(), nRead, string(rmsg))
 			}
 			if ret == 100 {
@@ -1413,7 +1415,7 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 				// authentication - send the new message
 				wmsg = []byte(smsg)
 				if cliops.verbosity > 1 {
-					fmt.Printf("sending: [[\n%s]]\n\n", smsg)
+					log.Printf("sending: [[\n%s]]\n\n", smsg)
 				}
 				skipauth = true
 				rmsg = make([]byte, cliops.buffersize)
@@ -1425,7 +1427,7 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 		break
 	}
 	if cliops.verbosity > 1 {
-		fmt.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
+		log.Printf("packet-received: from=%s bytes=%d data=[[\n%s]]\n",
 			ws.RemoteAddr().String(), nRead, string(rmsg))
 	}
 	tchan <- 0
@@ -1485,7 +1487,7 @@ func SIPExerRandomKey() string {
 		n, err := cryptorand.Read(key[b:])
 		if err != nil {
 			if cliops.verbosity > 0 {
-				panic("failed to get random bytes")
+				log.Printf("failed to get random bytes: %v\n", err)
 			}
 			os.Exit(-1)
 		}
