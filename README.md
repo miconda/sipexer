@@ -93,14 +93,19 @@ sipexer -register -cb -ex 600 -au alice -ap test123 udp:127.0.0.1:5060
 
 Set `fuser` field to `carol`:
 
-```
+```shell
+sipexer -sd -fu "carol" udp:127.0.0.1:5060
+# or 
 sipexer -sd -fv "fuser:carol" udp:127.0.0.1:5060
 ```
 
-Set `fuser` field to `carol` and `tuser` field to `david`:
+Set `fuser` field to `carol` and `tuser` field to `david`, with
+R-URI user same as To-user when providing proxy address destination:
 
-```
-sipexer -sd -fv "fuser:carol"  -fv "tuser:david" udp:127.0.0.1:5060
+```shell
+sipexer -sd -fu "carol"  -tu "david" -su udp:127.0.0.1:5060
+# or
+sipexer -sd -fv "fuser:carol"  -fv "tuser:david" -su udp:127.0.0.1:5060
 ```
 
 Add extra headers:
@@ -114,6 +119,42 @@ Send `MESSAGE` request with body:
 ```
 sipexer -message -mb 'Hello!' -sd -su udp:127.0.0.1:5060
 ```
+
+Send `MESSAGE` request with body over `tcp`:
+
+```
+sipexer -message -mb 'Hello!' -sd -su tcp:127.0.0.1:5060
+```
+
+Send `MESSAGE` request with body over `tls`:
+
+```
+sipexer -message -mb 'Hello!' -sd -su tls:127.0.0.1:5061
+```
+
+Send `MESSAGE` request with body over `wss` (WebSocket Secure):
+
+```
+sipexer -message -mb 'Hello!' -sd -su wss://server.com:8443/sip
+```
+
+### Target Address ###
+
+The target address can be provided as last arguments to the `sipexer` command. It is
+options, if not provided, then the SIP message is sent over `UDP` to `127.0.0.1` port `5060`.
+
+The format can be:
+
+  * SIP URI (e.g., `sip:user@server.com:5080;transport=tls`)
+  * SIP proxy socket address in format `proto:host:port` (e.g., `tls:server.com:5061`)
+  * WSS URL (e.g., `wss://server.com:8442/webrtc`)
+  * only the server `hostname` or `IP` (e.g., `server.com`)
+  * `host:port` (transport protocol is set to `UDP`)
+  * `proto:host` (port is set to `5060`)
+  * `host port` (transport protocol is set to `UDP`)
+  * `proto host` (port is set to `5060`)
+  * `proto host port` (same as `proto:host:port`)
+
 
 ## Message Template ##
 
