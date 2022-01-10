@@ -156,6 +156,10 @@ type CLIOptions struct {
 	notify           bool
 	ruri             string
 	ruser            string
+	fuser            string
+	tuser            string
+	fdomain          string
+	tdomain          string
 	body             string
 	contenttype      string
 	laddr            string
@@ -196,6 +200,10 @@ type CLIOptions struct {
 var cliops = CLIOptions{
 	method:           "",
 	ruri:             "",
+	fuser:            "",
+	tuser:            "",
+	fdomain:          "",
+	tdomain:          "",
 	body:             "",
 	contenttype:      "",
 	laddr:            "",
@@ -259,6 +267,14 @@ func init() {
 	flag.StringVar(&cliops.ruri, "ru", cliops.ruri, "request uri (r-uri)")
 	flag.StringVar(&cliops.ruser, "ruser", cliops.ruser, "request uri username for destination proxy address")
 	flag.StringVar(&cliops.ruser, "rn", cliops.ruser, "request uri username for destination proxy address")
+	flag.StringVar(&cliops.fuser, "fuser", cliops.fuser, "From header URI username")
+	flag.StringVar(&cliops.fuser, "fu", cliops.fuser, "From header URI username")
+	flag.StringVar(&cliops.fuser, "tuser", cliops.tuser, "To header URI username")
+	flag.StringVar(&cliops.fuser, "tu", cliops.tuser, "To header URI username")
+	flag.StringVar(&cliops.fuser, "fdomain", cliops.fdomain, "From header URI domain")
+	flag.StringVar(&cliops.fuser, "fd", cliops.fdomain, "From header URI domain")
+	flag.StringVar(&cliops.fuser, "tdomain", cliops.tdomain, "To header URI domain")
+	flag.StringVar(&cliops.fuser, "td", cliops.tdomain, "To header URI domain")
 	flag.StringVar(&cliops.template, "template-file", cliops.template, "path to template file")
 	flag.StringVar(&cliops.template, "tf", cliops.template, "path to template file")
 	flag.StringVar(&cliops.fields, "fields-file", cliops.fields, "path to the json fields file")
@@ -520,6 +536,18 @@ func main() {
 				tplfields["contacturi"] = "<" + cliops.contacturi + ">"
 			}
 		}
+	}
+	if len(cliops.fuser) > 0 {
+		tplfields["fuser"] = cliops.fuser
+	}
+	if len(cliops.tuser) > 0 {
+		tplfields["tuser"] = cliops.tuser
+	}
+	if len(cliops.fdomain) > 0 {
+		tplfields["fdomain"] = cliops.fdomain
+	}
+	if len(cliops.tdomain) > 0 {
+		tplfields["tdomain"] = cliops.tdomain
 	}
 
 	var wsurlp *url.URL = nil
