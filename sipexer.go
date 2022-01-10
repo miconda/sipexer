@@ -385,6 +385,11 @@ func main() {
 							nValB, _ := strconv.Atoi(sArr[1])
 							tplfields[k] = strconv.Itoa(nValA + mathrand.Intn(nValB-nValA))
 						}
+					} else if strings.Index(sVal, "$env(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
+						eVal, ok := os.LookupEnv(sVal[5 : len(sVal)-1])
+						if ok {
+							tplfields[k] = eVal
+						}
 					}
 				}
 				break
