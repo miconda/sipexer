@@ -201,7 +201,7 @@ func init() {
 		fmt.Fprintf(os.Stderr, "      * target can be: 'host', 'proto:host', 'host:port', 'proto:host:port' or sip-uri\n")
 		fmt.Fprintf(os.Stderr, "      * some options have short and long version\n\n")
 		flag.PrintDefaults()
-		os.Exit(1)
+		SIPExerExit(1)
 	}
 	flag.StringVar(&cliops.method, "method", cliops.method, "SIP method")
 	flag.StringVar(&cliops.method, "mt", cliops.method, "SIP method")
@@ -305,7 +305,7 @@ func main() {
 
 	if cliops.version {
 		fmt.Printf("%s v%s\n\n", filepath.Base(os.Args[0]), sipexerVersion)
-		os.Exit(1)
+		SIPExerExit(1)
 	}
 
 	if cliops.templatedefaults {
@@ -313,11 +313,11 @@ func main() {
 		fmt.Println(templateDefaultText)
 		fmt.Printf("Default fields:\n\n")
 		fmt.Println(templateDefaultJSONFields)
-		os.Exit(1)
+		SIPExerExit(1)
 	}
 	if cliops.flagdefaults {
 		flag.PrintDefaults()
-		os.Exit(1)
+		SIPExerExit(1)
 	}
 	// enable file name and line numbers in logging
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -329,7 +329,7 @@ func main() {
 			if cliops.verbosity > 0 {
 				log.Printf("error: %v\n", err1)
 			}
-			os.Exit(-1)
+			SIPExerExit(-1)
 		}
 		tplstr = string(tpldata)
 	} else if len(templateDefaultText) > 0 {
@@ -338,7 +338,7 @@ func main() {
 		if cliops.verbosity > 0 {
 			log.Printf("missing data template file ('-tf' or '--template' parameter must be provided)\n")
 		}
-		os.Exit(-1)
+		SIPExerExit(-1)
 	}
 
 	tplfields := make(map[string]interface{})
@@ -348,14 +348,14 @@ func main() {
 			if cliops.verbosity > 0 {
 				log.Printf("error: %v\n", err1)
 			}
-			os.Exit(-1)
+			SIPExerExit(-1)
 		}
 		err = json.Unmarshal(fieldsdata, &tplfields)
 		if err != nil {
 			if cliops.verbosity > 0 {
 				log.Printf("error: %v\n", err)
 			}
-			os.Exit(-1)
+			SIPExerExit(-1)
 		}
 	} else if len(templateDefaultJSONFields) > 0 {
 		err = json.Unmarshal([]byte(templateDefaultJSONFields), &tplfields)
@@ -363,7 +363,7 @@ func main() {
 			if cliops.verbosity > 0 {
 				log.Printf("error: %v\n", err)
 			}
-			os.Exit(-1)
+			SIPExerExit(-1)
 		}
 		cliops.fieldseval = true
 	} else {
@@ -457,7 +457,7 @@ func main() {
 			if cliops.verbosity > 0 {
 				log.Printf("invalid expires value: %s\n", cliops.expires)
 			}
-			os.Exit(-1)
+			SIPExerExit(-1)
 		}
 		tplfields["expires"] = cliops.expires
 	}
@@ -484,7 +484,7 @@ func main() {
 					if cliops.verbosity > 0 {
 						log.Printf("invalid websocket target: %v\n", dstAddr)
 					}
-					os.Exit(-1)
+					SIPExerExit(-1)
 				}
 				if strings.HasPrefix(dstAddr, "wss://") {
 					dstAddr = "wss:" + wsurlp.Host
@@ -500,7 +500,7 @@ func main() {
 			if cliops.verbosity > 0 {
 				log.Printf("invalid number of arguments : %d\n", len(flag.Args()))
 			}
-			os.Exit(-1)
+			SIPExerExit(-1)
 		}
 	}
 	var dstSockAddr = sgsip.SGSIPSocketAddress{}
@@ -510,7 +510,7 @@ func main() {
 			if cliops.verbosity > 0 {
 				log.Printf("invalid destination address: %s\n", dstAddr)
 			}
-			os.Exit(-1)
+			SIPExerExit(-1)
 		} else {
 			if cliops.verbosity > 2 {
 				log.Printf("parsed SIP URI argument (%+v)\n", dstURI)
@@ -544,7 +544,7 @@ func main() {
 			if cliops.verbosity > 0 {
 				log.Printf("invalid ruri: %v\n", tplfields["ruri"])
 			}
-			os.Exit(-1)
+			SIPExerExit(-1)
 		}
 		tplfields["fdomain"] = rURI.Addr
 		tplfields["tdomain"] = rURI.Addr
@@ -568,7 +568,7 @@ func main() {
 		var smsg string = ""
 		tret = SIPExerPrepareMessage(tplstr, tplfields, dstSockAddr.Proto, lTAddr, dstSockAddr.Addr+":"+dstSockAddr.Port, &msgVal)
 		if tret != 0 {
-			os.Exit(tret)
+			SIPExerExit(tret)
 		}
 		smsg = msgVal.Data
 		msgVal = sgsip.SGSIPMessage{}
@@ -576,14 +576,14 @@ func main() {
 			if cliops.verbosity > 0 {
 				log.Printf("failed to parse sip message\n%+v\n\n", smsg)
 			}
-			os.Exit(-1)
+			SIPExerExit(-1)
 		}
 		if cliops.verbosity > 0 {
 			fmt.Printf("%+v\n\n", smsg)
 			fmt.Printf("%+v\n\n", msgVal)
 		}
 
-		os.Exit(1)
+		SIPExerExit(1)
 	}
 
 	if (dstSockAddr.ProtoId != sgsip.ProtoUDP) && (dstSockAddr.ProtoId != sgsip.ProtoTCP) &&
@@ -591,7 +591,7 @@ func main() {
 		if cliops.verbosity > 0 {
 			log.Printf("transport protocol not supported yet for target %s\n", dstAddr)
 		}
-		os.Exit(-1)
+		SIPExerExit(-1)
 	}
 
 	tchan := make(chan int, 1)
@@ -606,10 +606,15 @@ func main() {
 	}
 	tret = <-tchan
 	close(tchan)
+
+	SIPExerExit(tret)
+}
+
+func SIPExerExit(ret int) {
 	if cliops.verbosity > 2 {
-		log.Printf("return code: %d\n\n", tret)
+		log.Printf("return code: %d\n\n", ret)
 	}
-	os.Exit(tret)
+	os.Exit(ret)
 }
 
 func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rProto string, lAddr string, rAddr string, msgVal *sgsip.SGSIPMessage) int {
@@ -1489,7 +1494,7 @@ func SIPExerRandomKey() string {
 			if cliops.verbosity > 0 {
 				log.Printf("failed to get random bytes: %v\n", err)
 			}
-			os.Exit(-1)
+			SIPExerExit(-1)
 		}
 		b += n
 	}
