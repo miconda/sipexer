@@ -2,6 +2,8 @@
 
 Modern and flexible SIP ([RFC3261](https://datatracker.ietf.org/doc/html/rfc3261)) command line tool.
 
+Project URL: https://github.com/miconda/sipexer
+
 ## Overview ##
 
 `sipexer` is a cli tool that facilitates sending SIP requests to servers. It uses a flexible template
