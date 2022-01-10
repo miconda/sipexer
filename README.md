@@ -208,6 +208,7 @@ are replaced if the value of the field is a string matching one of the next:
   * `"$randseq"` - replace with a random number from `1` to `1 000 000`
   * `"$rand(max)"` - replace with a random number from `0` to `max`
   * `"$rand(min,max)"` - replace with a random number from `min` to `max`
+  * `"$rmeol"` - remove next end of line character `\n`
   * `"$timestamp"` - replace with output of `time.Now().Unix()`
   * `"$lf"` - replace with `\n`
   * `"$uuid"` - replace with a UUID value
