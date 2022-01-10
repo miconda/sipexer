@@ -42,7 +42,9 @@ The binary `sipexer` should be generated in the current directory.
 
 ### Download Binary Release ###
 
-TBA
+Binary releases for `Linux`, `MacOS` and `Windows` are available at:
+
+  * https://github.com/miconda/sipexer/releases
 
 ## Usage ##
 
