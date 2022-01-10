@@ -11,6 +11,7 @@ import (
 // return and error code values
 const (
 	SGSIPRetOK = 0
+
 	// generic errors
 	SGSIPRetErr      = -1
 	SGSIPRetNotFound = -2
@@ -18,13 +19,44 @@ const (
 	// first line parse errors
 	SGSIPRetErrFLineShort          = -100
 	SGSIPRetErrFLineFormat         = -101
-	SGSIPRetErrFLineResponseShort  = -102
-	SGSIPRetErrFLineResponseFormat = -103
-	SGSIPRetErrFLineResponseCode   = -104
-	SGSIPRetErrFLineRequestFormat  = -120
+	SGSIPRetErrFLineRequestFormat  = -102
+	SGSIPRetErrFLineResponseShort  = -103
+	SGSIPRetErrFLineResponseFormat = -104
+	SGSIPRetErrFLineResponseCode   = -105
 
 	// sip params parse errors
-	SGSIPRetErrParamFormat = -150
+	SGSIPRetErrParamFormat   = -140
+	SGSIPRetErrParamNotFound = -141
+
+	// socket address error
+	SGSIPRetErrSocketAddressPort    = -200
+	SGSIPRetErrSocketAddressPortVal = -201
+	SGSIPRetErrSocketAddressAFIPv6  = -202
+
+	// uri errors
+	SGSIPRetErrURI       = -220
+	SGSIPRetErrURIUser   = -221
+	SGSIPRetErrURIAFIPv6 = -222
+	SGSIPRetErrURIPort   = -223
+	SGSIPRetErrURIFormat = -224
+	SGSIPRetErrURIProto  = -225
+
+	// header errors
+	SGSIPRetErrHeaderLength = -240
+	SGSIPRetErrHeaderEmpty  = -241
+	SGSIPRetErrHeaderFormat = -242
+	SGSIPRetErrHeaderName   = -243
+	SGSIPRetErrHeaderEoL    = -244
+
+	// body errors
+	SGSIPRetErrBody = -260
+
+	// cseq errors
+	SGSIPRetErrCSeqBody   = -280
+	SGSIPRetErrCSeqNumber = -281
+
+	// sip message errors
+	SGSIPRetErrMessageNotSet = -300
 )
 
 const (
@@ -216,7 +248,7 @@ func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 		// assuming only IPv6 address -- fill with defaults
 		sockaddr.AType = SGAddrTypeEx(sockaddr.Addr)
 		if sockaddr.AType != AFIPv6 {
-			return SGSIPRetErr
+			return SGSIPRetErrSocketAddressAFIPv6
 		}
 		sockaddr.Val = sockstr
 		sockaddr.Proto = "udp"
@@ -253,18 +285,18 @@ func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 		strArray = strings.SplitN(strAddrPort, "]", 2)
 		if strProto == "" && strArray[1][0:1] != ":" {
 			// no port and only IPv6 tested before
-			return SGSIPRetErr
+			return SGSIPRetErrSocketAddressPort
 		}
 		sockaddr.Port = strArray[1][1:]
 		i, err := strconv.Atoi(sockaddr.Port)
 		if err != nil {
-			return SGSIPRetErr
+			return SGSIPRetErrSocketAddressPortVal
 		}
 		sockaddr.PortNo = i
 		sockaddr.Addr = strArray[0] + "]"
 		sockaddr.AType = SGAddrTypeEx(sockaddr.Addr)
 		if sockaddr.AType != AFIPv6 {
-			return SGSIPRetErr
+			return SGSIPRetErrSocketAddressAFIPv6
 		}
 	} else {
 		strArray = strings.SplitN(strAddrPort, ":", 2)
@@ -272,7 +304,7 @@ func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 			sockaddr.Port = strArray[1]
 			i, err := strconv.Atoi(sockaddr.Port)
 			if err != nil {
-				return SGSIPRetErr
+				return SGSIPRetErrSocketAddressPortVal
 			}
 			sockaddr.PortNo = i
 		} else {
@@ -291,7 +323,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	strArray := strings.SplitN(uristr, ":", 2)
 
 	if len(strArray) < 2 {
-		return SGSIPRetErr
+		return SGSIPRetErrURI
 	}
 	ret := SGSIPSetSchema(strArray[0], &uri.Schema, &uri.SchemaId)
 	if ret != SGSIPRetOK {
@@ -302,7 +334,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	scPos := strings.Index(strArray[1], ";")
 	if atPos == 0 {
 		// empty user part
-		return SGSIPRetErr
+		return SGSIPRetErrURIUser
 	}
 	if atPos < 0 && colPos < 0 && scPos < 0 {
 		// no user, no port, no parameters
@@ -322,7 +354,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		uScPos := strings.Index(pUser, ";")
 		if uScPos == 0 {
 			// empty user part
-			return SGSIPRetErr
+			return SGSIPRetErrURIUser
 		}
 		if uScPos < 0 {
 			uri.User = pUser
@@ -355,7 +387,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 			uri.PortNo = 5060
 			uri.AType = SGAddrTypeEx(uri.Addr)
 			if uri.AType != AFIPv6 {
-				return SGSIPRetErr
+				return SGSIPRetErrURIAFIPv6
 			}
 			uri.Val = uristr
 			return SGSIPRetOK
@@ -364,7 +396,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		uri.Addr = strArray[0] + "]"
 		uri.AType = SGAddrTypeEx(uri.Addr)
 		if uri.AType != AFIPv6 {
-			return SGSIPRetErr
+			return SGSIPRetErrURIAFIPv6
 		}
 		pPortParams = strArray[1]
 	} else {
@@ -385,7 +417,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		}
 		i, err := strconv.Atoi(pPort)
 		if err != nil || i <= 0 {
-			return SGSIPRetErr
+			return SGSIPRetErrURIPort
 		}
 		uri.Port = pPort
 		uri.PortNo = i
@@ -399,7 +431,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	} else if pPortParams[0:1] == ";" {
 		pParams = pPortParams
 	} else {
-		return SGSIPRetErr
+		return SGSIPRetErrURIFormat
 	}
 	uri.Proto = "udp"
 	uri.ProtoId = ProtoUDP
@@ -419,7 +451,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		}
 		ret := SGSIPSetProto(pProto, &uri.Proto, &uri.ProtoId)
 		if ret != SGSIPRetOK {
-			return SGSIPRetErr
+			return SGSIPRetErrURIProto
 		}
 	}
 	uri.Val = uristr
@@ -516,7 +548,7 @@ func SGSIPParamsGet(paramStr string, paramName string, vmode int, paramVal *SGSI
 
 	strArray := strings.Split(pStr, ";"+paramName+"=")
 	if len(strArray) == 1 {
-		return SGSIPRetNotFound
+		return SGSIPRetErrParamNotFound
 	}
 	scPos := -1
 	qVal := 0
@@ -625,7 +657,7 @@ func SGSIPParseHeaders(inputStr string, pMode int, headersList *[]SGSIPHeader) i
 	if pMode == 0 {
 		strArray = strings.SplitN(inputStr, "\n", 2)
 		if len(strArray) < 2 {
-			return SGSIPRetErr
+			return SGSIPRetErrHeaderLength
 		}
 		strHeaders = strArray[1]
 	} else {
@@ -633,24 +665,24 @@ func SGSIPParseHeaders(inputStr string, pMode int, headersList *[]SGSIPHeader) i
 	}
 	if len(strHeaders) == 0 || strHeaders[0:1] == "\r" || strHeaders[0:1] == "\n" {
 		// empty or first char is an EoL
-		return SGSIPRetErr
+		return SGSIPRetErrHeaderEmpty
 	}
 	for {
 		var hdrItem SGSIPHeader = SGSIPHeader{}
 		// split name: body
 		strArray = strings.SplitN(strHeaders, ":", 2)
 		if len(strArray) < 2 || len(strArray[0]) == 0 || len(strArray[1]) == 0 {
-			return SGSIPRetErr
+			return SGSIPRetErrHeaderFormat
 		}
 		if !SGSIPHeaderValidName(strArray[0]) {
-			return SGSIPRetErr
+			return SGSIPRetErrHeaderName
 		}
 		hdrItem.Name = strings.TrimRight(strArray[0], " \t")
 		hdrItem.Body = ""
 		for {
 			strArray = strings.SplitN(strArray[1], "\n", 2)
 			if len(strArray) < 2 {
-				return SGSIPRetErr
+				return SGSIPRetErrHeaderEoL
 			}
 			hdrItem.Body += strArray[0]
 			if len(strArray[1]) == 0 {
@@ -678,7 +710,7 @@ func SGSIPParseBody(inputStr string, bodyVal *SGSIPBody) int {
 	if len(strArray) < 2 {
 		strArray := strings.SplitN(inputStr, "\n\n", 2)
 		if len(strArray) < 2 {
-			return SGSIPRetErr
+			return SGSIPRetErrBody
 		}
 	}
 	bodyVal.Content = strArray[1]
@@ -711,7 +743,7 @@ func SGSIPMessageHeaderGet(msgVal *SGSIPMessage, hname string, hbody *string) in
 		}
 	}
 
-	return SGSIPRetErr
+	return SGSIPRetNotFound
 }
 
 // SGSIPMessageCSeqUpdate --
@@ -720,15 +752,19 @@ func SGSIPMessageCSeqUpdate(msgVal *SGSIPMessage, ival int) int {
 		if hdr.Name == "CSeq" || hdr.Name == "s" {
 			slist := strings.SplitN(msgVal.Headers[i].Body, " ", 2)
 			if len(slist) != 2 {
-				return SGSIPRetErr
+				return SGSIPRetErrCSeqBody
 			}
-			csn, _ := strconv.Atoi(slist[0])
+			csn, err := strconv.Atoi(slist[0])
+
+			if err != nil {
+				return SGSIPRetErrCSeqNumber
+			}
 
 			msgVal.Headers[i].Body = strconv.Itoa(csn+ival) + " " + slist[1]
 			return SGSIPRetOK
 		}
 	}
-	return SGSIPRetErr
+	return SGSIPRetNotFound
 }
 
 // SGSIPParseMessage --
@@ -755,7 +791,7 @@ func SGSIPParseMessage(inputStr string, msgVal *SGSIPMessage) int {
 func SGSIPMessageToString(msgVal *SGSIPMessage, outputStr *string) int {
 	var sb strings.Builder
 	if len(msgVal.FLine.Val) == 0 || len(msgVal.Headers) == 0 {
-		return SGSIPRetErr
+		return SGSIPRetErrMessageNotSet
 	}
 	sb.WriteString(msgVal.FLine.Val + "\r\n")
 
