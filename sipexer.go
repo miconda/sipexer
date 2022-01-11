@@ -130,8 +130,8 @@ var templateDefaultJSONFields string = `{
 	"cseqnum": "$randseq",
 	"date": "$daterfc1123",
 	"sdpuser": "sipexer",
-	"sdpsessid": "$dateunix",
-	"sdpsessversion": "$dateunix",
+	"sdpsessid": "$timestamp",
+	"sdpsessversion": "$timestamp",
 	"sdpaf": "IP4",
 	"sdprtpport": "$rand(20000,40000)"
 }`
