@@ -250,11 +250,13 @@ When sending out, before the template is evaluated, the following fields are als
 added internally and will replace the corresponding `{{.name}}` (e.g., `{{.proto}}`)
 in the template:
 
-  * `proto` - lower(`proto`)
-  * `protoup` - upper(`proto`)
+  * `afver` - address family version (`4` or `6`)
   * `localaddr` - local address - `ip:port`
   * `localip` - local ip
   * `localport` - local port
+  * `proto` - lower(`proto`) (e.g., `udp`, `tcp`, ...)
+  * `protoup` - upper(`proto`) (e.g., `UDP`, `TCP`, ...)
+  * `sdaf` - SDP address family (`IP4` or `IP6`)
   * `targetaddr` - remote address - `ip:port`
   * `targetip` - remote ip
   * `targetport` - remote port
