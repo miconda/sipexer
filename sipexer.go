@@ -105,6 +105,18 @@ Content-Length: 0
 
 var templateDefaultMessageBody string = `Hello there!{{if .date}} The date is: {{.date}}.{{end}}`
 
+var templateDefaultInviteBody string = `v=0{{.cr}}
+o={{.sdpuser}} {{.sdpsessid}} {{.sdpsessversion}} IN {{.sdpaf}} {{.localip}}{{.cr}}
+s=call{{.cr}}
+c=IN {{.sdpaf}} {{.localip}}{{.cr}}
+t=0 0{{.cr}}
+m=audio {{.sdprtpport}} RTP 0 8 101{{.cr}}
+a=rtpmap:0 pcmu/8000{{.cr}}
+a=rtpmap:8 pcma/8000{{.cr}}
+a=rtpmap:101 telephone-event/8000{{.cr}}
+a=sendrecv{{.cr}}
+`
+
 var templateDefaultJSONFields string = `{
 	"method": "OPTIONS",
 	"fuser": "alice",
@@ -116,7 +128,12 @@ var templateDefaultJSONFields string = `{
 	"fromtag": "$uuid",
 	"callid": "$uuid",
 	"cseqnum": "$randseq",
-	"date": "$daterfc1123"
+	"date": "$daterfc1123",
+	"sdpuser": "sipexer",
+	"sdpsessid": "$dateunix",
+	"sdpsessversion": "$dateunix",
+	"sdpaf": "IP4",
+	"sdprtpport": "$rand(20000,40000)"
 }`
 
 var templateFields = map[string]map[string]interface{}{
@@ -751,6 +768,13 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 	colPos = strings.LastIndex(rAddr, ":")
 	tplfields["targetip"] = rAddr[0:colPos]
 	tplfields["targetport"] = rAddr[colPos+1:]
+	if sgsip.SGAddrTypeEx(rAddr[0:colPos]) == sgsip.AFIPv6 {
+		tplfields["afver"] = "6"
+		tplfields["sdpaf"] = "IP6"
+	} else {
+		tplfields["afver"] = "4"
+		tplfields["sdpaf"] = "IP4"
+	}
 	tplfields["cr"] = "\r"
 	tplfields["lf"] = "\n"
 	tplfields["tab"] = "\t"
@@ -832,6 +856,11 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 		var tplBody = template.Must(template.New("wbodyout").Parse(templateDefaultMessageBody))
 		tplBody.Execute(&bufBody, tplfields)
 		msgVal.Body.Content = strings.Replace(bufBody.String(), "$rmeol\n", "", -1)
+	} else if cliops.invite {
+		var bufBody bytes.Buffer
+		var tplBody = template.Must(template.New("wbodyout").Parse(templateDefaultInviteBody))
+		tplBody.Execute(&bufBody, tplfields)
+		msgVal.Body.Content = strings.Replace(bufBody.String(), "$rmeol\n", "", -1)
 	}
 
 	if len(msgVal.Body.Content) > 0 {
@@ -839,7 +868,11 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 		if len(cliops.contenttype) > 0 {
 			msgVal.Body.ContentType = cliops.contenttype
 		} else {
-			msgVal.Body.ContentType = "text/plain"
+			if cliops.invite {
+				msgVal.Body.ContentType = "application/sdp"
+			} else {
+				msgVal.Body.ContentType = "text/plain"
+			}
 		}
 		msgrebuild = true
 	}
