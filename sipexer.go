@@ -194,6 +194,7 @@ type CLIOptions struct {
 	raw              bool
 	noparse          bool
 	verbosity        int
+	nagios           bool
 	version          bool
 }
 
@@ -246,6 +247,7 @@ var cliops = CLIOptions{
 	raw:              false,
 	noparse:          false,
 	verbosity:        2,
+	nagios:           false,
 	version:          false,
 }
 
@@ -337,6 +339,7 @@ func init() {
 	flag.BoolVar(&cliops.registerparty, "register-party", cliops.registerparty, "register a third party To user")
 	flag.BoolVar(&cliops.raw, "raw", cliops.registerparty, "sent raw template content (no evaluation)")
 	flag.BoolVar(&cliops.noparse, "no-parse", cliops.noparse, "no SIP message parsing of input template result")
+	flag.BoolVar(&cliops.nagios, "nagios", cliops.nagios, "nagios plugin exit codes")
 
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
 	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
@@ -689,8 +692,24 @@ func main() {
 }
 
 func SIPExerExit(ret int) {
+	var nret int
+
+	nret = ret
+
+	if cliops.nagios {
+		if ret == SIPExerRetOK || ret == SIPExerRetDone || (ret >= 200 && ret <= 299) {
+			nret = 0
+		} else if ret >= 400 && ret <= 499 {
+			nret = 1
+		} else {
+			nret = 3
+		}
+	}
+	if cliops.verbosity > 2 && ret != nret {
+		log.Printf("initial return code: %d\n\n", ret)
+	}
 	if cliops.verbosity > 2 {
-		log.Printf("return code: %d\n\n", ret)
+		log.Printf("return code: %d\n\n", nret)
 	}
 	os.Exit(ret)
 }
