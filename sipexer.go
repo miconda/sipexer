@@ -103,6 +103,8 @@ Content-Length: 0
 
 `
 
+var templateDefaultMessageBody string = `Hello there!{{if .date}} The date is: {{.date}}.{{end}}`
+
 var templateDefaultJSONFields string = `{
 	"method": "OPTIONS",
 	"fuser": "alice",
@@ -825,6 +827,14 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 	}
 	if len(cliops.body) > 0 {
 		msgVal.Body.Content = cliops.body
+	} else if cliops.message {
+		var bufBody bytes.Buffer
+		var tplBody = template.Must(template.New("wbodyout").Parse(templateDefaultMessageBody))
+		tplBody.Execute(&bufBody, tplfields)
+		msgVal.Body.Content = strings.Replace(bufBody.String(), "$rmeol\n", "", -1)
+	}
+
+	if len(msgVal.Body.Content) > 0 {
 		msgVal.Body.ContentLen = len(msgVal.Body.Content)
 		if len(cliops.contenttype) > 0 {
 			msgVal.Body.ContentType = cliops.contenttype
@@ -833,6 +843,7 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 		}
 		msgrebuild = true
 	}
+
 	if msgrebuild {
 		if sgsip.SGSIPMessageToString(msgVal, &smsg) != sgsip.SGSIPRetOK {
 			if cliops.verbosity > 0 {
