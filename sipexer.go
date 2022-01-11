@@ -271,12 +271,12 @@ func init() {
 	flag.StringVar(&cliops.ruser, "rn", cliops.ruser, "request uri username for destination proxy address")
 	flag.StringVar(&cliops.fuser, "fuser", cliops.fuser, "From header URI username")
 	flag.StringVar(&cliops.fuser, "fu", cliops.fuser, "From header URI username")
-	flag.StringVar(&cliops.fuser, "tuser", cliops.tuser, "To header URI username")
-	flag.StringVar(&cliops.fuser, "tu", cliops.tuser, "To header URI username")
-	flag.StringVar(&cliops.fuser, "fdomain", cliops.fdomain, "From header URI domain")
-	flag.StringVar(&cliops.fuser, "fd", cliops.fdomain, "From header URI domain")
-	flag.StringVar(&cliops.fuser, "tdomain", cliops.tdomain, "To header URI domain")
-	flag.StringVar(&cliops.fuser, "td", cliops.tdomain, "To header URI domain")
+	flag.StringVar(&cliops.tuser, "tuser", cliops.tuser, "To header URI username")
+	flag.StringVar(&cliops.tuser, "tu", cliops.tuser, "To header URI username")
+	flag.StringVar(&cliops.fdomain, "fdomain", cliops.fdomain, "From header URI domain")
+	flag.StringVar(&cliops.fdomain, "fd", cliops.fdomain, "From header URI domain")
+	flag.StringVar(&cliops.tdomain, "tdomain", cliops.tdomain, "To header URI domain")
+	flag.StringVar(&cliops.tdomain, "td", cliops.tdomain, "To header URI domain")
 	flag.StringVar(&cliops.template, "template-file", cliops.template, "path to template file")
 	flag.StringVar(&cliops.template, "tf", cliops.template, "path to template file")
 	flag.StringVar(&cliops.fields, "fields-file", cliops.fields, "path to the json fields file")
@@ -553,6 +553,24 @@ func main() {
 		tplfields["tdomain"] = cliops.tdomain
 	}
 
+	if len(cliops.useragent) > 0 {
+		if cliops.useragent != cliops.noval {
+			tplfields["useragent"] = cliops.useragent
+		}
+	} else {
+		tplfields["useragent"] = "SIPExer v" + sipexerVersion
+	}
+
+	// delete `cliops.noval` fields
+	_, ok = tplfields["fuser"]
+	if ok && tplfields["fuser"] == cliops.noval {
+		delete(tplfields, "fuser")
+	}
+	_, ok = tplfields["tuser"]
+	if ok && tplfields["tuser"] == cliops.noval {
+		delete(tplfields, "tuser")
+	}
+
 	var wsurlp *url.URL = nil
 	dstAddr := "udp:127.0.0.1:5060"
 	if len(flag.Args()) > 0 {
@@ -606,6 +624,8 @@ func main() {
 			_, ok = tplfields["tuser"]
 			if ok {
 				sgsip.SGSocketAddressToSIPURI(&dstSockAddr, fmt.Sprint(tplfields["tuser"]), 0, &dstURI)
+			} else {
+				sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.ruser, 0, &dstURI)
 			}
 		} else {
 			sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.ruser, 0, &dstURI)
@@ -630,13 +650,7 @@ func main() {
 		tplfields["fdomain"] = rURI.Addr
 		tplfields["tdomain"] = rURI.Addr
 	}
-	if len(cliops.useragent) > 0 {
-		if cliops.useragent != cliops.noval {
-			tplfields["useragent"] = cliops.useragent
-		}
-	} else {
-		tplfields["useragent"] = "SIPExer v" + sipexerVersion
-	}
+
 	var tret int
 	if cliops.templaterun {
 		lTAddr := ""
