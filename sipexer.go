@@ -711,7 +711,7 @@ func SIPExerExit(ret int) {
 	if cliops.verbosity > 2 {
 		log.Printf("return code: %d\n\n", nret)
 	}
-	os.Exit(ret)
+	os.Exit(nret)
 }
 
 func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rProto string, lAddr string, rAddr string, msgVal *sgsip.SGSIPMessage) int {
