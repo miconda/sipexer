@@ -214,6 +214,7 @@ type CLIOptions struct {
 	noparse          bool
 	verbosity        int
 	nagios           bool
+	ha1              bool
 	version          bool
 }
 
@@ -267,6 +268,7 @@ var cliops = CLIOptions{
 	noparse:          false,
 	verbosity:        2,
 	nagios:           false,
+	ha1:              false,
 	version:          false,
 }
 
@@ -359,6 +361,7 @@ func init() {
 	flag.BoolVar(&cliops.raw, "raw", cliops.registerparty, "sent raw template content (no evaluation)")
 	flag.BoolVar(&cliops.noparse, "no-parse", cliops.noparse, "no SIP message parsing of input template result")
 	flag.BoolVar(&cliops.nagios, "nagios", cliops.nagios, "nagios plugin exit codes")
+	flag.BoolVar(&cliops.ha1, "ha1", cliops.ha1, "authentication password is in HA1 format")
 
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
 	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
@@ -1628,13 +1631,19 @@ func SIPExerRandAlphaString(olen int) string {
 func SIPExerBuildAuthResponseBody(username string, password string, hparams map[string]string) string {
 	// https://en.wikipedia.org/wiki/Digest_access_authentication
 	// HA1
+	var HA1 string = ""
 	h := md5.New()
-	A1 := fmt.Sprintf("%s:%s:%s", username, hparams["realm"], password)
-	io.WriteString(h, A1)
-	HA1 := fmt.Sprintf("%x", h.Sum(nil))
+	if cliops.ha1 {
+		HA1 = password
+	} else {
+		A1 := fmt.Sprintf("%s:%s:%s", username, hparams["realm"], password)
+		io.WriteString(h, A1)
+		HA1 = fmt.Sprintf("%x", h.Sum(nil))
+		// prepare for HA2
+		h = md5.New()
+	}
 
 	// HA2
-	h = md5.New()
 	A2 := fmt.Sprintf("%s:%s", hparams["method"], hparams["uri"])
 	io.WriteString(h, A2)
 	HA2 := fmt.Sprintf("%x", h.Sum(nil))
