@@ -180,6 +180,7 @@ type CLIOptions struct {
 	fdomain          string
 	tdomain          string
 	body             string
+	nobody           bool
 	contenttype      string
 	laddr            string
 	useragent        string
@@ -226,6 +227,7 @@ var cliops = CLIOptions{
 	fdomain:          "",
 	tdomain:          "",
 	body:             "",
+	nobody:           false,
 	contenttype:      "",
 	laddr:            "",
 	useragent:        "",
@@ -362,6 +364,7 @@ func init() {
 	flag.BoolVar(&cliops.noparse, "no-parse", cliops.noparse, "no SIP message parsing of input template result")
 	flag.BoolVar(&cliops.nagios, "nagios", cliops.nagios, "nagios plugin exit codes")
 	flag.BoolVar(&cliops.ha1, "ha1", cliops.ha1, "authentication password is in HA1 format")
+	flag.BoolVar(&cliops.nobody, "no-body", cliops.nobody, "no body for message or invite")
 
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
 	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
@@ -852,32 +855,34 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 		}
 		msgrebuild = true
 	}
-	if len(cliops.body) > 0 {
-		msgVal.Body.Content = cliops.body
-	} else if cliops.message {
-		var bufBody bytes.Buffer
-		var tplBody = template.Must(template.New("wbodyout").Parse(templateDefaultMessageBody))
-		tplBody.Execute(&bufBody, tplfields)
-		msgVal.Body.Content = strings.Replace(bufBody.String(), "$rmeol\n", "", -1)
-	} else if cliops.invite {
-		var bufBody bytes.Buffer
-		var tplBody = template.Must(template.New("wbodyout").Parse(templateDefaultInviteBody))
-		tplBody.Execute(&bufBody, tplfields)
-		msgVal.Body.Content = strings.Replace(bufBody.String(), "$rmeol\n", "", -1)
-	}
-
-	if len(msgVal.Body.Content) > 0 {
-		msgVal.Body.ContentLen = len(msgVal.Body.Content)
-		if len(cliops.contenttype) > 0 {
-			msgVal.Body.ContentType = cliops.contenttype
-		} else {
-			if cliops.invite {
-				msgVal.Body.ContentType = "application/sdp"
-			} else {
-				msgVal.Body.ContentType = "text/plain"
-			}
+	if !cliops.nobody {
+		if len(cliops.body) > 0 {
+			msgVal.Body.Content = cliops.body
+		} else if cliops.message {
+			var bufBody bytes.Buffer
+			var tplBody = template.Must(template.New("wbodyout").Parse(templateDefaultMessageBody))
+			tplBody.Execute(&bufBody, tplfields)
+			msgVal.Body.Content = strings.Replace(bufBody.String(), "$rmeol\n", "", -1)
+		} else if cliops.invite {
+			var bufBody bytes.Buffer
+			var tplBody = template.Must(template.New("wbodyout").Parse(templateDefaultInviteBody))
+			tplBody.Execute(&bufBody, tplfields)
+			msgVal.Body.Content = strings.Replace(bufBody.String(), "$rmeol\n", "", -1)
 		}
-		msgrebuild = true
+
+		if len(msgVal.Body.Content) > 0 {
+			msgVal.Body.ContentLen = len(msgVal.Body.Content)
+			if len(cliops.contenttype) > 0 {
+				msgVal.Body.ContentType = cliops.contenttype
+			} else {
+				if cliops.invite {
+					msgVal.Body.ContentType = "application/sdp"
+				} else {
+					msgVal.Body.ContentType = "text/plain"
+				}
+			}
+			msgrebuild = true
+		}
 	}
 
 	if msgrebuild {
