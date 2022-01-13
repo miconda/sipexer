@@ -738,6 +738,15 @@ func SIPExerPrintf(level int, format string, v ...interface{}) {
 	fmt.Printf("[info] [%s:%d] %s(): %s", filepath.Base(filename), line, runtime.FuncForPC(pc).Name(), logmsg)
 }
 
+func SIPExerPrintln(level int, v ...interface{}) {
+	if cliops.verbosity < level {
+		return
+	}
+	pc, filename, line, _ := runtime.Caller(1)
+	logmsg := fmt.Sprintln(v...)
+	fmt.Printf("[info] [%s:%d] %s(): %s", filepath.Base(filename), line, runtime.FuncForPC(pc).Name(), logmsg)
+}
+
 func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rProto string, lAddr string, rAddr string, msgVal *sgsip.SGSIPMessage) int {
 	var buf bytes.Buffer
 	var tpl = template.Must(template.New("wsout").Parse(tplstr))
@@ -1287,14 +1296,14 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	defer conn.Close()
 
 	if cliops.verbosity > 2 {
-		log.Println("client: ", conn.LocalAddr(), "connected to: ", conn.RemoteAddr())
+		SIPExerPrintln(2, "client: ", conn.LocalAddr(), "connected to: ", conn.RemoteAddr())
 		state := conn.ConnectionState()
 		for _, v := range state.PeerCertificates {
-			log.Println(x509.MarshalPKIXPublicKey(v.PublicKey))
-			log.Println(v.Subject)
+			SIPExerPrintln(2, fmt.Sprint(x509.MarshalPKIXPublicKey(v.PublicKey)))
+			SIPExerPrintln(2, v.Subject)
 		}
-		log.Println("client: handshake: ", state.HandshakeComplete)
-		log.Println("client: mutual: ", state.NegotiatedProtocolIsMutual)
+		SIPExerPrintln(2, "client: handshake: ", state.HandshakeComplete)
+		SIPExerPrintln(2, "client: mutual: ", state.NegotiatedProtocolIsMutual)
 	}
 
 	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
@@ -1307,8 +1316,8 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	smsg = msgVal.Data
 
 	SIPExerPrintf(1, "local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
-	SIPExerPrintf(0, "local via address: %v\n", tplfields["viaaddr"])
-	SIPExerPrintf(0, "sending: [[\n%s]]\n\n", smsg)
+	SIPExerPrintf(1, "local via address: %v\n", tplfields["viaaddr"])
+	SIPExerPrintf(1, "sending: [[\n%s]]\n\n", smsg)
 
 	var wmsg []byte
 	wmsg = []byte(smsg)
