@@ -26,7 +26,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"text/template"
@@ -727,24 +726,6 @@ func SIPExerExit(ret int) {
 	SIPExerPrintf(2, "return code: %d\n\n", nret)
 
 	os.Exit(nret)
-}
-
-func SIPExerPrintf(level int, format string, v ...interface{}) {
-	if cliops.verbosity < level {
-		return
-	}
-	pc, filename, line, _ := runtime.Caller(1)
-	logmsg := fmt.Sprintf(format, v...)
-	fmt.Printf("[info] [%s:%d] %s(): %s", filepath.Base(filename), line, runtime.FuncForPC(pc).Name(), logmsg)
-}
-
-func SIPExerPrintln(level int, v ...interface{}) {
-	if cliops.verbosity < level {
-		return
-	}
-	pc, filename, line, _ := runtime.Caller(1)
-	logmsg := fmt.Sprintln(v...)
-	fmt.Printf("[info] [%s:%d] %s(): %s", filepath.Base(filename), line, runtime.FuncForPC(pc).Name(), logmsg)
 }
 
 func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rProto string, lAddr string, rAddr string, msgVal *sgsip.SGSIPMessage) int {
