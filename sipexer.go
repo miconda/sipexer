@@ -216,6 +216,7 @@ type CLIOptions struct {
 	verbosity        int
 	nagios           bool
 	ha1              bool
+	coloroutput      bool
 	version          bool
 }
 
@@ -271,6 +272,7 @@ var cliops = CLIOptions{
 	verbosity:        2,
 	nagios:           false,
 	ha1:              false,
+	coloroutput:      false,
 	version:          false,
 }
 
@@ -365,6 +367,8 @@ func init() {
 	flag.BoolVar(&cliops.nagios, "nagios", cliops.nagios, "nagios plugin exit codes")
 	flag.BoolVar(&cliops.ha1, "ha1", cliops.ha1, "authentication password is in HA1 format")
 	flag.BoolVar(&cliops.nobody, "no-body", cliops.nobody, "no body for message or invite")
+	flag.BoolVar(&cliops.coloroutput, "color-output", cliops.coloroutput, "color output")
+	flag.BoolVar(&cliops.coloroutput, "co", cliops.coloroutput, "color output")
 
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
 	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
