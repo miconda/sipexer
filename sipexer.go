@@ -36,7 +36,7 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-const sipexerVersion = "1.0.0-beta1"
+const sipexerVersion = "1.0.0-beta2"
 
 // exit, return and error code values
 const (
