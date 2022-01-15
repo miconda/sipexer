@@ -117,6 +117,8 @@ a=rtpmap:101 telephone-event/8000{{.cr}}
 a=sendrecv{{.cr}}
 `
 
+var templateBody string = ""
+
 var templateDefaultJSONFields string = `{
 	"method": "OPTIONS",
 	"fuser": "alice",
@@ -185,6 +187,7 @@ type CLIOptions struct {
 	laddr            string
 	useragent        string
 	template         string
+	templatebody     string
 	templaterun      bool
 	fields           string
 	fieldseval       bool
@@ -233,6 +236,7 @@ var cliops = CLIOptions{
 	laddr:            "",
 	useragent:        "",
 	template:         "",
+	templatebody:     "",
 	templaterun:      false,
 	fields:           "",
 	fieldseval:       false,
@@ -304,6 +308,8 @@ func init() {
 	flag.StringVar(&cliops.tdomain, "td", cliops.tdomain, "To header URI domain")
 	flag.StringVar(&cliops.template, "template-file", cliops.template, "path to template file")
 	flag.StringVar(&cliops.template, "tf", cliops.template, "path to template file")
+	flag.StringVar(&cliops.templatebody, "template-body-file", cliops.templatebody, "path to template file for body")
+	flag.StringVar(&cliops.templatebody, "tbf", cliops.templatebody, "path to template file for body")
 	flag.StringVar(&cliops.fields, "fields-file", cliops.fields, "path to the json fields file")
 	flag.StringVar(&cliops.fields, "ff", cliops.fields, "path to the json fields file")
 	flag.StringVar(&cliops.laddr, "laddr", cliops.laddr, "local address (`ip:port` or `:port`)")
@@ -433,6 +439,15 @@ func main() {
 	} else {
 		SIPExerPrintf(SIPExerLogError, "missing data template file ('-tf' or '--template' parameter must be provided)\n")
 		SIPExerExit(SIPExerErrTemplateData)
+	}
+
+	if len(cliops.templatebody) > 0 {
+		tpldata, err1 := ioutil.ReadFile(cliops.templatebody)
+		if err1 != nil {
+			SIPExerPrintf(SIPExerLogError, "error: %v\n", err1)
+			SIPExerExit(SIPExerErrTemplateRead)
+		}
+		templateBody = string(tpldata)
 	}
 
 	tplfields := make(map[string]interface{})
@@ -835,6 +850,11 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 	if !cliops.nobody {
 		if len(cliops.body) > 0 {
 			msgVal.Body.Content = cliops.body
+		} else if len(templateBody) > 0 {
+			var bufBody bytes.Buffer
+			var tplBody = template.Must(template.New("wbodyout").Parse(templateBody))
+			tplBody.Execute(&bufBody, tplfields)
+			msgVal.Body.Content = strings.Replace(bufBody.String(), "$rmeol\n", "", -1)
 		} else if cliops.message {
 			var bufBody bytes.Buffer
 			var tplBody = template.Must(template.New("wbodyout").Parse(templateDefaultMessageBody))
