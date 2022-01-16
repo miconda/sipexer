@@ -1442,8 +1442,8 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 
 	// open ws connection
 	// ws, err := websocket.Dial(wsurl, "", wsorigin)
-	var ws *websocket.Conn = nil
-	ws, err = websocket.DialConfig(&websocket.Config{
+	var conn *websocket.Conn = nil
+	conn, err = websocket.DialConfig(&websocket.Config{
 		Location:  wsurlp,
 		Origin:    wsorgp,
 		Protocol:  []string{cliops.wsproto},
@@ -1459,14 +1459,14 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 
 	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
 	var smsg string = ""
-	ret := SIPExerPrepareMessage(tplstr, tplfields, "tls", ws.LocalAddr().String(), ws.RemoteAddr().String(), &msgVal)
+	ret := SIPExerPrepareMessage(tplstr, tplfields, "tls", conn.LocalAddr().String(), conn.RemoteAddr().String(), &msgVal)
 	if ret != 0 {
 		tchan <- ret
 		return
 	}
 	smsg = msgVal.Data
 
-	SIPExerPrintf(SIPExerLogInfo, "local socket address: %v (%v)\n", ws.LocalAddr(), ws.LocalAddr().Network())
+	SIPExerPrintf(SIPExerLogInfo, "local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
 	SIPExerPrintf(SIPExerLogInfo, "local via address: %v\n", tplfields["viaaddr"])
 	SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
 	SIPExerMessagePrint("\n", smsg, "\n")
@@ -1480,20 +1480,20 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 
 	var skipauth bool = false
 	for {
-		err = ws.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
-		_, err = ws.Write(wmsg)
+		err = conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+		_, err = conn.Write(wmsg)
 
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
 			tchan <- SIPExerErrWSWrite
 			return
 		}
-		err = ws.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+		err = conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
 		if err != nil {
 			tchan <- SIPExerErrWSSetReadTimeout
 			return
 		}
-		nRead, err = ws.Read(rmsg)
+		nRead, err = conn.Read(rmsg)
 		if err != nil {
 			SIPExerPrintf(SIPExerLogDebug, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, nRead, err)
 			tchan <- SIPExerErrWSRead
@@ -1507,7 +1507,7 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 				tchan <- ret
 				return
 			}
-			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", ws.RemoteAddr().String(), nRead)
+			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", conn.RemoteAddr().String(), nRead)
 			SIPExerMessagePrint("\n", string(rmsg), "\n")
 			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 			if ret == 100 {
@@ -1534,7 +1534,7 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 		}
 		break
 	}
-	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", ws.RemoteAddr().String(), nRead)
+	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", conn.RemoteAddr().String(), nRead)
 	SIPExerMessagePrint("\n", string(rmsg), "\n")
 	SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 	tchan <- SIPExerRetOK
