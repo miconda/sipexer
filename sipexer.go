@@ -220,6 +220,7 @@ type CLIOptions struct {
 	nagios           bool
 	ha1              bool
 	coloroutput      bool
+	colormessage     bool
 	version          bool
 }
 
@@ -277,6 +278,7 @@ var cliops = CLIOptions{
 	nagios:           false,
 	ha1:              false,
 	coloroutput:      false,
+	colormessage:     false,
 	version:          false,
 }
 
@@ -375,6 +377,8 @@ func init() {
 	flag.BoolVar(&cliops.nobody, "no-body", cliops.nobody, "no body for message or invite")
 	flag.BoolVar(&cliops.coloroutput, "color-output", cliops.coloroutput, "color output")
 	flag.BoolVar(&cliops.coloroutput, "co", cliops.coloroutput, "color output")
+	flag.BoolVar(&cliops.colormessage, "color-message", cliops.colormessage, "color SIP message output")
+	flag.BoolVar(&cliops.colormessage, "com", cliops.colormessage, "color SIP message output")
 
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
 	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
@@ -1036,7 +1040,9 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	smsg = msgVal.Data
 	SIPExerPrintf(SIPExerLogInfo, "local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
 	SIPExerPrintf(SIPExerLogInfo, "local via address: %v\n", tplfields["viaaddr"])
-	SIPExerPrintf(SIPExerLogInfo, "sending: [[\n%s]]\n\n", smsg)
+	SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+	SIPExerMessagePrint("\n", smsg, "\n")
+	SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 
 	var wmsg []byte
 	wmsg = []byte(smsg)
@@ -1101,8 +1107,9 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 					tchan <- ret
 					return
 				}
-				SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[\n%s]]\n",
-					rcvAddr.String(), nRead, string(rmsg))
+				SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", rcvAddr.String(), nRead)
+				SIPExerMessagePrint("\n", smsg, "\n")
+				SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 				if ret/100 == 1 {
 					// 1xx response - read again, but do not send request
 					resend = false
@@ -1116,7 +1123,9 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 					}
 					// authentication - send the new message
 					wmsg = []byte(smsg)
-					SIPExerPrintf(SIPExerLogInfo, "sending: [[\n%s]]\n\n", smsg)
+					SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+					SIPExerMessagePrint("\n", smsg, "\n")
+					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 					timeoutStep = cliops.timert1
 					timeoutVal = timeoutStep
 					resend = true
@@ -1131,8 +1140,9 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		break
 	}
 
-	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[\n%s]]\n",
-		rcvAddr.String(), nRead, string(rmsg))
+	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", rcvAddr.String(), nRead)
+	SIPExerMessagePrint("\n", smsg, "\n")
+	SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 	tchan <- SIPExerRetOK
 }
 
@@ -1586,4 +1596,37 @@ func SIPExerHMD5(data string) string {
 	md5d := md5.New()
 	md5d.Write([]byte(data))
 	return fmt.Sprintf("%x", md5d.Sum(nil))
+}
+
+func SIPExerMessagePrint(prefix string, smsg string, suffix string) {
+	if !cliops.colormessage {
+		fmt.Printf("%s%s%s", prefix, smsg, suffix)
+		return
+	}
+
+	var msgObj sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
+	if sgsip.SGSIPParseMessage(smsg, &msgObj) != sgsip.SGSIPRetOK {
+		fmt.Printf("%s%s%s%s%s", prefix, SIPExerLogLColorRed, smsg, SIPExerLogLColorReset, suffix)
+		return
+	}
+
+	fmt.Printf("%s", prefix)
+	if msgObj.FLine.MType == sgsip.FLineRequest {
+		fmt.Printf("%s%s%s %s%s %s%s%s\r\n", SIPExerLogLColorBold, SIPExerLogLColorCyan,
+			msgObj.FLine.Method, SIPExerLogLColorPurple, msgObj.FLine.URI,
+			SIPExerLogLColorGreen, msgObj.FLine.Proto, SIPExerLogLColorReset)
+	} else {
+		fmt.Printf("%s%s%s %s%s %s%s%s\r\n", SIPExerLogLColorBold, SIPExerLogLColorCyan,
+			msgObj.FLine.Proto, SIPExerLogLColorPurple, msgObj.FLine.CodeVal,
+			SIPExerLogLColorGreen, msgObj.FLine.Reason, SIPExerLogLColorReset)
+	}
+	for _, h := range msgObj.Headers {
+		fmt.Printf("%s: %s\r\n", h.Name, h.Body)
+	}
+	fmt.Printf("\r\n")
+
+	if msgObj.Body.ContentLen > 0 {
+		fmt.Printf("%s", msgObj.Body.Content)
+	}
+	fmt.Printf("%s", suffix)
 }
