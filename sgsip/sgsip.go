@@ -587,6 +587,7 @@ func SGSIPParseFirstLine(inputStr string, flineVal *SGSIPFirstLine) int {
 		return SGSIPRetErrFLineFormat
 	}
 	flineVal.Val = strFLine
+	flineVal.Proto = "SIP/2.0"
 	if flineVal.MType == FLineResponse {
 		strCR := strFLine[8:]
 		if len(strCR) < 5 {
