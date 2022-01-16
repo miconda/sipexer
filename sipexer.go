@@ -1108,7 +1108,7 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 					return
 				}
 				SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", rcvAddr.String(), nRead)
-				SIPExerMessagePrint("\n", smsg, "\n")
+				SIPExerMessagePrint("\n", string(rmsg), "\n")
 				SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 				if ret/100 == 1 {
 					// 1xx response - read again, but do not send request
@@ -1141,7 +1141,7 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	}
 
 	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", rcvAddr.String(), nRead)
-	SIPExerMessagePrint("\n", smsg, "\n")
+	SIPExerMessagePrint("\n", string(rmsg), "\n")
 	SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 	tchan <- SIPExerRetOK
 }
@@ -1199,7 +1199,9 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 
 	SIPExerPrintf(SIPExerLogInfo, "local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
 	SIPExerPrintf(SIPExerLogInfo, "local via address: %v\n", tplfields["viaaddr"])
-	SIPExerPrintf(SIPExerLogInfo, "sending: [[\n%s]]\n\n", smsg)
+	SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+	SIPExerMessagePrint("\n", smsg, "\n")
+	SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 
 	var wmsg []byte
 	wmsg = []byte(smsg)
@@ -1238,8 +1240,9 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 				tchan <- ret
 				return
 			}
-			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[\n%s]]\n",
-				dstaddr.String(), nRead, string(rmsg))
+			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", dstaddr.String(), nRead)
+			SIPExerMessagePrint("\n", string(rmsg), "\n")
+			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 			if ret == 100 {
 				// 1xx response - read again, but do not send request
 				rmsg = make([]byte, cliops.buffersize)
@@ -1252,7 +1255,9 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 				}
 				// authentication - send the new message
 				wmsg = []byte(smsg)
-				SIPExerPrintf(SIPExerLogInfo, "sending: [[\n%s]]\n\n", smsg)
+				SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+				SIPExerMessagePrint("\n", smsg, "\n")
+				SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 				skipauth = true
 				rmsg = make([]byte, cliops.buffersize)
 				continue
@@ -1262,8 +1267,9 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		}
 		break
 	}
-	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[\n%s]]\n",
-		dstaddr.String(), nRead, string(rmsg))
+	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", dstaddr.String(), nRead)
+	SIPExerMessagePrint("\n", string(rmsg), "\n")
+	SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 	tchan <- SIPExerRetOK
 }
 
@@ -1332,7 +1338,9 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 
 	SIPExerPrintf(SIPExerLogInfo, "local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
 	SIPExerPrintf(SIPExerLogInfo, "local via address: %v\n", tplfields["viaaddr"])
-	SIPExerPrintf(SIPExerLogInfo, "sending: [[\n%s]]\n\n", smsg)
+	SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+	SIPExerMessagePrint("\n", smsg, "\n")
+	SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 
 	var wmsg []byte
 	wmsg = []byte(smsg)
@@ -1369,8 +1377,9 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 				tchan <- ret
 				return
 			}
-			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[\n%s]]\n",
-				conn.RemoteAddr().String(), nRead, string(rmsg))
+			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", conn.RemoteAddr().String(), nRead)
+			SIPExerMessagePrint("\n", string(rmsg), "\n")
+			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 			if ret == 100 {
 				// 1xx response - read again, but do not send request
 				rmsg = make([]byte, cliops.buffersize)
@@ -1383,7 +1392,9 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 				}
 				// authentication - send the new message
 				wmsg = []byte(smsg)
-				SIPExerPrintf(SIPExerLogInfo, "sending: [[\n%s]]\n\n", smsg)
+				SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+				SIPExerMessagePrint("\n", smsg, "\n")
+				SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 				skipauth = true
 				rmsg = make([]byte, cliops.buffersize)
 				continue
@@ -1393,9 +1404,9 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		}
 		break
 	}
-
-	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[\n%s]]\n",
-		conn.RemoteAddr().String(), nRead, string(rmsg))
+	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", conn.RemoteAddr().String(), nRead)
+	SIPExerMessagePrint("\n", string(rmsg), "\n")
+	SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 	tchan <- SIPExerRetOK
 }
 
@@ -1457,7 +1468,9 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 
 	SIPExerPrintf(SIPExerLogInfo, "local socket address: %v (%v)\n", ws.LocalAddr(), ws.LocalAddr().Network())
 	SIPExerPrintf(SIPExerLogInfo, "local via address: %v\n", tplfields["viaaddr"])
-	SIPExerPrintf(SIPExerLogInfo, "sending: [[\n%s]]\n\n", smsg)
+	SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+	SIPExerMessagePrint("\n", smsg, "\n")
+	SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 
 	var wmsg []byte
 	wmsg = []byte(smsg)
@@ -1494,8 +1507,9 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 				tchan <- ret
 				return
 			}
-			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[\n%s]]\n",
-				ws.RemoteAddr().String(), nRead, string(rmsg))
+			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", ws.RemoteAddr().String(), nRead)
+			SIPExerMessagePrint("\n", string(rmsg), "\n")
+			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 			if ret == 100 {
 				// 1xx response - read again, but do not send request
 				rmsg = make([]byte, cliops.buffersize)
@@ -1508,7 +1522,9 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 				}
 				// authentication - send the new message
 				wmsg = []byte(smsg)
-				SIPExerPrintf(SIPExerLogInfo, "sending: [[\n%s]]\n\n", smsg)
+				SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+				SIPExerMessagePrint("\n", smsg, "\n")
+				SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 				skipauth = true
 				rmsg = make([]byte, cliops.buffersize)
 				continue
@@ -1518,8 +1534,9 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 		}
 		break
 	}
-	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[\n%s]]\n",
-		ws.RemoteAddr().String(), nRead, string(rmsg))
+	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", ws.RemoteAddr().String(), nRead)
+	SIPExerMessagePrint("\n", string(rmsg), "\n")
+	SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 	tchan <- SIPExerRetOK
 }
 
