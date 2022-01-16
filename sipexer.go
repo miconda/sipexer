@@ -1240,7 +1240,7 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 				tchan <- ret
 				return
 			}
-			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", dstaddr.String(), nRead)
+			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", conn.RemoteAddr().String(), nRead)
 			SIPExerMessagePrint("\n", string(rmsg), "\n")
 			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 			if ret == 100 {
@@ -1267,7 +1267,7 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		}
 		break
 	}
-	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", dstaddr.String(), nRead)
+	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", conn.RemoteAddr().String(), nRead)
 	SIPExerMessagePrint("\n", string(rmsg), "\n")
 	SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 	tchan <- SIPExerRetOK
