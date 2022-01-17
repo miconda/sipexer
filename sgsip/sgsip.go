@@ -95,6 +95,29 @@ const (
 	FLineResponse
 )
 
+const (
+	HeaderTypeNone = iota
+	HeaderTypeCallID
+	HeaderTypeFrom
+	HeaderTypeTo
+	HeaderTypeVia
+	HeaderTypeContact
+	HeaderTypeSubject
+	HeaderTypeContentLength
+	HeaderTypeContentType
+	HeaderTypeContentEncoding
+	HeaderTypeAcceptContact
+	HeaderTypeReferTo
+	HeaderTypeReferredBy
+	HeaderTypeEvent
+	HeaderTypeAllowEvents
+	HeaderTypeSupported
+	HeaderTypeRecordRoute
+	HeaderTypeRoute
+	HeaderTypeExpires
+	HeaderTypeOther
+)
+
 type SGSIPSocketAddress struct {
 	Val     string
 	Proto   string
@@ -679,6 +702,7 @@ func SGSIPParseHeaders(inputStr string, pMode int, headersList *[]SGSIPHeader) i
 			return SGSIPRetErrHeaderName
 		}
 		hdrItem.Name = strings.TrimRight(strArray[0], " \t")
+		hdrItem.HType = SGSIPHeaderGetType(hdrItem.Name)
 		hdrItem.Body = ""
 		for {
 			strArray = strings.SplitN(strArray[1], "\n", 2)
@@ -705,6 +729,49 @@ func SGSIPParseHeaders(inputStr string, pMode int, headersList *[]SGSIPHeader) i
 	return SGSIPRetOK
 }
 
+// SGSIPHeaderGetType --
+func SGSIPHeaderGetType(name string) int {
+	switch strings.ToLower(name) {
+	case "a", "accept-contact":
+		return HeaderTypeAcceptContact
+	case "b", "referred-by":
+		return HeaderTypeReferredBy
+	case "c", "content-type":
+		return HeaderTypeContentType
+	case "e", "content-encoding":
+		return HeaderTypeContentEncoding
+	case "f", "from":
+		return HeaderTypeFrom
+	case "i", "call-id":
+		return HeaderTypeCallID
+	case "k", "supported":
+		return HeaderTypeSupported
+	case "l", "content-length":
+		return HeaderTypeContentLength
+	case "m", "contact":
+		return HeaderTypeContact
+	case "o", "event":
+		return HeaderTypeEvent
+	case "r", "refer-to":
+		return HeaderTypeReferTo
+	case "s", "subject":
+		return HeaderTypeSubject
+	case "t", "to":
+		return HeaderTypeTo
+	case "u", "allow-events":
+		return HeaderTypeAllowEvents
+	case "v", "via":
+		return HeaderTypeVia
+	case "record-route":
+		return HeaderTypeRecordRoute
+	case "route":
+		return HeaderTypeRoute
+	case "expires":
+		return HeaderTypeExpires
+	}
+	return HeaderTypeOther
+}
+
 // SGSIPParseBody --
 func SGSIPParseBody(inputStr string, bodyVal *SGSIPBody) int {
 	strArray := strings.SplitN(inputStr, "\r\n\r\n", 2)
@@ -721,14 +788,16 @@ func SGSIPParseBody(inputStr string, bodyVal *SGSIPBody) int {
 
 // SGSIPMessageHeaderSet --
 func SGSIPMessageHeaderSet(msgVal *SGSIPMessage, hname string, hbody string) int {
+	htype := SGSIPHeaderGetType(hname)
 	for i, hdr := range msgVal.Headers {
-		if hdr.Name == hname {
+		if (htype != HeaderTypeOther && htype == hdr.HType) || (hdr.Name == hname) {
 			msgVal.Headers[i].Body = strings.Trim(hbody, " \t\r")
 			return SGSIPRetOK
 		}
 	}
 	var hdrItem SGSIPHeader = SGSIPHeader{}
 	hdrItem.Name = strings.Trim(hname, " \t\r")
+	hdrItem.HType = SGSIPHeaderGetType(hdrItem.Name)
 	hdrItem.Body = strings.Trim(hbody, " \t\r")
 	msgVal.Headers = append(msgVal.Headers, hdrItem)
 
@@ -737,8 +806,9 @@ func SGSIPMessageHeaderSet(msgVal *SGSIPMessage, hname string, hbody string) int
 
 // SGSIPMessageHeaderGet --
 func SGSIPMessageHeaderGet(msgVal *SGSIPMessage, hname string, hbody *string) int {
+	htype := SGSIPHeaderGetType(hname)
 	for i, hdr := range msgVal.Headers {
-		if hdr.Name == hname {
+		if (htype != HeaderTypeOther && htype == hdr.HType) || (hdr.Name == hname) {
 			*hbody = msgVal.Headers[i].Body
 			return SGSIPRetOK
 		}
