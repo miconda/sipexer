@@ -116,6 +116,7 @@ const (
 	HeaderTypeRecordRoute
 	HeaderTypeRoute
 	HeaderTypeExpires
+	HeaderTypeUserAgent
 	HeaderTypeOther
 )
 
@@ -771,6 +772,8 @@ func SGSIPHeaderGetType(name string) int {
 		return HeaderTypeRoute
 	case "expires":
 		return HeaderTypeExpires
+	case "user-agent":
+		return HeaderTypeUserAgent
 	}
 	return HeaderTypeOther
 }
