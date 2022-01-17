@@ -888,3 +888,44 @@ func SGSIPMessageToString(msgVal *SGSIPMessage, outputStr *string) int {
 	*outputStr = sb.String()
 	return SGSIPRetOK
 }
+
+// SGSIPInviteToACKString --
+func SGSIPInviteToACKString(invReq *SGSIPMessage, invRpl *SGSIPMessage, outputStr *string) int {
+	var sb strings.Builder
+	if len(invReq.FLine.Val) == 0 || len(invReq.Headers) == 0 ||
+		len(invRpl.FLine.Val) == 0 || len(invRpl.Headers) == 0 {
+		return SGSIPRetErrMessageNotSet
+	}
+	if invRpl.FLine.Code >= 300 {
+		sb.WriteString("ACK " + invReq.FLine.URI + " SIP/2.0\r\n")
+
+		for _, h := range invReq.Headers {
+			switch h.HType {
+			case HeaderTypeVia, HeaderTypeFrom:
+				sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+			}
+		}
+		for _, h := range invRpl.Headers {
+			switch h.HType {
+			case HeaderTypeTo:
+				sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+			}
+		}
+		for _, h := range invReq.Headers {
+			switch h.HType {
+			case HeaderTypeCallID:
+				sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+			}
+		}
+		for _, h := range invRpl.Headers {
+			switch h.HType {
+			case HeaderTypeCSeq:
+				sList := strings.SplitN(h.Body, " ", 2)
+				sb.WriteString(h.Name + ": " + sList[0] + " ACK\r\n")
+			}
+		}
+		sb.WriteString("Content-Length: 0\r\n\r\n")
+	}
+	*outputStr = sb.String()
+	return SGSIPRetOK
+}
