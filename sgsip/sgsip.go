@@ -98,6 +98,7 @@ const (
 const (
 	HeaderTypeNone = iota
 	HeaderTypeCallID
+	HeaderTypeCSeq
 	HeaderTypeFrom
 	HeaderTypeTo
 	HeaderTypeVia
@@ -762,6 +763,8 @@ func SGSIPHeaderGetType(name string) int {
 		return HeaderTypeAllowEvents
 	case "v", "via":
 		return HeaderTypeVia
+	case "cseq":
+		return HeaderTypeCSeq
 	case "record-route":
 		return HeaderTypeRecordRoute
 	case "route":
@@ -820,7 +823,7 @@ func SGSIPMessageHeaderGet(msgVal *SGSIPMessage, hname string, hbody *string) in
 // SGSIPMessageCSeqUpdate --
 func SGSIPMessageCSeqUpdate(msgVal *SGSIPMessage, ival int) int {
 	for i, hdr := range msgVal.Headers {
-		if hdr.Name == "CSeq" || hdr.Name == "s" {
+		if hdr.HType == HeaderTypeCSeq || strings.ToLower(hdr.Name) == "cseq" {
 			slist := strings.SplitN(msgVal.Headers[i].Body, " ", 2)
 			if len(slist) != 2 {
 				return SGSIPRetErrCSeqBody
