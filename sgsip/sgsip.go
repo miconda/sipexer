@@ -827,6 +827,29 @@ func SGSIPMessageHeaderGet(msgVal *SGSIPMessage, hname string, hbody *string) in
 	return SGSIPRetNotFound
 }
 
+// SGSIPMessageViaUpdate --
+func SGSIPMessageViaUpdate(msgObj *SGSIPMessage) int {
+	if len(msgObj.FLine.Val) == 0 || len(msgObj.Headers) == 0 {
+		return SGSIPRetErrMessageNotSet
+	}
+
+	for _, h := range msgObj.Headers {
+		switch h.HType {
+		case HeaderTypeVia:
+			sList := strings.SplitN(h.Body, ";branch=", 2)
+			if len(sList) == 2 {
+				idxSCol := strings.Index(sList[1], ";")
+				if idxSCol < 0 {
+					h.Body = sList[0] + ";branch=" + viaBranchCookie + uuid.New().String()
+				} else {
+					h.Body = sList[0] + ";branch=" + viaBranchCookie + uuid.New().String() + sList[1][idxSCol:]
+				}
+			}
+		}
+	}
+	return SGSIPRetOK
+}
+
 // SGSIPMessageCSeqUpdate --
 func SGSIPMessageCSeqUpdate(msgVal *SGSIPMessage, ival int) int {
 	for i, hdr := range msgVal.Headers {
