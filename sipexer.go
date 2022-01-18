@@ -1116,22 +1116,41 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 					rmsg = make([]byte, cliops.buffersize)
 					continue
 				}
-				if (ret == 401) || (ret == 407) {
-					if skipauth {
-						tchan <- ret
-						return
+				if ret >= 300 {
+					if cliops.invite {
+						var sack string = ""
+						ret = sgsip.SGSIPInviteToACKString(&msgVal, &sipRes, &sack)
+						if ret < 0 {
+							tchan <- ret
+							return
+						}
+						SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+						SIPExerMessagePrint("\n", sack, "\n")
+						SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+						if cliops.connectudp {
+							_, err = conn.Write([]byte(sack))
+						} else {
+							_, err = conn.WriteToUDP([]byte(sack), dstaddr)
+						}
+						time.Sleep(200 * time.Millisecond)
 					}
-					// authentication - send the new message
-					wmsg = []byte(smsg)
-					SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
-					SIPExerMessagePrint("\n", smsg, "\n")
-					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
-					timeoutStep = cliops.timert1
-					timeoutVal = timeoutStep
-					resend = true
-					skipauth = true
-					rmsg = make([]byte, cliops.buffersize)
-					continue
+					if (ret == 401) || (ret == 407) {
+						if skipauth {
+							tchan <- ret
+							return
+						}
+						// authentication - send the new message
+						wmsg = []byte(smsg)
+						SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+						SIPExerMessagePrint("\n", smsg, "\n")
+						SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+						timeoutStep = cliops.timert1
+						timeoutVal = timeoutStep
+						resend = true
+						skipauth = true
+						rmsg = make([]byte, cliops.buffersize)
+						continue
+					}
 				}
 				tchan <- ret
 				return
