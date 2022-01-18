@@ -1119,9 +1119,9 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 				if ret >= 300 {
 					if cliops.invite {
 						var sack string = ""
-						ret = sgsip.SGSIPInviteToACKString(&msgVal, &sipRes, &sack)
-						if ret < 0 {
-							tchan <- ret
+						ret1 := sgsip.SGSIPInviteToACKString(&msgVal, &sipRes, &sack)
+						if ret1 < 0 {
+							tchan <- ret1
 							return
 						}
 						SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
