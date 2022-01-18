@@ -6,6 +6,8 @@ import (
 	"net"
 	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 // return and error code values
@@ -183,6 +185,8 @@ type SGSIPMessage struct {
 	Body    SGSIPBody
 	MFlags  int
 }
+
+var viaBranchCookie string = "z9hG4bKSG."
 
 // Quick detection of ip/address type
 func SGAddrType(addr string) int {
@@ -904,7 +908,21 @@ func SGSIPInviteToACKString(invReq *SGSIPMessage, invRpl *SGSIPMessage, outputSt
 
 		for _, h := range invReq.Headers {
 			switch h.HType {
-			case HeaderTypeVia, HeaderTypeFrom:
+			case HeaderTypeVia:
+				sList := strings.SplitN(h.Body, ";branch=", 2)
+				if len(sList) < 2 {
+					sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+				} else {
+					idxSCol := strings.Index(sList[1], ";")
+					if idxSCol < 0 {
+						sb.WriteString(h.Name + ": " + sList[0] + ";branch=" +
+							viaBranchCookie + uuid.New().String() + "\r\n")
+					} else {
+						sb.WriteString(h.Name + ": " + sList[0] + ";branch=" +
+							viaBranchCookie + uuid.New().String() + sList[1][idxSCol:] + "\r\n")
+					}
+				}
+			case HeaderTypeFrom:
 				sb.WriteString(h.Name + ": " + h.Body + "\r\n")
 			}
 		}
