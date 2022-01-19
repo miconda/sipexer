@@ -71,9 +71,10 @@ const (
 	SIPExerErrResolveSrcTCPAddr   = -1140
 	SIPExerErrResolveDstTCPAddr   = -1141
 	SIPExerErrTCPDial             = -1142
-	SIPExerErrTCPSetWriteTimeout  = -1143
-	SIPExerErrTCPSetReadTimeout   = -1143
-	SIPExerErrTCPRead             = -1144
+	SIPExerErrTCPWrite            = -1143
+	SIPExerErrTCPSetWriteTimeout  = -1144
+	SIPExerErrTCPSetReadTimeout   = -1145
+	SIPExerErrTCPRead             = -1146
 	SIPExerErrTLSReadCertificates = -1150
 	SIPExerErrTLSDial             = -1151
 	SIPExerErrTLSWrite            = -1152
@@ -167,6 +168,7 @@ type SIPExerDialog struct {
 	ProtoId      int
 	LocalAddr    string
 	TargetAddr   string
+	RecvAddr     string
 	AType        int
 	Method       string
 	MethodId     int
@@ -179,6 +181,12 @@ type SIPExerDialog struct {
 	ConnTCP      *SIPExerConnTCP
 	ConnTLS      *SIPExerConnTLS
 	ConnWSS      *SIPExerConnWSS
+	RecvBuf      []byte
+	RecvN        int
+	TimeoutStep  int
+	TimeoutVal   int
+	Resend       bool
+	SkipAuth     bool
 }
 
 type paramFieldsType map[string]string
@@ -1026,112 +1034,147 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 
 	wmsg = []byte(smsg)
 
-	timeoutStep := cliops.timert1
-	timeoutVal := timeoutStep
-	rmsg := make([]byte, cliops.buffersize)
-	nRead := 0
-	var rcvAddr net.Addr
-	var resend bool = true
-	var skipauth bool = false
+	seDlg.RecvBuf = make([]byte, cliops.buffersize)
 	// retransmissions loop
 	for {
-		if resend {
-			if cliops.connectudp {
-				_, err = seDlg.ConnUDP.Conn.Write(wmsg)
-			} else {
-				_, err = seDlg.ConnUDP.Conn.WriteToUDP(wmsg, seDlg.ConnUDP.DstAddr)
+		if seDlg.ProtoId == sgsip.ProtoUDP {
+			if seDlg.Resend {
+				if cliops.connectudp {
+					_, err = seDlg.ConnUDP.Conn.Write(wmsg)
+				} else {
+					_, err = seDlg.ConnUDP.Conn.WriteToUDP(wmsg, seDlg.ConnUDP.DstAddr)
+				}
+				if err != nil {
+					SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
+					return SIPExerErrUDPWrite
+				}
 			}
+		} else {
+			err = seDlg.ConnTCP.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+			_, err = seDlg.ConnTCP.Conn.Write(wmsg)
+
 			if err != nil {
 				SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
-				return SIPExerErrUDPWrite
+				return SIPExerErrTCPSetWriteTimeout
 			}
 		}
 
-		err = seDlg.ConnUDP.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(timeoutStep)))
-		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-			return SIPExerErrUDPSetTimeout
-		}
-		nRead, rcvAddr, err = seDlg.ConnUDP.Conn.ReadFromUDP(rmsg)
-		if err != nil {
-			SIPExerPrintf(SIPExerLogDebug, "not receiving after %dms (bytes %d - %v)\n", timeoutVal, nRead, err)
-			if cliops.connectudp {
-				if strings.Contains(err.Error(), "recvfrom: connection refused") {
-					SIPExerPrintf(SIPExerLogError, "stop receiving - ICMP error\n")
-					return SIPExerErrUDPICMPTimeout
+		if seDlg.ProtoId == sgsip.ProtoUDP {
+			err = seDlg.ConnUDP.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(seDlg.TimeoutStep)))
+			if err != nil {
+				SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+				return SIPExerErrUDPSetTimeout
+			}
+			var rcvAddr net.Addr
+			seDlg.RecvN, rcvAddr, err = seDlg.ConnUDP.Conn.ReadFromUDP(seDlg.RecvBuf)
+			if err != nil {
+				SIPExerPrintf(SIPExerLogDebug, "not receiving after %dms (bytes %d - %v)\n", seDlg.TimeoutVal, seDlg.RecvN, err)
+				if cliops.connectudp {
+					if strings.Contains(err.Error(), "recvfrom: connection refused") {
+						SIPExerPrintf(SIPExerLogError, "stop receiving - ICMP error\n")
+						return SIPExerErrUDPICMPTimeout
+					}
 				}
-			}
-			if timeoutStep < cliops.timert2 {
-				timeoutStep *= 2
-			} else {
-				timeoutStep = cliops.timert2
-			}
-			timeoutVal += timeoutStep
-			if timeoutVal <= cliops.timeout {
-				SIPExerPrintf(SIPExerLogInfo, "trying again - new timeout at %dms\n", timeoutVal)
-				continue
-			}
-			SIPExerPrintf(SIPExerLogError, "error reading - bytes %d - %v\n", nRead, err)
-			return SIPExerErrUDPReceiveTimeout
-		} else {
-			if nRead > 0 {
-				// absorb 1xx responses or deal with 401/407 auth challenges
-				seDlg.LastResponse = new(sgsip.SGSIPMessage)
-				ret = SIPExerProcessResponse(seDlg.FirstRequest, rmsg, seDlg.LastResponse, &skipauth, &smsg)
-				if ret < 0 {
-					return ret
+				if seDlg.TimeoutStep < cliops.timert2 {
+					seDlg.TimeoutStep *= 2
+				} else {
+					seDlg.TimeoutStep = cliops.timert2
 				}
-				SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", rcvAddr.String(), nRead)
-				SIPExerMessagePrint("\n", string(rmsg), "\n")
-				SIPExerPrintf(SIPExerLogInfo, "---]]\n")
-				if ret/100 == 1 {
-					// 1xx response - read again, but do not send request
-					resend = false
-					rmsg = make([]byte, cliops.buffersize)
+				seDlg.TimeoutVal += seDlg.TimeoutStep
+				if seDlg.TimeoutVal <= cliops.timeout {
+					SIPExerPrintf(SIPExerLogInfo, "trying again - new timeout at %dms\n", seDlg.TimeoutVal)
 					continue
 				}
-				if ret >= 300 {
-					if cliops.invite {
-						var sack string = ""
-						ret1 := sgsip.SGSIPInviteToACKString(seDlg.FirstRequest, seDlg.LastResponse, &sack)
-						if ret1 < 0 {
-							return ret1
-						}
-						SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
-						SIPExerMessagePrint("\n", sack, "\n")
-						SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+				SIPExerPrintf(SIPExerLogError, "error reading - bytes %d - %v\n", seDlg.RecvN, err)
+				return SIPExerErrUDPReceiveTimeout
+			} else {
+				seDlg.RecvAddr = rcvAddr.String()
+			}
+		} else {
+			err = seDlg.ConnTCP.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+			if err != nil {
+				SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+				return SIPExerErrTCPSetReadTimeout
+			}
+			seDlg.RecvN, err = seDlg.ConnTCP.Conn.Read(seDlg.RecvBuf)
+			if err != nil {
+				SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
+				return SIPExerErrTCPRead
+			}
+		}
+		if seDlg.RecvN > 0 {
+			// absorb 1xx responses or deal with 401/407 auth challenges
+			seDlg.LastResponse = new(sgsip.SGSIPMessage)
+			ret = SIPExerProcessResponse(seDlg.FirstRequest, seDlg.RecvBuf, seDlg.LastResponse, &seDlg.SkipAuth, &smsg)
+			if ret < 0 {
+				return ret
+			}
+			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", seDlg.RecvAddr, seDlg.RecvN)
+			SIPExerMessagePrint("\n", string(seDlg.RecvBuf), "\n")
+			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
+			if ret/100 == 1 {
+				// 1xx response - read again, but do not re-send UDP request
+				if seDlg.ProtoId == sgsip.ProtoUDP {
+					seDlg.Resend = false
+				}
+				seDlg.RecvBuf = make([]byte, cliops.buffersize)
+				continue
+			}
+			if ret >= 300 {
+				if cliops.invite {
+					var sack string = ""
+					ret1 := sgsip.SGSIPInviteToACKString(seDlg.FirstRequest, seDlg.LastResponse, &sack)
+					if ret1 < 0 {
+						return ret1
+					}
+					SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+					SIPExerMessagePrint("\n", sack, "\n")
+					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+					if seDlg.ProtoId == sgsip.ProtoUDP {
 						if cliops.connectudp {
 							_, err = seDlg.ConnUDP.Conn.Write([]byte(sack))
 						} else {
 							_, err = seDlg.ConnUDP.Conn.WriteToUDP([]byte(sack), seDlg.ConnUDP.DstAddr)
 						}
-						time.Sleep(200 * time.Millisecond)
-					}
-					if (ret == 401) || (ret == 407) {
-						if skipauth {
-							return ret
+						if err != nil {
+							SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
+							return SIPExerErrUDPWrite
 						}
-						// authentication - send the new message
-						wmsg = []byte(smsg)
-						SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
-						SIPExerMessagePrint("\n", smsg, "\n")
-						SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
-						timeoutStep = cliops.timert1
-						timeoutVal = timeoutStep
-						resend = true
-						skipauth = true
-						rmsg = make([]byte, cliops.buffersize)
-						continue
+					} else {
+						_, err = seDlg.ConnTCP.Conn.Write([]byte(sack))
+						if err != nil {
+							SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
+							return SIPExerErrTCPWrite
+						}
 					}
+					time.Sleep(200 * time.Millisecond)
 				}
-				return ret
+				if (ret == 401) || (ret == 407) {
+					if seDlg.SkipAuth {
+						return ret
+					}
+					// authentication - send the new message
+					wmsg = []byte(smsg)
+					SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+					SIPExerMessagePrint("\n", smsg, "\n")
+					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+					if seDlg.ProtoId == sgsip.ProtoUDP {
+						seDlg.TimeoutStep = cliops.timert1
+						seDlg.TimeoutVal = seDlg.TimeoutStep
+						seDlg.Resend = true
+					}
+					seDlg.SkipAuth = true
+					seDlg.RecvBuf = make([]byte, cliops.buffersize)
+					continue
+				}
 			}
+			return ret
 		}
 		break
 	}
 
-	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", rcvAddr.String(), nRead)
-	SIPExerMessagePrint("\n", string(rmsg), "\n")
+	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", seDlg.RecvAddr, seDlg.RecvN)
+	SIPExerMessagePrint("\n", string(seDlg.RecvBuf), "\n")
 	SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 	return SIPExerRetOK
 }
@@ -1204,15 +1247,23 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 
 	seDlg.LocalAddr = lAddr
 	seDlg.TargetAddr = seDlg.ConnUDP.DstAddr.String()
+	seDlg.RecvAddr = seDlg.TargetAddr
+	seDlg.Resend = true
+	seDlg.TimeoutStep = cliops.timert1
+	seDlg.TimeoutVal = seDlg.TimeoutStep
 
 	ret := SIPExerDialogLoop(tplstr, tplfields, &seDlg)
 	tchan <- ret
 }
 
 func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]interface{}, tchan chan int) {
-	var srcaddr *net.TCPAddr = nil
-	var dstaddr *net.TCPAddr = nil
+	var seDlg SIPExerDialog = SIPExerDialog{}
 	var err error
+
+	seDlg.Proto = "tcp"
+	seDlg.ProtoId = sgsip.ProtoTCP
+	seDlg.AType = dstSockAddr.AType
+	seDlg.ConnTCP = new(SIPExerConnTCP)
 
 	strAFProto := "tcp"
 	if dstSockAddr.AType == sgsip.AFIPv4 {
@@ -1227,113 +1278,43 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		}
 	}
 	if len(cliops.laddr) > 0 {
-		srcaddr, err = net.ResolveTCPAddr(strAFProto, cliops.laddr)
+		seDlg.ConnTCP.SrcAddr, err = net.ResolveTCPAddr(strAFProto, cliops.laddr)
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
 			tchan <- SIPExerErrResolveSrcTCPAddr
 			return
 		}
 	}
-	dstaddr, err = net.ResolveTCPAddr(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port)
+	seDlg.ConnTCP.DstAddr, err = net.ResolveTCPAddr(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port)
 	if err != nil {
 		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
 		tchan <- SIPExerErrResolveDstTCPAddr
 		return
 	}
 
-	var conn *net.TCPConn
-	conn, err = net.DialTCP(strAFProto, srcaddr, dstaddr)
+	seDlg.ConnTCP.Conn, err = net.DialTCP(strAFProto, seDlg.ConnTCP.SrcAddr, seDlg.ConnTCP.DstAddr)
 
-	defer conn.Close()
 	if err != nil {
 		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
 		tchan <- SIPExerErrTCPDial
 		return
 	}
 
-	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
-	var smsg string = ""
-	ret := SIPExerPrepareMessage(tplstr, tplfields, "tcp", conn.LocalAddr().String(), conn.RemoteAddr().String(), &msgVal)
-	if ret != 0 {
-		tchan <- ret
+	defer seDlg.ConnTCP.Conn.Close()
+	if err != nil {
+		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+		tchan <- SIPExerErrTCPDial
 		return
 	}
-	smsg = msgVal.Data
 
-	SIPExerPrintf(SIPExerLogInfo, "local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
-	SIPExerPrintf(SIPExerLogInfo, "local via address: %v\n", tplfields["viaaddr"])
-	SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
-	SIPExerMessagePrint("\n", smsg, "\n")
-	SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+	seDlg.LocalAddr = seDlg.ConnTCP.Conn.LocalAddr().String()
+	seDlg.TargetAddr = seDlg.ConnTCP.Conn.RemoteAddr().String()
+	seDlg.RecvAddr = seDlg.TargetAddr
+	seDlg.TimeoutStep = cliops.timeout
+	seDlg.TimeoutVal = seDlg.TimeoutStep
 
-	var wmsg []byte
-	wmsg = []byte(smsg)
-
-	rmsg := make([]byte, cliops.buffersize)
-	nRead := 0
-
-	var skipauth bool = false
-	for {
-		err = conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
-		_, err = conn.Write(wmsg)
-
-		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
-			tchan <- SIPExerErrTCPSetWriteTimeout
-			return
-		}
-
-		err = conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
-		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-			tchan <- SIPExerErrTCPSetReadTimeout
-			return
-		}
-		nRead, err = conn.Read(rmsg)
-		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, nRead, err)
-			tchan <- SIPExerErrTCPRead
-			return
-		}
-		if nRead > 0 {
-			// absorb 1xx responses or deal with 401/407 auth challenges
-			var sipRes sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
-			ret = SIPExerProcessResponse(&msgVal, rmsg, &sipRes, &skipauth, &smsg)
-			if ret < 0 {
-				tchan <- ret
-				return
-			}
-			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", conn.RemoteAddr().String(), nRead)
-			SIPExerMessagePrint("\n", string(rmsg), "\n")
-			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
-			if ret == 100 {
-				// 1xx response - read again, but do not send request
-				rmsg = make([]byte, cliops.buffersize)
-				continue
-			}
-			if (ret == 401) || (ret == 407) {
-				if skipauth {
-					tchan <- ret
-					return
-				}
-				// authentication - send the new message
-				wmsg = []byte(smsg)
-				SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
-				SIPExerMessagePrint("\n", smsg, "\n")
-				SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
-				skipauth = true
-				rmsg = make([]byte, cliops.buffersize)
-				continue
-			}
-			tchan <- ret
-			return
-		}
-		break
-	}
-	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", conn.RemoteAddr().String(), nRead)
-	SIPExerMessagePrint("\n", string(rmsg), "\n")
-	SIPExerPrintf(SIPExerLogInfo, "---]]\n")
-	tchan <- SIPExerRetOK
+	ret := SIPExerDialogLoop(tplstr, tplfields, &seDlg)
+	tchan <- ret
 }
 
 func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]interface{}, tchan chan int) {
