@@ -142,6 +142,45 @@ var templateFields = map[string]map[string]interface{}{
 	"FIELDS:EMPTY": {},
 }
 
+type SIPExerConnUDP struct {
+	SrcAddr *net.UDPAddr
+	DstAddr *net.UDPAddr
+	Conn    *net.UDPConn
+}
+
+type SIPExerConnTCP struct {
+	SrcAddr *net.TCPAddr
+	DstAddr *net.TCPAddr
+	Conn    *net.TCPConn
+}
+
+type SIPExerConnTLS struct {
+	Conn *tls.Conn
+}
+
+type SIPExerConnWSS struct {
+	Conn *websocket.Conn
+}
+
+type SIPExerDialog struct {
+	Proto        string
+	ProtoId      int
+	LocalAddr    string
+	TargetAddr   string
+	AType        int
+	Method       string
+	MethodId     int
+	LocalCSeq    int
+	FirstRequest *sgsip.SGSIPMessage
+	LastRequest  *sgsip.SGSIPMessage
+	AckRequest   *sgsip.SGSIPMessage
+	LastResponse *sgsip.SGSIPMessage
+	ConnUDP      *SIPExerConnUDP
+	ConnTCP      *SIPExerConnTCP
+	ConnTLS      *SIPExerConnTLS
+	ConnWSS      *SIPExerConnWSS
+}
+
 type paramFieldsType map[string]string
 
 func (m paramFieldsType) String() string {
@@ -966,85 +1005,24 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 	return sipRes.FLine.Code
 }
 
-func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]interface{}, tchan chan int) {
-	var srcaddr *net.UDPAddr = nil
-	var dstaddr *net.UDPAddr = nil
-	var err error
-
-	strAFProto := "udp"
-	if dstSockAddr.AType == sgsip.AFIPv4 {
-		strAFProto = "udp4"
-	} else if dstSockAddr.AType == sgsip.AFIPv6 {
-		strAFProto = "udp6"
-	} else {
-		if cliops.af == sgsip.AFIPv4 {
-			strAFProto = "udp4"
-		} else if cliops.af == sgsip.AFIPv6 {
-			strAFProto = "udp6"
-		}
-	}
-	if len(cliops.laddr) > 0 {
-		srcaddr, err = net.ResolveUDPAddr(strAFProto, cliops.laddr)
-		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-			tchan <- SIPExerErrResolveSrcUDPAddr
-			return
-		}
-	}
-	dstaddr, err = net.ResolveUDPAddr(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port)
-	if err != nil {
-		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-		tchan <- SIPExerErrResolveDstUDPAddr
-		return
-	}
-	var conn *net.UDPConn
-	if cliops.connectudp {
-		conn, err = net.DialUDP(strAFProto, srcaddr, dstaddr)
-	} else {
-		conn, err = net.ListenUDP(strAFProto, srcaddr)
-	}
-	defer conn.Close()
-	if err != nil {
-		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-		tchan <- SIPExerErrUDPSocket
-		return
-	}
-
-	// get local address
-	lAddr := conn.LocalAddr().String()
-	if strings.HasPrefix(lAddr, "0.0.0.0:") ||
-		strings.HasPrefix(lAddr, "[::]:") {
-		// try a connect-udp to learn local ip
-		var conn1 *net.UDPConn
-		conn1, err = net.DialUDP(strAFProto, nil, dstaddr)
-		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-			tchan <- SIPExerErrUDPDial
-			return
-		}
-		lAddr1 := conn1.LocalAddr().String()
-		lIdx0 := strings.LastIndex(lAddr, ":")
-		lIdx1 := strings.LastIndex(lAddr1, ":")
-		lAddr = lAddr1[:lIdx1] + lAddr[lIdx0:]
-		conn1.Close()
-	}
-
-	var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
+func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *SIPExerDialog) int {
 	var smsg string = ""
-	ret := SIPExerPrepareMessage(tplstr, tplfields, "udp", lAddr, dstaddr.String(), &msgVal)
+	var err error
+	var wmsg []byte
+
+	seDlg.FirstRequest = new(sgsip.SGSIPMessage)
+	ret := SIPExerPrepareMessage(tplstr, tplfields, seDlg.Proto, seDlg.LocalAddr, seDlg.TargetAddr, seDlg.FirstRequest)
 	if ret != 0 {
 		SIPExerPrintf(SIPExerLogError, "error preparing the message: %d\n", ret)
-		tchan <- ret
-		return
+		return ret
 	}
-	smsg = msgVal.Data
-	SIPExerPrintf(SIPExerLogInfo, "local socket address: %v (%v)\n", conn.LocalAddr(), conn.LocalAddr().Network())
+	smsg = seDlg.FirstRequest.Data
+	SIPExerPrintf(SIPExerLogInfo, "local socket address: %v (%v)\n", seDlg.LocalAddr, seDlg.Proto)
 	SIPExerPrintf(SIPExerLogInfo, "local via address: %v\n", tplfields["viaaddr"])
 	SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
 	SIPExerMessagePrint("\n", smsg, "\n")
 	SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 
-	var wmsg []byte
 	wmsg = []byte(smsg)
 
 	timeoutStep := cliops.timert1
@@ -1058,31 +1036,28 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	for {
 		if resend {
 			if cliops.connectudp {
-				_, err = conn.Write(wmsg)
+				_, err = seDlg.ConnUDP.Conn.Write(wmsg)
 			} else {
-				_, err = conn.WriteToUDP(wmsg, dstaddr)
+				_, err = seDlg.ConnUDP.Conn.WriteToUDP(wmsg, seDlg.ConnUDP.DstAddr)
 			}
 			if err != nil {
 				SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
-				tchan <- SIPExerErrUDPWrite
-				return
+				return SIPExerErrUDPWrite
 			}
 		}
 
-		err = conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(timeoutStep)))
+		err = seDlg.ConnUDP.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(timeoutStep)))
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-			tchan <- SIPExerErrUDPSetTimeout
-			return
+			return SIPExerErrUDPSetTimeout
 		}
-		nRead, rcvAddr, err = conn.ReadFromUDP(rmsg)
+		nRead, rcvAddr, err = seDlg.ConnUDP.Conn.ReadFromUDP(rmsg)
 		if err != nil {
 			SIPExerPrintf(SIPExerLogDebug, "not receiving after %dms (bytes %d - %v)\n", timeoutVal, nRead, err)
 			if cliops.connectudp {
 				if strings.Contains(err.Error(), "recvfrom: connection refused") {
 					SIPExerPrintf(SIPExerLogError, "stop receiving - ICMP error\n")
-					tchan <- SIPExerErrUDPICMPTimeout
-					return
+					return SIPExerErrUDPICMPTimeout
 				}
 			}
 			if timeoutStep < cliops.timert2 {
@@ -1096,16 +1071,14 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 				continue
 			}
 			SIPExerPrintf(SIPExerLogError, "error reading - bytes %d - %v\n", nRead, err)
-			tchan <- SIPExerErrUDPReceiveTimeout
-			return
+			return SIPExerErrUDPReceiveTimeout
 		} else {
 			if nRead > 0 {
 				// absorb 1xx responses or deal with 401/407 auth challenges
-				var sipRes sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
-				ret = SIPExerProcessResponse(&msgVal, rmsg, &sipRes, &skipauth, &smsg)
+				seDlg.LastResponse = new(sgsip.SGSIPMessage)
+				ret = SIPExerProcessResponse(seDlg.FirstRequest, rmsg, seDlg.LastResponse, &skipauth, &smsg)
 				if ret < 0 {
-					tchan <- ret
-					return
+					return ret
 				}
 				SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", rcvAddr.String(), nRead)
 				SIPExerMessagePrint("\n", string(rmsg), "\n")
@@ -1119,25 +1092,23 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 				if ret >= 300 {
 					if cliops.invite {
 						var sack string = ""
-						ret1 := sgsip.SGSIPInviteToACKString(&msgVal, &sipRes, &sack)
+						ret1 := sgsip.SGSIPInviteToACKString(seDlg.FirstRequest, seDlg.LastResponse, &sack)
 						if ret1 < 0 {
-							tchan <- ret1
-							return
+							return ret1
 						}
 						SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
 						SIPExerMessagePrint("\n", sack, "\n")
 						SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 						if cliops.connectudp {
-							_, err = conn.Write([]byte(sack))
+							_, err = seDlg.ConnUDP.Conn.Write([]byte(sack))
 						} else {
-							_, err = conn.WriteToUDP([]byte(sack), dstaddr)
+							_, err = seDlg.ConnUDP.Conn.WriteToUDP([]byte(sack), seDlg.ConnUDP.DstAddr)
 						}
 						time.Sleep(200 * time.Millisecond)
 					}
 					if (ret == 401) || (ret == 407) {
 						if skipauth {
-							tchan <- ret
-							return
+							return ret
 						}
 						// authentication - send the new message
 						wmsg = []byte(smsg)
@@ -1152,8 +1123,7 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 						continue
 					}
 				}
-				tchan <- ret
-				return
+				return ret
 			}
 		}
 		break
@@ -1162,7 +1132,80 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", rcvAddr.String(), nRead)
 	SIPExerMessagePrint("\n", string(rmsg), "\n")
 	SIPExerPrintf(SIPExerLogInfo, "---]]\n")
-	tchan <- SIPExerRetOK
+	return SIPExerRetOK
+}
+
+func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]interface{}, tchan chan int) {
+	var seDlg SIPExerDialog = SIPExerDialog{}
+	var err error
+
+	seDlg.Proto = "udp"
+	seDlg.ProtoId = sgsip.ProtoUDP
+	seDlg.AType = dstSockAddr.AType
+	seDlg.ConnUDP = new(SIPExerConnUDP)
+
+	strAFProto := "udp"
+	if dstSockAddr.AType == sgsip.AFIPv4 {
+		strAFProto = "udp4"
+	} else if dstSockAddr.AType == sgsip.AFIPv6 {
+		strAFProto = "udp6"
+	} else {
+		if cliops.af == sgsip.AFIPv4 {
+			strAFProto = "udp4"
+		} else if cliops.af == sgsip.AFIPv6 {
+			strAFProto = "udp6"
+		}
+	}
+	if len(cliops.laddr) > 0 {
+		seDlg.ConnUDP.SrcAddr, err = net.ResolveUDPAddr(strAFProto, cliops.laddr)
+		if err != nil {
+			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+			tchan <- SIPExerErrResolveSrcUDPAddr
+			return
+		}
+	}
+	seDlg.ConnUDP.DstAddr, err = net.ResolveUDPAddr(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port)
+	if err != nil {
+		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+		tchan <- SIPExerErrResolveDstUDPAddr
+		return
+	}
+	if cliops.connectudp {
+		seDlg.ConnUDP.Conn, err = net.DialUDP(strAFProto, seDlg.ConnUDP.SrcAddr, seDlg.ConnUDP.DstAddr)
+	} else {
+		seDlg.ConnUDP.Conn, err = net.ListenUDP(strAFProto, seDlg.ConnUDP.SrcAddr)
+	}
+	defer seDlg.ConnUDP.Conn.Close()
+	if err != nil {
+		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+		tchan <- SIPExerErrUDPSocket
+		return
+	}
+
+	// get local address
+	lAddr := seDlg.ConnUDP.Conn.LocalAddr().String()
+	if strings.HasPrefix(lAddr, "0.0.0.0:") ||
+		strings.HasPrefix(lAddr, "[::]:") {
+		// try a connect-udp to learn local ip
+		var conn1 *net.UDPConn
+		conn1, err = net.DialUDP(strAFProto, nil, seDlg.ConnUDP.DstAddr)
+		if err != nil {
+			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+			tchan <- SIPExerErrUDPDial
+			return
+		}
+		lAddr1 := conn1.LocalAddr().String()
+		lIdx0 := strings.LastIndex(lAddr, ":")
+		lIdx1 := strings.LastIndex(lAddr1, ":")
+		lAddr = lAddr1[:lIdx1] + lAddr[lIdx0:]
+		conn1.Close()
+	}
+
+	seDlg.LocalAddr = lAddr
+	seDlg.TargetAddr = seDlg.ConnUDP.DstAddr.String()
+
+	ret := SIPExerDialogLoop(tplstr, tplfields, &seDlg)
+	tchan <- ret
 }
 
 func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]interface{}, tchan chan int) {
