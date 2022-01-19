@@ -833,16 +833,16 @@ func SGSIPMessageViaUpdate(msgObj *SGSIPMessage) int {
 		return SGSIPRetErrMessageNotSet
 	}
 
-	for _, h := range msgObj.Headers {
+	for i, h := range msgObj.Headers {
 		switch h.HType {
 		case HeaderTypeVia:
 			sList := strings.SplitN(h.Body, ";branch=", 2)
 			if len(sList) == 2 {
 				idxSCol := strings.Index(sList[1], ";")
 				if idxSCol < 0 {
-					h.Body = sList[0] + ";branch=" + viaBranchCookie + uuid.New().String()
+					msgObj.Headers[i].Body = sList[0] + ";branch=" + viaBranchCookie + uuid.New().String()
 				} else {
-					h.Body = sList[0] + ";branch=" + viaBranchCookie + uuid.New().String() + sList[1][idxSCol:]
+					msgObj.Headers[i].Body = sList[0] + ";branch=" + viaBranchCookie + uuid.New().String() + sList[1][idxSCol:]
 				}
 			}
 		}
