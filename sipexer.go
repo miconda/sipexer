@@ -245,6 +245,7 @@ type CLIOptions struct {
 	timert1          int
 	timert2          int
 	timeout          int
+	timeoutwrite     int
 	buffersize       int
 	connectudp       bool
 	af               int
@@ -295,6 +296,7 @@ var cliops = CLIOptions{
 	timert1:          500,
 	timert2:          4000,
 	timeout:          32000,
+	timeoutwrite:     4000,
 	buffersize:       32 * 1024,
 	connectudp:       false,
 	af:               0,
@@ -430,7 +432,8 @@ func init() {
 
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
 	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
-	flag.IntVar(&cliops.timeout, "timeout", cliops.timeout, "timeout trying to send data (milliseconds)")
+	flag.IntVar(&cliops.timeoutwrite, "timeout-write", cliops.timeoutwrite, "timeout to write data to socket (milliseconds)")
+	flag.IntVar(&cliops.timeout, "timeout", cliops.timeout, "timeout waiting to receice data (milliseconds)")
 	flag.IntVar(&cliops.af, "af", cliops.af, "enforce address family for socket (4 or 6)")
 	flag.IntVar(&cliops.verbosity, "verbosity", cliops.verbosity, "verbosity level (0..3)")
 	flag.IntVar(&cliops.verbosity, "vl", cliops.verbosity, "verbosity level (0..3)")
@@ -1015,32 +1018,44 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 	return sipRes.FLine.Code
 }
 
-func SIPExerSendQuick(seDlg *SIPExerDialog, smsg *string) int {
+func SIPExerSetWriteTimeout(seDlg *SIPExerDialog) {
+	if seDlg.ProtoId == sgsip.ProtoUDP {
+		seDlg.ConnUDP.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeoutwrite)))
+	} else if seDlg.ProtoId == sgsip.ProtoTCP {
+		seDlg.ConnTCP.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeoutwrite)))
+	} else if seDlg.ProtoId == sgsip.ProtoTLS {
+		seDlg.ConnTLS.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeoutwrite)))
+	} else if seDlg.ProtoId == sgsip.ProtoWSS {
+		seDlg.ConnWSS.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeoutwrite)))
+	}
+}
+
+func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 	var err error
 	if seDlg.ProtoId == sgsip.ProtoUDP {
 		if cliops.connectudp {
-			_, err = seDlg.ConnUDP.Conn.Write([]byte(*smsg))
+			_, err = seDlg.ConnUDP.Conn.Write(bmsg)
 		} else {
-			_, err = seDlg.ConnUDP.Conn.WriteToUDP([]byte(*smsg), seDlg.ConnUDP.DstAddr)
+			_, err = seDlg.ConnUDP.Conn.WriteToUDP(bmsg, seDlg.ConnUDP.DstAddr)
 		}
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
 			return SIPExerErrUDPWrite
 		}
 	} else if seDlg.ProtoId == sgsip.ProtoTCP {
-		_, err = seDlg.ConnTCP.Conn.Write([]byte(*smsg))
+		_, err = seDlg.ConnTCP.Conn.Write(bmsg)
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
 			return SIPExerErrTCPWrite
 		}
 	} else if seDlg.ProtoId == sgsip.ProtoTLS {
-		_, err = seDlg.ConnTLS.Conn.Write([]byte(*smsg))
+		_, err = seDlg.ConnTLS.Conn.Write(bmsg)
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
 			return SIPExerErrTLSWrite
 		}
 	} else if seDlg.ProtoId == sgsip.ProtoWSS {
-		_, err = seDlg.ConnWSS.Conn.Write([]byte(*smsg))
+		_, err = seDlg.ConnWSS.Conn.Write(bmsg)
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
 			return SIPExerErrWSWrite
@@ -1049,6 +1064,10 @@ func SIPExerSendQuick(seDlg *SIPExerDialog, smsg *string) int {
 		return SIPExerRetErr
 	}
 	return SIPExerRetOK
+}
+
+func SIPExerSendString(seDlg *SIPExerDialog, smsg *string) int {
+	return SIPExerSendBytes(seDlg, []byte(*smsg))
 }
 
 func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *SIPExerDialog) int {
@@ -1074,44 +1093,13 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 	seDlg.RecvBuf = make([]byte, cliops.buffersize)
 	// retransmissions loop
 	for {
-		if seDlg.ProtoId == sgsip.ProtoUDP {
-			if seDlg.Resend {
-				if cliops.connectudp {
-					_, err = seDlg.ConnUDP.Conn.Write(wmsg)
-				} else {
-					_, err = seDlg.ConnUDP.Conn.WriteToUDP(wmsg, seDlg.ConnUDP.DstAddr)
-				}
-				if err != nil {
-					SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
-					return SIPExerErrUDPWrite
-				}
-			}
-		} else if seDlg.ProtoId == sgsip.ProtoTCP {
-			err = seDlg.ConnTCP.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(seDlg.TimeoutStep)))
-			_, err = seDlg.ConnTCP.Conn.Write(wmsg)
-
-			if err != nil {
-				SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
-				return SIPExerErrTCPSetWriteTimeout
-			}
-		} else if seDlg.ProtoId == sgsip.ProtoTLS {
-			err = seDlg.ConnTLS.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(seDlg.TimeoutStep)))
-			_, err = seDlg.ConnTLS.Conn.Write(wmsg)
-
-			if err != nil {
-				SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
-				return SIPExerErrTLSWrite
-			}
-		} else if seDlg.ProtoId == sgsip.ProtoWSS {
-			err = seDlg.ConnWSS.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(seDlg.TimeoutStep)))
-			_, err = seDlg.ConnWSS.Conn.Write(wmsg)
-
-			if err != nil {
-				SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
-				return SIPExerErrWSWrite
+		if (seDlg.ProtoId != sgsip.ProtoUDP) || seDlg.Resend {
+			SIPExerSetWriteTimeout(seDlg)
+			ret = SIPExerSendBytes(seDlg, wmsg)
+			if ret < 0 {
+				return ret
 			}
 		}
-
 		if seDlg.ProtoId == sgsip.ProtoUDP {
 			err = seDlg.ConnUDP.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(seDlg.TimeoutStep)))
 			if err != nil {
@@ -1203,7 +1191,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 					SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
 					SIPExerMessagePrint("\n", sack, "\n")
 					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
-					ret1 = SIPExerSendQuick(seDlg, &sack)
+					ret1 = SIPExerSendString(seDlg, &sack)
 					if ret1 < 0 {
 						return ret
 					}
