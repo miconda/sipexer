@@ -991,6 +991,7 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 			} else {
 				sgsip.SGSIPMessageHeaderSet(msgVal, "Proxy-Authorization", authResponse)
 			}
+			sgsip.SGSIPMessageViaUpdate(msgVal)
 			sgsip.SGSIPMessageCSeqUpdate(msgVal, 1)
 			if sgsip.SGSIPMessageToString(msgVal, smsg) != sgsip.SGSIPRetOK {
 				SIPExerPrintf(SIPExerLogError, "failed to rebuild sip message\n")
