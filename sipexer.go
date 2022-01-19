@@ -42,6 +42,7 @@ const sipexerVersion = "1.0.0-beta2"
 const (
 	SIPExerRetOK   = 0
 	SIPExerRetDone = 1
+	SIPExerRetErr  = -1
 
 	// errors
 	SIPExerErrTemplateRead        = -1000
@@ -1014,6 +1015,42 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 	return sipRes.FLine.Code
 }
 
+func SIPExerSendQuick(seDlg *SIPExerDialog, smsg *string) int {
+	var err error
+	if seDlg.ProtoId == sgsip.ProtoUDP {
+		if cliops.connectudp {
+			_, err = seDlg.ConnUDP.Conn.Write([]byte(*smsg))
+		} else {
+			_, err = seDlg.ConnUDP.Conn.WriteToUDP([]byte(*smsg), seDlg.ConnUDP.DstAddr)
+		}
+		if err != nil {
+			SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
+			return SIPExerErrUDPWrite
+		}
+	} else if seDlg.ProtoId == sgsip.ProtoTCP {
+		_, err = seDlg.ConnTCP.Conn.Write([]byte(*smsg))
+		if err != nil {
+			SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
+			return SIPExerErrTCPWrite
+		}
+	} else if seDlg.ProtoId == sgsip.ProtoTLS {
+		_, err = seDlg.ConnTLS.Conn.Write([]byte(*smsg))
+		if err != nil {
+			SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
+			return SIPExerErrTLSWrite
+		}
+	} else if seDlg.ProtoId == sgsip.ProtoWSS {
+		_, err = seDlg.ConnWSS.Conn.Write([]byte(*smsg))
+		if err != nil {
+			SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
+			return SIPExerErrWSWrite
+		}
+	} else {
+		return SIPExerRetErr
+	}
+	return SIPExerRetOK
+}
+
 func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *SIPExerDialog) int {
 	var smsg string = ""
 	var err error
@@ -1166,34 +1203,9 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 					SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
 					SIPExerMessagePrint("\n", sack, "\n")
 					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
-					if seDlg.ProtoId == sgsip.ProtoUDP {
-						if cliops.connectudp {
-							_, err = seDlg.ConnUDP.Conn.Write([]byte(sack))
-						} else {
-							_, err = seDlg.ConnUDP.Conn.WriteToUDP([]byte(sack), seDlg.ConnUDP.DstAddr)
-						}
-						if err != nil {
-							SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
-							return SIPExerErrUDPWrite
-						}
-					} else if seDlg.ProtoId == sgsip.ProtoTCP {
-						_, err = seDlg.ConnTCP.Conn.Write([]byte(sack))
-						if err != nil {
-							SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
-							return SIPExerErrTCPWrite
-						}
-					} else if seDlg.ProtoId == sgsip.ProtoTLS {
-						_, err = seDlg.ConnTLS.Conn.Write([]byte(sack))
-						if err != nil {
-							SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
-							return SIPExerErrTLSWrite
-						}
-					} else if seDlg.ProtoId == sgsip.ProtoWSS {
-						_, err = seDlg.ConnWSS.Conn.Write([]byte(sack))
-						if err != nil {
-							SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
-							return SIPExerErrWSWrite
-						}
+					ret1 = SIPExerSendQuick(seDlg, &sack)
+					if ret1 < 0 {
+						return ret
 					}
 					time.Sleep(200 * time.Millisecond)
 				}
