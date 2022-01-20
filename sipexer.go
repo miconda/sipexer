@@ -1030,6 +1030,34 @@ func SIPExerSetWriteTimeout(seDlg *SIPExerDialog) {
 	}
 }
 
+func SIPExerSetReadTimeout(seDlg *SIPExerDialog) int {
+	var err error
+	if seDlg.ProtoId == sgsip.ProtoUDP {
+		err = seDlg.ConnUDP.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(seDlg.TimeoutStep)))
+		if err != nil {
+			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+			return SIPExerErrUDPSetTimeout
+		}
+	} else if seDlg.ProtoId == sgsip.ProtoTCP {
+		err = seDlg.ConnTCP.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+		if err != nil {
+			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+			return SIPExerErrTCPSetReadTimeout
+		}
+	} else if seDlg.ProtoId == sgsip.ProtoTLS {
+		err = seDlg.ConnTLS.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+		if err != nil {
+			return SIPExerErrTLSSetReadTimeout
+		}
+	} else if seDlg.ProtoId == sgsip.ProtoWSS {
+		err = seDlg.ConnWSS.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+		if err != nil {
+			return SIPExerErrWSSetReadTimeout
+		}
+	}
+	return SIPExerRetOK
+}
+
 func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 	var err error
 	if seDlg.ProtoId == sgsip.ProtoUDP {
@@ -1066,10 +1094,6 @@ func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 	return SIPExerRetOK
 }
 
-func SIPExerSendString(seDlg *SIPExerDialog, smsg *string) int {
-	return SIPExerSendBytes(seDlg, []byte(*smsg))
-}
-
 func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *SIPExerDialog) int {
 	var smsg string = ""
 	var err error
@@ -1100,12 +1124,13 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 				return ret
 			}
 		}
+
+		seDlg.RecvN = 0
+		ret = SIPExerSetReadTimeout(seDlg)
+		if ret < 0 {
+			return ret
+		}
 		if seDlg.ProtoId == sgsip.ProtoUDP {
-			err = seDlg.ConnUDP.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(seDlg.TimeoutStep)))
-			if err != nil {
-				SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-				return SIPExerErrUDPSetTimeout
-			}
 			var rcvAddr net.Addr
 			seDlg.RecvN, rcvAddr, err = seDlg.ConnUDP.Conn.ReadFromUDP(seDlg.RecvBuf)
 			if err != nil {
@@ -1132,37 +1157,25 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 				seDlg.RecvAddr = rcvAddr.String()
 			}
 		} else if seDlg.ProtoId == sgsip.ProtoTCP {
-			err = seDlg.ConnTCP.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
-			if err != nil {
-				SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-				return SIPExerErrTCPSetReadTimeout
-			}
 			seDlg.RecvN, err = seDlg.ConnTCP.Conn.Read(seDlg.RecvBuf)
 			if err != nil {
 				SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
 				return SIPExerErrTCPRead
 			}
 		} else if seDlg.ProtoId == sgsip.ProtoTLS {
-			err = seDlg.ConnTLS.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
-			if err != nil {
-				return SIPExerErrTLSSetReadTimeout
-			}
 			seDlg.RecvN, err = seDlg.ConnTLS.Conn.Read(seDlg.RecvBuf)
 			if err != nil {
 				SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
 				return SIPExerErrTLSRead
 			}
 		} else if seDlg.ProtoId == sgsip.ProtoWSS {
-			err = seDlg.ConnWSS.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
-			if err != nil {
-				return SIPExerErrWSSetReadTimeout
-			}
 			seDlg.RecvN, err = seDlg.ConnWSS.Conn.Read(seDlg.RecvBuf)
 			if err != nil {
 				SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
 				return SIPExerErrWSRead
 			}
 		}
+
 		if seDlg.RecvN > 0 {
 			// absorb 1xx responses or deal with 401/407 auth challenges
 			seDlg.LastResponse = new(sgsip.SGSIPMessage)
@@ -1191,7 +1204,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 					SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
 					SIPExerMessagePrint("\n", sack, "\n")
 					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
-					ret1 = SIPExerSendString(seDlg, &sack)
+					ret1 = SIPExerSendBytes(seDlg, []byte(sack))
 					if ret1 < 0 {
 						return ret
 					}
