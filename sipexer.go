@@ -969,6 +969,9 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 		if *skipauth {
 			return sipRes.FLine.Code
 		}
+		if len(cliops.authapassword) == 0 {
+			return sipRes.FLine.Code
+		}
 		var hbody string = ""
 		if sipRes.FLine.Code == 401 {
 			if sgsip.SGSIPMessageHeaderGet(sipRes, "WWW-Authenticate", &hbody) != sgsip.SGSIPRetOK {
@@ -1099,6 +1102,10 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 	var err error
 	var wmsg []byte
 
+	if len(cliops.authuser) == 0 {
+		cliops.authuser = fmt.Sprint(tplfields["fuser"])
+	}
+
 	seDlg.FirstRequest = new(sgsip.SGSIPMessage)
 	ret := SIPExerPrepareMessage(tplstr, tplfields, seDlg.Proto, seDlg.LocalAddr, seDlg.TargetAddr, seDlg.FirstRequest)
 	if ret != 0 {
@@ -1194,24 +1201,27 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 				seDlg.RecvBuf = make([]byte, cliops.buffersize)
 				continue
 			}
-			if ret >= 300 {
-				if cliops.invite {
-					var sack string = ""
-					ret1 := sgsip.SGSIPInviteToACKString(seDlg.FirstRequest, seDlg.LastResponse, &sack)
-					if ret1 < 0 {
-						return ret1
-					}
-					SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
-					SIPExerMessagePrint("\n", sack, "\n")
-					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
-					ret1 = SIPExerSendBytes(seDlg, []byte(sack))
-					if ret1 < 0 {
-						return ret
-					}
-					time.Sleep(200 * time.Millisecond)
+			if cliops.invite {
+				var sack string = ""
+				ret1 := sgsip.SGSIPInviteToACKString(seDlg.FirstRequest, seDlg.LastResponse, &sack)
+				if ret1 < 0 {
+					return ret1
 				}
+				SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+				SIPExerMessagePrint("\n", sack, "\n")
+				SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+				ret1 = SIPExerSendBytes(seDlg, []byte(sack))
+				if ret1 < 0 {
+					return ret
+				}
+				time.Sleep(200 * time.Millisecond)
+			}
+			if ret >= 300 {
 				if (ret == 401) || (ret == 407) {
 					if seDlg.SkipAuth {
+						return ret
+					}
+					if len(cliops.authapassword) == 0 {
 						return ret
 					}
 					// authentication - send the new message
