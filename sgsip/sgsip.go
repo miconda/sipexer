@@ -827,6 +827,35 @@ func SGSIPMessageHeaderGet(msgVal *SGSIPMessage, hname string, hbody *string) in
 	return SGSIPRetNotFound
 }
 
+// SGSIPMessageGetContactURI --
+func SGSIPMessageGetContactURI(msgVal *SGSIPMessage, cturi *string) int {
+	htype := SGSIPHeaderGetType("Contact")
+	for i, hdr := range msgVal.Headers {
+		if htype != HeaderTypeOther && htype == hdr.HType {
+			hbody := msgVal.Headers[i].Body
+			p1 := strings.Index(hbody, "<")
+			p2 := strings.Index(hbody, ">")
+			if p1 < 0 || p2 < 0 {
+				// no angle brackets
+				p1 = strings.Index(hbody, ";")
+				if p1 > 0 {
+					*cturi = hbody[0:p1]
+				} else {
+					*cturi = hbody
+				}
+			} else {
+				if p2 < p1 {
+					return SGSIPRetErr
+				}
+				*cturi = hbody[p1+1 : p2]
+			}
+			return SGSIPRetOK
+		}
+	}
+
+	return SGSIPRetNotFound
+}
+
 // SGSIPMessageViaUpdate --
 func SGSIPMessageViaUpdate(msgObj *SGSIPMessage) int {
 	if len(msgObj.FLine.Val) == 0 || len(msgObj.Headers) == 0 {
@@ -926,50 +955,64 @@ func SGSIPInviteToACKString(invReq *SGSIPMessage, invRpl *SGSIPMessage, outputSt
 		len(invRpl.FLine.Val) == 0 || len(invRpl.Headers) == 0 {
 		return SGSIPRetErrMessageNotSet
 	}
-	if invRpl.FLine.Code >= 300 {
+	if invRpl.FLine.Code >= 200 && invRpl.FLine.Code < 300 {
+		var cturi string = ""
+		ret := SGSIPMessageGetContactURI(invRpl, &cturi)
+		if ret != SGSIPRetOK {
+			return ret
+		}
+		sb.WriteString("ACK " + cturi + " SIP/2.0\r\n")
+	} else if invRpl.FLine.Code >= 300 {
 		sb.WriteString("ACK " + invReq.FLine.URI + " SIP/2.0\r\n")
-
-		for _, h := range invReq.Headers {
-			switch h.HType {
-			case HeaderTypeVia:
-				sList := strings.SplitN(h.Body, ";branch=", 2)
-				if len(sList) < 2 {
-					sb.WriteString(h.Name + ": " + h.Body + "\r\n")
-				} else {
-					idxSCol := strings.Index(sList[1], ";")
-					if idxSCol < 0 {
-						sb.WriteString(h.Name + ": " + sList[0] + ";branch=" +
-							viaBranchCookie + uuid.New().String() + "\r\n")
-					} else {
-						sb.WriteString(h.Name + ": " + sList[0] + ";branch=" +
-							viaBranchCookie + uuid.New().String() + sList[1][idxSCol:] + "\r\n")
-					}
-				}
-			case HeaderTypeFrom:
-				sb.WriteString(h.Name + ": " + h.Body + "\r\n")
-			}
-		}
-		for _, h := range invRpl.Headers {
-			switch h.HType {
-			case HeaderTypeTo:
-				sb.WriteString(h.Name + ": " + h.Body + "\r\n")
-			}
-		}
-		for _, h := range invReq.Headers {
-			switch h.HType {
-			case HeaderTypeCallID:
-				sb.WriteString(h.Name + ": " + h.Body + "\r\n")
-			}
-		}
-		for _, h := range invRpl.Headers {
-			switch h.HType {
-			case HeaderTypeCSeq:
-				sList := strings.SplitN(h.Body, " ", 2)
-				sb.WriteString(h.Name + ": " + sList[0] + " ACK\r\n")
-			}
-		}
-		sb.WriteString("Content-Length: 0\r\n\r\n")
 	}
+	for _, h := range invReq.Headers {
+		switch h.HType {
+		case HeaderTypeVia:
+			sList := strings.SplitN(h.Body, ";branch=", 2)
+			if len(sList) < 2 {
+				sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+			} else {
+				idxSCol := strings.Index(sList[1], ";")
+				if idxSCol < 0 {
+					sb.WriteString(h.Name + ": " + sList[0] + ";branch=" +
+						viaBranchCookie + uuid.New().String() + "\r\n")
+				} else {
+					sb.WriteString(h.Name + ": " + sList[0] + ";branch=" +
+						viaBranchCookie + uuid.New().String() + sList[1][idxSCol:] + "\r\n")
+				}
+			}
+		case HeaderTypeFrom:
+			sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+		}
+	}
+	for _, h := range invRpl.Headers {
+		switch h.HType {
+		case HeaderTypeTo:
+			sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+		}
+	}
+	for _, h := range invReq.Headers {
+		switch h.HType {
+		case HeaderTypeCallID:
+			sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+		}
+	}
+	for _, h := range invRpl.Headers {
+		switch h.HType {
+		case HeaderTypeCSeq:
+			sList := strings.SplitN(h.Body, " ", 2)
+			sb.WriteString(h.Name + ": " + sList[0] + " ACK\r\n")
+		}
+	}
+	// reverse walking for route headers
+	last := len(invRpl.Headers) - 1
+	for i := range invRpl.Headers {
+		switch invRpl.Headers[last-i].HType {
+		case HeaderTypeRecordRoute:
+			sb.WriteString("Route: " + invRpl.Headers[last-i].Body + "\r\n")
+		}
+	}
+	sb.WriteString("Content-Length: 0\r\n\r\n")
 	*outputStr = sb.String()
 	return SGSIPRetOK
 }
