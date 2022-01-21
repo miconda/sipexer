@@ -222,28 +222,28 @@ func SGAddrTypeEx(addr string) int {
 
 // SGSIPSetProto --
 func SGSIPSetProto(protostr string, protoval *string, protoid *int) int {
-	switch protostr {
-	case "udp", "UDP":
+	switch strings.ToLower(protostr) {
+	case "udp":
 		*protoid = ProtoUDP
 		*protoval = "udp"
 		return SGSIPRetOK
-	case "tcp", "TCP":
+	case "tcp":
 		*protoid = ProtoTCP
 		*protoval = "tcp"
 		return SGSIPRetOK
-	case "tls", "TLS":
+	case "tls":
 		*protoid = ProtoTLS
 		*protoval = "tls"
 		return SGSIPRetOK
-	case "sctp", "SCTP":
+	case "sctp":
 		*protoid = ProtoSCTP
 		*protoval = "sctp"
 		return SGSIPRetOK
-	case "ws", "WS":
+	case "ws":
 		*protoid = ProtoWS
 		*protoval = "ws"
 		return SGSIPRetOK
-	case "wss", "WSS":
+	case "wss":
 		*protoid = ProtoWSS
 		*protoval = "wss"
 		return SGSIPRetOK
