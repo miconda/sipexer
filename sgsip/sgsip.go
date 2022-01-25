@@ -1016,3 +1016,42 @@ func SGSIPInviteToACKString(invReq *SGSIPMessage, invRpl *SGSIPMessage, outputSt
 	*outputStr = sb.String()
 	return SGSIPRetOK
 }
+
+func SGSIPMessageToResponseString(sipReq *SGSIPMessage, outputStr *string) int {
+	var sb strings.Builder
+	if len(sipReq.FLine.Val) == 0 || len(sipReq.Headers) == 0 ||
+		len(sipReq.FLine.Val) == 0 || len(sipReq.Headers) == 0 {
+		return SGSIPRetErrMessageNotSet
+	}
+
+	sb.WriteString("SIP/2.0 200 OK Now\r\n")
+	for _, h := range sipReq.Headers {
+		switch h.HType {
+		case HeaderTypeVia:
+			// todo: process parameters such as rport, ...
+			sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+		case HeaderTypeFrom:
+			sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+		}
+	}
+	for _, h := range sipReq.Headers {
+		switch h.HType {
+		case HeaderTypeTo:
+			if strings.Index(h.Body, ";tag=") > 0 {
+				sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+			} else {
+				sb.WriteString(h.Name + ": " + h.Body + ";tag=" + uuid.New().String() + "\r\n")
+			}
+		}
+	}
+	for _, h := range sipReq.Headers {
+		switch h.HType {
+		case HeaderTypeCallID, HeaderTypeCSeq:
+			sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+		}
+	}
+	sb.WriteString("Content-Length: 0\r\n\r\n")
+
+	*outputStr = sb.String()
+	return SGSIPRetOK
+}
