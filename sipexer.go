@@ -270,6 +270,7 @@ type CLIOptions struct {
 	ha1              bool
 	coloroutput      bool
 	colormessage     bool
+	sessionwait      int
 	version          bool
 }
 
@@ -329,6 +330,7 @@ var cliops = CLIOptions{
 	ha1:              false,
 	coloroutput:      false,
 	colormessage:     false,
+	sessionwait:      0,
 	version:          false,
 }
 
@@ -437,6 +439,8 @@ func init() {
 	flag.IntVar(&cliops.af, "af", cliops.af, "enforce address family for socket (4 or 6)")
 	flag.IntVar(&cliops.verbosity, "verbosity", cliops.verbosity, "verbosity level (0..3)")
 	flag.IntVar(&cliops.verbosity, "vl", cliops.verbosity, "verbosity level (0..3)")
+	flag.IntVar(&cliops.sessionwait, "sessionwait", cliops.sessionwait, "time in millisecons to wait for a session")
+	flag.IntVar(&cliops.sessionwait, "sw", cliops.sessionwait, "time in millisecons to wait for a session")
 
 	flag.Var(&paramFields, "field-val", "field value in format 'name:value' (can be provided many times)")
 	flag.Var(&paramFields, "fv", "field value in format 'name:value' (can be provided many times)")
@@ -1225,6 +1229,33 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 					return ret
 				}
 				time.Sleep(200 * time.Millisecond)
+			}
+			if cliops.sessionwait > 0 && ret >= 200 && ret < 300 && (cliops.invite || cliops.register) {
+				SIPExerPrintf(SIPExerLogInfo, "waiting for %s milliseconds\n", cliops.sessionwait)
+				time.Sleep(time.Duration(cliops.sessionwait) * time.Millisecond)
+				cliops.sessionwait = 0
+				if cliops.register {
+					sgsip.SGSIPMessageViaUpdate(seDlg.FirstRequest)
+					sgsip.SGSIPMessageCSeqUpdate(seDlg.FirstRequest, 1)
+					sgsip.SGSIPMessageHeaderSet(seDlg.FirstRequest, "Expires", "0")
+					if sgsip.SGSIPMessageToString(seDlg.FirstRequest, &smsg) != sgsip.SGSIPRetOK {
+						SIPExerPrintf(SIPExerLogError, "failed to build sip message\n")
+						return SIPExerErrSIPMessageToString
+					}
+				}
+				// send the new message
+				wmsg = []byte(smsg)
+				SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
+				SIPExerMessagePrint("\n", smsg, "\n")
+				SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+				if seDlg.ProtoId == sgsip.ProtoUDP {
+					seDlg.TimeoutStep = cliops.timert1
+					seDlg.TimeoutVal = seDlg.TimeoutStep
+					seDlg.Resend = true
+				}
+				seDlg.SkipAuth = false
+				seDlg.RecvBuf = make([]byte, cliops.buffersize)
+				continue
 			}
 			if ret >= 300 {
 				if (ret == 401) || (ret == 407) {
