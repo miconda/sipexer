@@ -1035,16 +1035,20 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 	return sipRes.FLine.Code
 }
 
-func SIPExerSetWriteTimeout(seDlg *SIPExerDialog) {
+func SIPExerSetWriteTimeoutValue(seDlg *SIPExerDialog, tVal int) {
 	if seDlg.ProtoId == sgsip.ProtoUDP {
-		seDlg.ConnUDP.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeoutwrite)))
+		seDlg.ConnUDP.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(tVal)))
 	} else if seDlg.ProtoId == sgsip.ProtoTCP {
-		seDlg.ConnTCP.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeoutwrite)))
+		seDlg.ConnTCP.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(tVal)))
 	} else if seDlg.ProtoId == sgsip.ProtoTLS {
-		seDlg.ConnTLS.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeoutwrite)))
+		seDlg.ConnTLS.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(tVal)))
 	} else if seDlg.ProtoId == sgsip.ProtoWSS {
-		seDlg.ConnWSS.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeoutwrite)))
+		seDlg.ConnWSS.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(tVal)))
 	}
+}
+
+func SIPExerSetWriteTimeout(seDlg *SIPExerDialog) {
+	SIPExerSetWriteTimeoutValue(seDlg, cliops.timeoutwrite)
 }
 
 func SIPExerSetReadTimeoutValue(seDlg *SIPExerDialog, tVal int) int {
@@ -1124,6 +1128,7 @@ func SIPExerDialogReadBytes(seDlg *SIPExerDialog) int {
 }
 
 func SIPExerSessionWaitAndRead(seDlg *SIPExerDialog) int {
+	var smsg string = ""
 	tStart := time.Now()
 	tWait := cliops.sessionwait
 	for {
@@ -1143,6 +1148,24 @@ func SIPExerSessionWaitAndRead(seDlg *SIPExerDialog) int {
 			SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", seDlg.RecvAddr, seDlg.RecvN)
 			SIPExerMessagePrint("\n", string(seDlg.RecvBuf), "\n")
 			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
+			if len(seDlg.RecvBuf) > 16 {
+				sipRcv := sgsip.SGSIPMessage{}
+				if sgsip.SGSIPParseMessage(string(seDlg.RecvBuf), &sipRcv) != sgsip.SGSIPRetOK {
+					SIPExerPrintf(SIPExerLogError, "failed to parse sip message\n%+v\n\n", string(seDlg.RecvBuf))
+					return SIPExerErrSIPMessageFormat
+				}
+				if sipRcv.FLine.MType == sgsip.FLineRequest {
+					if sgsip.SGSIPMessageToResponseString(&sipRcv, &smsg) != sgsip.SGSIPRetOK {
+						SIPExerPrintf(SIPExerLogError, "failed to build sip response\n")
+						return SIPExerErrSIPMessageToString
+					}
+					SIPExerSetWriteTimeoutValue(seDlg, 1000)
+					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
+					SIPExerMessagePrint("\n", smsg, "\n")
+					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+					SIPExerSendBytes(seDlg, []byte(smsg))
+				}
+			}
 		}
 		tWait = int(tStart.UnixMilli() + int64(cliops.sessionwait) - tNow.UnixMilli())
 	}
