@@ -1312,29 +1312,37 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 			}
 			if cliops.sessionwait > 0 && ret >= 200 && ret < 300 && (cliops.invite || cliops.register) {
 				SIPExerSessionWaitAndRead(seDlg)
+				smsg = ""
 				cliops.sessionwait = 0
 				if cliops.register {
 					sgsip.SGSIPMessageViaUpdate(seDlg.FirstRequest)
 					sgsip.SGSIPMessageCSeqUpdate(seDlg.FirstRequest, 1)
 					sgsip.SGSIPMessageHeaderSet(seDlg.FirstRequest, "Expires", "0")
 					if sgsip.SGSIPMessageToString(seDlg.FirstRequest, &smsg) != sgsip.SGSIPRetOK {
-						SIPExerPrintf(SIPExerLogError, "failed to build sip message\n")
+						SIPExerPrintf(SIPExerLogError, "failed to build sip unregister message\n")
+						return SIPExerErrSIPMessageToString
+					}
+				} else {
+					if sgsip.SGSIPACKToByeString(seDlg.AckRequest, &smsg) != sgsip.SGSIPRetOK {
+						SIPExerPrintf(SIPExerLogError, "failed to build sip bye message\n")
 						return SIPExerErrSIPMessageToString
 					}
 				}
-				// send the new message
-				wmsg = []byte(smsg)
-				SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
-				SIPExerMessagePrint("\n", smsg, "\n")
-				SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
-				if seDlg.ProtoId == sgsip.ProtoUDP {
-					seDlg.TimeoutStep = cliops.timert1
-					seDlg.TimeoutVal = seDlg.TimeoutStep
-					seDlg.Resend = true
+				if len(smsg) > 0 {
+					// send the new message
+					wmsg = []byte(smsg)
+					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
+					SIPExerMessagePrint("\n", smsg, "\n")
+					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+					if seDlg.ProtoId == sgsip.ProtoUDP {
+						seDlg.TimeoutStep = cliops.timert1
+						seDlg.TimeoutVal = seDlg.TimeoutStep
+						seDlg.Resend = true
+					}
+					seDlg.SkipAuth = false
+					seDlg.RecvBuf = make([]byte, cliops.buffersize)
+					continue
 				}
-				seDlg.SkipAuth = false
-				seDlg.RecvBuf = make([]byte, cliops.buffersize)
-				continue
 			}
 			if ret >= 300 {
 				if (ret == 401) || (ret == 407) {
