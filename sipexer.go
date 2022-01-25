@@ -613,6 +613,16 @@ func main() {
 		tplfields["method"] = strings.ToUpper(cliops.method)
 	}
 
+	// cli flags updates when sip method is set via field value parameter
+	tplMethod := fmt.Sprint(tplfields["method"])
+	if !cliops.options && tplMethod == "OPTIONS" {
+		cliops.options = true
+	} else if !cliops.invite && tplMethod == "INVITE" {
+		cliops.invite = true
+	} else if !cliops.register && tplMethod == "REGISTER" {
+		cliops.register = true
+	}
+
 	if len(cliops.expires) > 0 {
 		ival, err = strconv.Atoi(cliops.expires)
 		if err != nil || ival < 0 {
