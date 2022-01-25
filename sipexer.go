@@ -1047,7 +1047,7 @@ func SIPExerSetWriteTimeout(seDlg *SIPExerDialog) {
 	}
 }
 
-func SIPExerSetReadTimeout(seDlg *SIPExerDialog) int {
+func SIPExerSetReadTimeoutValue(seDlg *SIPExerDialog, tVal int) int {
 	var err error
 	if seDlg.ProtoId == sgsip.ProtoUDP {
 		err = seDlg.ConnUDP.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(seDlg.TimeoutStep)))
@@ -1070,6 +1070,54 @@ func SIPExerSetReadTimeout(seDlg *SIPExerDialog) int {
 		err = seDlg.ConnWSS.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
 		if err != nil {
 			return SIPExerErrWSSetReadTimeout
+		}
+	}
+	return SIPExerRetOK
+}
+
+func SIPExerSetReadTimeout(seDlg *SIPExerDialog) int {
+	if seDlg.ProtoId == sgsip.ProtoUDP {
+		return SIPExerSetReadTimeoutValue(seDlg, seDlg.TimeoutStep)
+	} else {
+		return SIPExerSetReadTimeoutValue(seDlg, cliops.timeout)
+	}
+}
+
+func SIPExerDialogReadBytes(seDlg *SIPExerDialog) int {
+	var err error
+
+	if seDlg.ProtoId == sgsip.ProtoUDP {
+		var rcvAddr net.Addr
+		seDlg.RecvN, rcvAddr, err = seDlg.ConnUDP.Conn.ReadFromUDP(seDlg.RecvBuf)
+		if err != nil {
+			SIPExerPrintf(SIPExerLogDebug, "not receiving after %dms (bytes %d - %v)\n", seDlg.TimeoutVal, seDlg.RecvN, err)
+			if cliops.connectudp {
+				if strings.Contains(err.Error(), "recvfrom: connection refused") {
+					SIPExerPrintf(SIPExerLogError, "stop receiving - ICMP error\n")
+					return SIPExerErrUDPICMPTimeout
+				}
+			}
+			return SIPExerErrUDPReceiveTimeout
+		} else {
+			seDlg.RecvAddr = rcvAddr.String()
+		}
+	} else if seDlg.ProtoId == sgsip.ProtoTCP {
+		seDlg.RecvN, err = seDlg.ConnTCP.Conn.Read(seDlg.RecvBuf)
+		if err != nil {
+			SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
+			return SIPExerErrTCPRead
+		}
+	} else if seDlg.ProtoId == sgsip.ProtoTLS {
+		seDlg.RecvN, err = seDlg.ConnTLS.Conn.Read(seDlg.RecvBuf)
+		if err != nil {
+			SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
+			return SIPExerErrTLSRead
+		}
+	} else if seDlg.ProtoId == sgsip.ProtoWSS {
+		seDlg.RecvN, err = seDlg.ConnWSS.Conn.Read(seDlg.RecvBuf)
+		if err != nil {
+			SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
+			return SIPExerErrWSRead
 		}
 	}
 	return SIPExerRetOK
@@ -1151,17 +1199,10 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 		if ret < 0 {
 			return ret
 		}
-		if seDlg.ProtoId == sgsip.ProtoUDP {
-			var rcvAddr net.Addr
-			seDlg.RecvN, rcvAddr, err = seDlg.ConnUDP.Conn.ReadFromUDP(seDlg.RecvBuf)
-			if err != nil {
-				SIPExerPrintf(SIPExerLogDebug, "not receiving after %dms (bytes %d - %v)\n", seDlg.TimeoutVal, seDlg.RecvN, err)
-				if cliops.connectudp {
-					if strings.Contains(err.Error(), "recvfrom: connection refused") {
-						SIPExerPrintf(SIPExerLogError, "stop receiving - ICMP error\n")
-						return SIPExerErrUDPICMPTimeout
-					}
-				}
+		ret = SIPExerDialogReadBytes(seDlg)
+		if ret < 0 {
+			if seDlg.ProtoId == sgsip.ProtoUDP && ret == SIPExerErrUDPReceiveTimeout {
+				// perform udp retransmission
 				if seDlg.TimeoutStep < cliops.timert2 {
 					seDlg.TimeoutStep *= 2
 				} else {
@@ -1175,25 +1216,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 				SIPExerPrintf(SIPExerLogError, "error reading - bytes %d - %v\n", seDlg.RecvN, err)
 				return SIPExerErrUDPReceiveTimeout
 			} else {
-				seDlg.RecvAddr = rcvAddr.String()
-			}
-		} else if seDlg.ProtoId == sgsip.ProtoTCP {
-			seDlg.RecvN, err = seDlg.ConnTCP.Conn.Read(seDlg.RecvBuf)
-			if err != nil {
-				SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
-				return SIPExerErrTCPRead
-			}
-		} else if seDlg.ProtoId == sgsip.ProtoTLS {
-			seDlg.RecvN, err = seDlg.ConnTLS.Conn.Read(seDlg.RecvBuf)
-			if err != nil {
-				SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
-				return SIPExerErrTLSRead
-			}
-		} else if seDlg.ProtoId == sgsip.ProtoWSS {
-			seDlg.RecvN, err = seDlg.ConnWSS.Conn.Read(seDlg.RecvBuf)
-			if err != nil {
-				SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
-				return SIPExerErrWSRead
+				return ret
 			}
 		}
 
