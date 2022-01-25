@@ -1017,6 +1017,52 @@ func SGSIPInviteToACKString(invReq *SGSIPMessage, invRpl *SGSIPMessage, outputSt
 	return SGSIPRetOK
 }
 
+// SGSIPACKToByeString --
+func SGSIPACKToByeString(ackReq *SGSIPMessage, outputStr *string) int {
+	var sb strings.Builder
+	if len(ackReq.FLine.Val) == 0 || len(ackReq.Headers) == 0 ||
+		len(ackReq.FLine.Val) == 0 || len(ackReq.Headers) == 0 {
+		return SGSIPRetErrMessageNotSet
+	}
+	sb.WriteString("BYE " + ackReq.FLine.URI + " SIP/2.0\r\n")
+
+	for _, h := range ackReq.Headers {
+		switch h.HType {
+		case HeaderTypeVia:
+			sList := strings.SplitN(h.Body, ";branch=", 2)
+			if len(sList) < 2 {
+				sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+			} else {
+				idxSCol := strings.Index(sList[1], ";")
+				if idxSCol < 0 {
+					sb.WriteString(h.Name + ": " + sList[0] + ";branch=" +
+						viaBranchCookie + uuid.New().String() + "\r\n")
+				} else {
+					sb.WriteString(h.Name + ": " + sList[0] + ";branch=" +
+						viaBranchCookie + uuid.New().String() + sList[1][idxSCol:] + "\r\n")
+				}
+			}
+		case HeaderTypeFrom, HeaderTypeTo, HeaderTypeCallID, HeaderTypeRoute:
+			sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+		case HeaderTypeCSeq:
+			sList := strings.SplitN(h.Body, " ", 2)
+			if len(sList) != 2 {
+				return SGSIPRetErrCSeqBody
+			}
+			csn, err := strconv.Atoi(sList[0])
+
+			if err != nil {
+				return SGSIPRetErrCSeqNumber
+			}
+
+			sb.WriteString(h.Name + ": " + strconv.Itoa(csn+1) + " BYE\r\n")
+		}
+	}
+	sb.WriteString("Content-Length: 0\r\n\r\n")
+	*outputStr = sb.String()
+	return SGSIPRetOK
+}
+
 func SGSIPMessageToResponseString(sipReq *SGSIPMessage, outputStr *string) int {
 	var sb strings.Builder
 	if len(sipReq.FLine.Val) == 0 || len(sipReq.Headers) == 0 ||
