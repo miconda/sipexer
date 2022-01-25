@@ -1296,6 +1296,14 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 				SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
 				SIPExerMessagePrint("\n", sack, "\n")
 				SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+				if cliops.sessionwait > 0 && ret >= 200 && ret < 300 {
+					// store 200-ack in dialog structure
+					seDlg.AckRequest = new(sgsip.SGSIPMessage)
+					if sgsip.SGSIPParseMessage(sack, seDlg.AckRequest) != sgsip.SGSIPRetOK {
+						SIPExerPrintf(SIPExerLogError, "failed to parse ack message\n%+v\n\n", sack)
+						return SIPExerErrSIPMessageFormat
+					}
+				}
 				ret1 = SIPExerSendBytes(seDlg, []byte(sack))
 				if ret1 < 0 {
 					return ret
