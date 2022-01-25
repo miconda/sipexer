@@ -1050,24 +1050,24 @@ func SIPExerSetWriteTimeout(seDlg *SIPExerDialog) {
 func SIPExerSetReadTimeoutValue(seDlg *SIPExerDialog, tVal int) int {
 	var err error
 	if seDlg.ProtoId == sgsip.ProtoUDP {
-		err = seDlg.ConnUDP.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(seDlg.TimeoutStep)))
+		err = seDlg.ConnUDP.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(tVal)))
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
 			return SIPExerErrUDPSetTimeout
 		}
 	} else if seDlg.ProtoId == sgsip.ProtoTCP {
-		err = seDlg.ConnTCP.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+		err = seDlg.ConnTCP.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(tVal)))
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
 			return SIPExerErrTCPSetReadTimeout
 		}
 	} else if seDlg.ProtoId == sgsip.ProtoTLS {
-		err = seDlg.ConnTLS.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+		err = seDlg.ConnTLS.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(tVal)))
 		if err != nil {
 			return SIPExerErrTLSSetReadTimeout
 		}
 	} else if seDlg.ProtoId == sgsip.ProtoWSS {
-		err = seDlg.ConnWSS.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+		err = seDlg.ConnWSS.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(tVal)))
 		if err != nil {
 			return SIPExerErrWSSetReadTimeout
 		}
@@ -1119,6 +1119,32 @@ func SIPExerDialogReadBytes(seDlg *SIPExerDialog) int {
 			SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
 			return SIPExerErrWSRead
 		}
+	}
+	return SIPExerRetOK
+}
+
+func SIPExerSessionWaitAndRead(seDlg *SIPExerDialog) int {
+	tStart := time.Now()
+	tWait := cliops.sessionwait
+	for {
+		SIPExerPrintf(SIPExerLogInfo, "waiting for %d milliseconds\n", tWait)
+
+		ret := SIPExerSetReadTimeoutValue(seDlg, tWait)
+		if ret < 0 {
+			return ret
+		}
+		seDlg.RecvBuf = make([]byte, cliops.buffersize)
+		ret = SIPExerDialogReadBytes(seDlg)
+		tNow := time.Now()
+		if tNow.UnixMilli()-tStart.UnixMilli() >= int64(tWait) {
+			break
+		}
+		if ret == SIPExerRetOK && seDlg.RecvN > 0 {
+			SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", seDlg.RecvAddr, seDlg.RecvN)
+			SIPExerMessagePrint("\n", string(seDlg.RecvBuf), "\n")
+			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
+		}
+		tWait = int(tStart.UnixMilli() + int64(cliops.sessionwait) - tNow.UnixMilli())
 	}
 	return SIPExerRetOK
 }
@@ -1254,8 +1280,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 				time.Sleep(200 * time.Millisecond)
 			}
 			if cliops.sessionwait > 0 && ret >= 200 && ret < 300 && (cliops.invite || cliops.register) {
-				SIPExerPrintf(SIPExerLogInfo, "waiting for %s milliseconds\n", cliops.sessionwait)
-				time.Sleep(time.Duration(cliops.sessionwait) * time.Millisecond)
+				SIPExerSessionWaitAndRead(seDlg)
 				cliops.sessionwait = 0
 				if cliops.register {
 					sgsip.SGSIPMessageViaUpdate(seDlg.FirstRequest)
