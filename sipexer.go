@@ -1115,7 +1115,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 	smsg = seDlg.FirstRequest.Data
 	SIPExerPrintf(SIPExerLogInfo, "local socket address: %v (%v)\n", seDlg.LocalAddr, seDlg.Proto)
 	SIPExerPrintf(SIPExerLogInfo, "local via address: %v\n", tplfields["viaaddr"])
-	SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+	SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
 	SIPExerMessagePrint("\n", smsg, "\n")
 	SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 
@@ -1207,7 +1207,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 				if ret1 < 0 {
 					return ret1
 				}
-				SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+				SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
 				SIPExerMessagePrint("\n", sack, "\n")
 				SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 				ret1 = SIPExerSendBytes(seDlg, []byte(sack))
@@ -1226,7 +1226,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 					}
 					// authentication - send the new message
 					wmsg = []byte(smsg)
-					SIPExerPrintf(SIPExerLogInfo, "sending: [[---")
+					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
 					SIPExerMessagePrint("\n", smsg, "\n")
 					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 					if seDlg.ProtoId == sgsip.ProtoUDP {
