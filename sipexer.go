@@ -472,10 +472,14 @@ func main() {
 	}
 
 	if cliops.templatedefaults {
-		fmt.Printf("Default template:\n\n")
+		fmt.Printf("  - Default SIP request template:\n\n")
 		fmt.Println(templateDefaultText)
-		fmt.Printf("Default fields:\n\n")
+		fmt.Printf("\n  - Default field values:\n\n")
 		fmt.Println(templateDefaultJSONFields)
+		fmt.Printf("\n  - Default SIP MESSAGE body template:\n\n")
+		fmt.Println(templateDefaultMessageBody)
+		fmt.Printf("\n  - Default SIP INVITE body template:\n\n")
+		fmt.Println(templateDefaultInviteBody)
 		SIPExerExit(SIPExerRetDone)
 	}
 	if cliops.flagdefaults {
