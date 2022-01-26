@@ -144,6 +144,16 @@ var templateFields = map[string]map[string]interface{}{
 	"FIELDS:EMPTY": {},
 }
 
+const (
+	SIPExerDialogInit       = 0
+	SIPExerDialogStarted    = 1
+	SIPExerDialogEarly      = 2
+	SIPExerDialogAnswered   = 3
+	SIPExerDialogConfirmed  = 4
+	SIPExerDialogCancelled  = 5
+	SIPExerDialogTerminated = 6
+)
+
 type SIPExerConnUDP struct {
 	SrcAddr *net.UDPAddr
 	DstAddr *net.UDPAddr
@@ -174,6 +184,7 @@ type SIPExerDialog struct {
 	Method       string
 	MethodId     int
 	LocalCSeq    int
+	State        int
 	FirstRequest *sgsip.SGSIPMessage
 	LastRequest  *sgsip.SGSIPMessage
 	AckRequest   *sgsip.SGSIPMessage
@@ -1159,9 +1170,19 @@ func SIPExerSessionWaitAndRead(seDlg *SIPExerDialog) int {
 					return SIPExerErrSIPMessageFormat
 				}
 				if sipRcv.FLine.MType == sgsip.FLineRequest {
-					if sgsip.SGSIPMessageToResponseString(&sipRcv, &smsg) != sgsip.SGSIPRetOK {
-						SIPExerPrintf(SIPExerLogError, "failed to build sip response\n")
-						return SIPExerErrSIPMessageToString
+					if sipRcv.FLine.MethodId == sgsip.SIPMethodINVITE {
+						if sgsip.SGSIPMessageToResponseString(&sipRcv, "480", "Temporarily Unavailable", &smsg) != sgsip.SGSIPRetOK {
+							SIPExerPrintf(SIPExerLogError, "failed to build sip response\n")
+							return SIPExerErrSIPMessageToString
+						}
+					} else {
+						if sgsip.SGSIPMessageToResponseString(&sipRcv, "200", "OK Now", &smsg) != sgsip.SGSIPRetOK {
+							SIPExerPrintf(SIPExerLogError, "failed to build sip response\n")
+							return SIPExerErrSIPMessageToString
+						}
+					}
+					if sipRcv.FLine.MethodId == sgsip.SIPMethodBYE && seDlg.State < SIPExerDialogTerminated {
+						seDlg.State = SIPExerDialogTerminated
 					}
 					SIPExerSetWriteTimeoutValue(seDlg, 1000)
 					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
@@ -1245,6 +1266,9 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 			if ret < 0 {
 				return ret
 			}
+			if seDlg.State == SIPExerDialogInit {
+				seDlg.State = SIPExerDialogStarted
+			}
 		}
 
 		seDlg.RecvN = 0
@@ -1288,10 +1312,23 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 				if seDlg.ProtoId == sgsip.ProtoUDP {
 					seDlg.Resend = false
 				}
+				if seDlg.State == SIPExerDialogStarted {
+					seDlg.State = SIPExerDialogEarly
+				}
 				seDlg.RecvBuf = make([]byte, cliops.buffersize)
 				continue
 			}
-			if cliops.invite {
+			if ret/100 == 2 {
+				if seDlg.State == SIPExerDialogEarly {
+					seDlg.State = SIPExerDialogAnswered
+				}
+			}
+			if ret/100 >= 3 {
+				if seDlg.State <= SIPExerDialogEarly {
+					seDlg.State = SIPExerDialogTerminated
+				}
+			}
+			if seDlg.LastResponse.CSeq.MethodId == sgsip.SIPMethodINVITE {
 				var sack string = ""
 				ret1 := sgsip.SGSIPInviteToACKString(seDlg.FirstRequest, seDlg.LastResponse, &sack)
 				if ret1 < 0 {
@@ -1312,6 +1349,11 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 				if ret1 < 0 {
 					return ret
 				}
+				if ret/100 == 2 {
+					if seDlg.State == SIPExerDialogAnswered {
+						seDlg.State = SIPExerDialogConfirmed
+					}
+				}
 				time.Sleep(200 * time.Millisecond)
 			}
 			if cliops.sessionwait > 0 && ret >= 200 && ret < 300 && (cliops.invite || cliops.register) {
@@ -1327,6 +1369,10 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 						return SIPExerErrSIPMessageToString
 					}
 				} else {
+					if seDlg.State == SIPExerDialogTerminated {
+						// dialog terminated
+						return ret
+					}
 					if sgsip.SGSIPACKToByeString(seDlg.AckRequest, &smsg) != sgsip.SGSIPRetOK {
 						SIPExerPrintf(SIPExerLogError, "failed to build sip bye message\n")
 						return SIPExerErrSIPMessageToString
