@@ -1166,14 +1166,14 @@ func SGSIPACKToByeString(ackReq *SGSIPMessage, outputStr *string) int {
 	return SGSIPRetOK
 }
 
-func SGSIPMessageToResponseString(sipReq *SGSIPMessage, outputStr *string) int {
+func SGSIPMessageToResponseString(sipReq *SGSIPMessage, scode string, sreason string, outputStr *string) int {
 	var sb strings.Builder
 	if len(sipReq.FLine.Val) == 0 || len(sipReq.Headers) == 0 ||
 		len(sipReq.FLine.Val) == 0 || len(sipReq.Headers) == 0 {
 		return SGSIPRetErrMessageNotSet
 	}
 
-	sb.WriteString("SIP/2.0 200 OK Now\r\n")
+	sb.WriteString("SIP/2.0 " + scode + " " + sreason + "\r\n")
 	for _, h := range sipReq.Headers {
 		switch h.HType {
 		case HeaderTypeVia:
