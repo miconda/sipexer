@@ -1371,6 +1371,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 				} else {
 					if seDlg.State == SIPExerDialogTerminated {
 						// dialog terminated
+						SIPExerPrintf(SIPExerLogInfo, "dialog terminated\n")
 						return ret
 					}
 					if sgsip.SGSIPACKToByeString(seDlg.AckRequest, &smsg) != sgsip.SGSIPRetOK {
@@ -1414,6 +1415,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 					}
 					seDlg.SkipAuth = true
 					seDlg.RecvBuf = make([]byte, cliops.buffersize)
+					seDlg.State = SIPExerDialogStarted
 					continue
 				}
 			}
