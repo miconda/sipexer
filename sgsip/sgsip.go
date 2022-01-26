@@ -98,6 +98,24 @@ const (
 )
 
 const (
+	SIPMethodNONE = iota
+	SIPMethodINVITE
+	SIPMethodACK
+	SIPMethodBYE
+	SIPMethodCANCEL
+	SIPMethodREGISTER
+	SIPMethodMESSAGE
+	SIPMethodOPTIONS
+	SIPMethodINFO
+	SIPMethodUPDATE
+	SIPMethodSUBSCRIBE
+	SIPMethodNOTIFY
+	SIPMethodPUBLISH
+	SIPMethodPRACK
+	SIPMethodOTHER
+)
+
+const (
 	HeaderTypeNone = iota
 	HeaderTypeCallID
 	HeaderTypeCSeq
@@ -268,6 +286,54 @@ func SGSIPSetSchema(schemastr string, schemaval *string, schemaid *int) int {
 		return SGSIPRetOK
 	default:
 		return SGSIPRetErr
+	}
+}
+
+// SGSIPSetMethodId --
+func SGSIPSetMethodId(method string, methodid *int) {
+	switch strings.ToUpper(method) {
+	case "INVITE":
+		*methodid = SIPMethodINVITE
+		return
+	case "ACK":
+		*methodid = SIPMethodACK
+		return
+	case "BYE":
+		*methodid = SIPMethodBYE
+		return
+	case "CANCEL":
+		*methodid = SIPMethodCANCEL
+		return
+	case "REGISTER":
+		*methodid = SIPMethodREGISTER
+		return
+	case "MESSAGE":
+		*methodid = SIPMethodMESSAGE
+		return
+	case "OPTIONS":
+		*methodid = SIPMethodOPTIONS
+		return
+	case "INFO":
+		*methodid = SIPMethodINFO
+		return
+	case "UPDATE":
+		*methodid = SIPMethodUPDATE
+		return
+	case "SUBSCRIBE":
+		*methodid = SIPMethodSUBSCRIBE
+		return
+	case "NOTIFY":
+		*methodid = SIPMethodNOTIFY
+		return
+	case "PUBLISH":
+		*methodid = SIPMethodPUBLISH
+		return
+	case "PRACK":
+		*methodid = SIPMethodPRACK
+		return
+	default:
+		*methodid = SIPMethodOTHER
+		return
 	}
 }
 
@@ -641,6 +707,7 @@ func SGSIPParseFirstLine(inputStr string, flineVal *SGSIPFirstLine) int {
 		return SGSIPRetErrFLineRequestFormat
 	}
 	flineVal.Method = strings.Trim(strArray[0], " \t\r")
+	SGSIPSetMethodId(flineVal.Method, &flineVal.MethodId)
 	flineVal.URI = strings.Trim(strArray[1], " \t\r")
 	return SGSIPRetOK
 }
