@@ -189,6 +189,12 @@ type SGSIPHeader struct {
 	HType int
 }
 
+type SGSIPCSeq struct {
+	Number   int
+	Method   string
+	MethodId int
+}
+
 type SGSIPBody struct {
 	Content     string
 	ContentLen  int
@@ -200,6 +206,7 @@ type SGSIPMessage struct {
 	FLine   SGSIPFirstLine
 	RURI    SGSIPURI
 	Headers []SGSIPHeader
+	CSeq    SGSIPCSeq
 	Body    SGSIPBody
 	MFlags  int
 }
@@ -961,6 +968,31 @@ func SGSIPMessageCSeqUpdate(msgVal *SGSIPMessage, ival int) int {
 			}
 
 			msgVal.Headers[i].Body = strconv.Itoa(csn+ival) + " " + slist[1]
+			msgVal.CSeq.Number = csn + ival
+
+			return SGSIPRetOK
+		}
+	}
+	return SGSIPRetNotFound
+}
+
+// SGSIPMessageCSeqParse --
+func SGSIPMessageCSeqParse(msgVal *SGSIPMessage) int {
+	var err error
+	for i, hdr := range msgVal.Headers {
+		if hdr.HType == HeaderTypeCSeq || strings.ToLower(hdr.Name) == "cseq" {
+			slist := strings.SplitN(msgVal.Headers[i].Body, " ", 2)
+			if len(slist) != 2 {
+				return SGSIPRetErrCSeqBody
+			}
+			msgVal.CSeq.Number, err = strconv.Atoi(slist[0])
+
+			if err != nil {
+				msgVal.CSeq.Number = 0
+				return SGSIPRetErrCSeqNumber
+			}
+			msgVal.CSeq.Method = strings.Trim(slist[1], " \t\r")
+			SGSIPSetMethodId(msgVal.CSeq.Method, &msgVal.CSeq.MethodId)
 			return SGSIPRetOK
 		}
 	}
@@ -980,6 +1012,10 @@ func SGSIPParseMessage(inputStr string, msgVal *SGSIPMessage) int {
 		}
 	}
 	ret = SGSIPParseHeaders(inputStr, 0, &msgVal.Headers)
+	if ret != SGSIPRetOK {
+		return ret
+	}
+	ret = SGSIPMessageCSeqParse(msgVal)
 	if ret != SGSIPRetOK {
 		return ret
 	}
