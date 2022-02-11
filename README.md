@@ -9,8 +9,8 @@ Project URL:
 **Table Of Content**
 
   * [Overview](#overview)
+  * [Features](#features)
   * [Installation](#installation)
-  * [Install](#install)
     + [Compile From Sources](#compile-from-sources)
     + [Download Binary Release](#download-binary-release)
   * [Usage](#usage)
@@ -37,9 +37,27 @@ It is written in Go, aiming to be usable from Linux, MacOS or Windows.
 The meaning of the name `sipexer`: randomly selected to be easy to write and pronounce,
 quickly after thought of it as the shortening of `SIP EXEcutoR`.
 
-## Installation ##
+## Features ##
 
-## Install ##
+Among features:
+
+  * send OPTIONS request (quick SIP ping to check if server is alive)
+  * do registration and un-registration with customized expires value
+  and contact URI
+  * authentication with plain or HA1 passwords
+  * set custom SIP headers
+  * template system for building SIP requests
+  * fields in the templates can be set via command line parameters or a JSON file
+  * variables for setting field values (e.g., random number, data, time, environment
+  variables, uuid, random string, ...)
+  * simulate SIP calls at signaling layer (INVITE-wait-BYE)
+  * respond to requests coming during SIP calls (e.g., OPTIONS keepalives)
+  * send instant messages with SIP MESSAGE requests
+  * color output mode for easier troubleshooting
+  * support for many transport layers: IPv4 and IPv6, UDP, TCP, TLS and WebSocket (for WebRTC)
+  * send SIP requests of any type (e.g., INFO, SUBSCRIBE, NOTIFY, ...)
+
+## Installation ##
 
 ### Compile From Sources ###
 
@@ -72,6 +90,7 @@ Prototype:
 ```
 sipexer [options] [target]
 ```
+
 See `sipexer -h` for the command line options and arguments.
 
 Defaults:
@@ -159,6 +178,14 @@ Send `MESSAGE` request with body over `wss` (WebSocket Secure):
 
 ```
 sipexer -message -mb 'Hello!' -sd -su wss://server.com:8443/sip
+```
+
+Initiate a call from `alice` to `bob`, with user authentication providing the
+password in HA1 format, waiting 10000 milliseconds before sending the `BYE`,
+with higher verbosity level (`3`) and color printing:
+
+```shell
+sipexer -invite -vl 3 -co -com -fuser alice -tuser bob -cb -ap "4a4a4a4a4a..." -ha1 -sw 10000 -sd -su udp:server.com:5060
 ```
 
 ## Target Address ##
