@@ -37,6 +37,10 @@ It is written in Go, aiming to be usable from Linux, MacOS or Windows.
 The meaning of the name `sipexer`: randomly selected to be easy to write and pronounce,
 quickly after thought of it as the shortening of `SIP EXEcutoR`.
 
+`sipexer` in action sending a SIP OPTIONS request:
+
+![SIP OPTIONS Request](https://github.com/miconda/sipexer/raw/main/misc/img/sipexer-options.gif)
+
 ## Features ##
 
 Among features:
