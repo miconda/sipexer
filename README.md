@@ -15,7 +15,7 @@ Project URL:
     + [Download Binary Release](#download-binary-release)
   * [Usage](#usage)
     + [Examples](#examples)
-    + [Target Address](#target-address)
+  * [Target Address](#target-address)
   * [Message Template](#message-template)
     + [Template Data](#template-data)
     + [Template Fields](#template-fields)
@@ -161,7 +161,7 @@ Send `MESSAGE` request with body over `wss` (WebSocket Secure):
 sipexer -message -mb 'Hello!' -sd -su wss://server.com:8443/sip
 ```
 
-### Target Address ###
+## Target Address ##
 
 The target address can be provided as last arguments to the `sipexer` command. It is
 options, if not provided, then the SIP message is sent over `UDP` to `127.0.0.1` port `5060`.
