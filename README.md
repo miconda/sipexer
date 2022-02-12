@@ -137,6 +137,12 @@ Send `REGISTER` request with generated contact, expires as well as user and pass
 sipexer -register -cb -ex 600 -au alice -ap test123 udp:127.0.0.1:5060
 ```
 
+Send `REGISTER` request with expires 60s, wait 20000ms (20s) and then unregister:
+
+```
+sipexer -register -vl 3 -co -com -ex 60 -fuser alice -cb -ap "abab..." -ha1 -sd -sw 20000 udp:127.0.0.1:5060
+```
+
 Set `fuser` field to `carol`:
 
 ```shell
@@ -182,6 +188,12 @@ Send `MESSAGE` request with body over `wss` (WebSocket Secure):
 
 ```
 sipexer -message -mb 'Hello!' -sd -su wss://server.com:8443/sip
+```
+
+Send `INVITE` request with default From user `alice` and To user `bob`:
+
+```
+sipexer -invite -vl 3 -co -com -sd -su udp:server.com:5060
 ```
 
 Initiate a call from `alice` to `bob`, with user authentication providing the
@@ -238,7 +250,9 @@ Content-Length: 0
 
 ```
 
-The internal template can be found at the top of `sipexer.go` file.
+The internal templates can be found at the top of `sipexer.go` file:
+
+  * https://github.com/miconda/sipexer/blob/main/sipexer.go
 
 ### Template Fields ###
 
