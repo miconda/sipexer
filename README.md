@@ -250,6 +250,21 @@ Content-Length: 0
 
 ```
 
+Example SDP body template:
+
+```
+v=0{{.cr}}
+o={{.sdpuser}} {{.sdpsessid}} {{.sdpsessversion}} IN {{.sdpaf}} {{.localip}}{{.cr}}
+s=call{{.cr}}
+c=IN {{.sdpaf}} {{.localip}}{{.cr}}
+t=0 0{{.cr}}
+m=audio {{.sdprtpport}} RTP 0 8 101{{.cr}}
+a=rtpmap:0 pcmu/8000{{.cr}}
+a=rtpmap:8 pcma/8000{{.cr}}
+a=rtpmap:101 telephone-event/8000{{.cr}}
+a=sendrecv{{.cr}}
+```
+
 The internal templates can be found at the top of `sipexer.go` file:
 
   * https://github.com/miconda/sipexer/blob/main/sipexer.go
@@ -295,7 +310,12 @@ Example fields file:
 	"fromtag": "$uuid",
 	"callid": "$uuid",
 	"cseqnum": "$randseq",
-	"date": "$daterfc1123"
+	"date": "$daterfc1123",
+	"sdpuser": "sipexer",
+	"sdpsessid": "$timestamp",
+	"sdpsessversion": "$timestamp",
+	"sdpaf": "IP4",
+	"sdprtpport": "$rand(20000,40000)"
 }
 ```
 
