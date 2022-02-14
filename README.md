@@ -207,7 +207,7 @@ sipexer -invite -vl 3 -co -com -fuser alice -tuser bob -cb -ap "4a4a4a4a4a..." -
 ## Target Address ##
 
 The target address can be provided as last arguments to the `sipexer` command. It is
-options, if not provided, then the SIP message is sent over `UDP` to `127.0.0.1` port `5060`.
+optional, if not provided, then the SIP message is sent over `UDP` to `127.0.0.1` port `5060`.
 
 The format can be:
 
