@@ -282,6 +282,7 @@ type CLIOptions struct {
 	coloroutput      bool
 	colormessage     bool
 	sessionwait      int
+	helpcommands     bool
 	version          bool
 }
 
@@ -342,7 +343,19 @@ var cliops = CLIOptions{
 	coloroutput:      false,
 	colormessage:     false,
 	sessionwait:      0,
+	helpcommands:     false,
 	version:          false,
+}
+
+func sipexer_help_commands() {
+	fmt.Fprintf(os.Stderr, "  Examples:\n\n")
+	fmt.Fprintf(os.Stderr, "    %s sipserver.com\n", filepath.Base(os.Args[0]))
+	fmt.Fprintf(os.Stderr, "    %s tcp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
+	fmt.Fprintf(os.Stderr, "    %s -sd -xh \"X-My-Header:abcdefgh\" udp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
+	fmt.Fprintf(os.Stderr, "    %s -message -mb 'Hello!' -fuser alice -tuser bob -sd udp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
+	fmt.Fprintf(os.Stderr, "    %s -register -vl 3 -co -com -ex 60 -fuser alice -cb -ap \"abab...\" -ha1 -sd udp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
+	fmt.Fprintf(os.Stderr, "    %s -invite -vl 3 -co -com -fuser alice -tuser bob -cb -ap \"abab...\" -ha1 -sw 10000 -sd -su udp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
+	fmt.Fprintf(os.Stderr, "\n")
 }
 
 //
@@ -355,14 +368,8 @@ func init() {
 		fmt.Fprintf(os.Stderr, "      * target can be: 'host', 'proto:host', 'host:port', 'proto:host:port' or sip-uri\n")
 		fmt.Fprintf(os.Stderr, "      * some options have short and long version\n\n")
 		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\n  Examples:\n\n")
-		fmt.Fprintf(os.Stderr, "    %s sipserver.com\n", filepath.Base(os.Args[0]))
-		fmt.Fprintf(os.Stderr, "    %s tcp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
-		fmt.Fprintf(os.Stderr, "    %s -sd -xh \"X-My-Header:abcdefgh\" udp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
-		fmt.Fprintf(os.Stderr, "    %s -message -mb 'Hello!' -fuser alice -tuser bob -sd udp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
-		fmt.Fprintf(os.Stderr, "    %s -register -vl 3 -co -com -ex 60 -fuser alice -cb -ap \"abab...\" -ha1 -sd udp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
-		fmt.Fprintf(os.Stderr, "    %s -invite -vl 3 -co -com -fuser alice -tuser bob -cb -ap \"abab...\" -ha1 -sw 10000 -sd -su udp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
 		fmt.Fprintf(os.Stderr, "\n")
+		sipexer_help_commands()
 		SIPExerExit(1)
 	}
 	flag.StringVar(&cliops.method, "method", cliops.method, "SIP method")
@@ -467,6 +474,8 @@ func init() {
 	flag.Var(&headerFields, "extra-header", "extra header in format 'name:body' (can be provided many times)")
 	flag.Var(&headerFields, "xh", "extra header in format 'name:body' (can be provided many times)")
 
+	flag.BoolVar(&cliops.helpcommands, "help-commands", cliops.helpcommands, "print help with command examples")
+	flag.BoolVar(&cliops.helpcommands, "hc", cliops.helpcommands, "print help with command examples")
 	flag.BoolVar(&cliops.version, "version", cliops.version, "print version")
 	flag.BoolVar(&cliops.version, "v", cliops.version, "print version")
 
@@ -489,7 +498,10 @@ func main() {
 		fmt.Printf("%s v%s\n\n", filepath.Base(os.Args[0]), sipexerVersion)
 		SIPExerExit(SIPExerRetDone)
 	}
-
+	if cliops.helpcommands {
+		sipexer_help_commands()
+		SIPExerExit(SIPExerRetDone)
+	}
 	if cliops.templatedefaults {
 		fmt.Printf("  - Default SIP request template:\n\n")
 		fmt.Println(templateDefaultText)
