@@ -283,6 +283,7 @@ type CLIOptions struct {
 	colormessage     bool
 	sessionwait      int
 	helpcommands     bool
+	dnssrvprint      bool
 	version          bool
 }
 
@@ -343,6 +344,7 @@ var cliops = CLIOptions{
 	coloroutput:      false,
 	colormessage:     false,
 	sessionwait:      0,
+	dnssrvprint:      false,
 	helpcommands:     false,
 	version:          false,
 }
@@ -474,6 +476,8 @@ func init() {
 	flag.Var(&headerFields, "extra-header", "extra header in format 'name:body' (can be provided many times)")
 	flag.Var(&headerFields, "xh", "extra header in format 'name:body' (can be provided many times)")
 
+	flag.BoolVar(&cliops.dnssrvprint, "dns-srv-print", cliops.dnssrvprint, "print DNS SRV records")
+
 	flag.BoolVar(&cliops.helpcommands, "help-commands", cliops.helpcommands, "print help with command examples")
 	flag.BoolVar(&cliops.helpcommands, "hc", cliops.helpcommands, "print help with command examples")
 	flag.BoolVar(&cliops.version, "version", cliops.version, "print version")
@@ -519,6 +523,31 @@ func main() {
 	}
 	// enable file name and line numbers in logging
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	if cliops.dnssrvprint {
+		if len(flag.Args()) < 1 {
+			SIPExerPrintf(SIPExerLogError, "domain argument not provided\n")
+			SIPExerExit(SIPExerRetErr)
+		}
+		var dqProtos []string
+		if len(flag.Args()) == 1 {
+			dqProtos = append(dqProtos, "udp", "tcp", "tls", "sctp")
+		} else {
+			dqProtos = append(dqProtos, flag.Arg(0))
+		}
+		for _, proto := range dqProtos {
+			cname, srvs, err := net.LookupSRV("sip", proto, flag.Arg(len(flag.Args())-1))
+			if err != nil {
+				SIPExerPrintf(SIPExerLogError, "\nerror: %v\n\n", err)
+			} else {
+				fmt.Printf("cname: %s\n", cname)
+				for _, srv := range srvs {
+					fmt.Printf("_sip.%s.%s => %v:%v (%d:%d)\n", proto, flag.Arg(len(flag.Args())-1),
+						srv.Target, srv.Port, srv.Priority, srv.Weight)
+				}
+			}
+		}
+		SIPExerExit(SIPExerRetDone)
+	}
 
 	var tplstr = ""
 	if len(cliops.template) > 0 {
