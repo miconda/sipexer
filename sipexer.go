@@ -355,6 +355,7 @@ func sipexer_help_commands() {
 	fmt.Fprintf(os.Stderr, "    %s tcp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
 	fmt.Fprintf(os.Stderr, "    %s -sd -xh \"X-My-Header:abcdefgh\" udp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
 	fmt.Fprintf(os.Stderr, "    %s -message -mb 'Hello!' -fuser alice -tuser bob -sd udp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
+	fmt.Fprintf(os.Stderr, "    %s -message -mb 'Hello!' -fuser alice -fv fname:Alice -tuser bob -fv tname:Bob -sd udp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
 	fmt.Fprintf(os.Stderr, "    %s -register -vl 3 -co -com -ex 60 -fuser alice -cb -ap \"abab...\" -ha1 -sd udp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
 	fmt.Fprintf(os.Stderr, "    %s -invite -vl 3 -co -com -fuser alice -tuser bob -cb -ap \"abab...\" -ha1 -sw 10000 -sd -su udp:sipserver.com:5060\n", filepath.Base(os.Args[0]))
 	fmt.Fprintf(os.Stderr, "\n")
