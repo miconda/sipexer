@@ -92,8 +92,8 @@ const (
 
 var templateDefaultText string = `{{.method}} {{.ruri}} SIP/2.0
 Via: SIP/2.0/{{.viaproto}} {{.viaaddr}}{{.rport}};branch=z9hG4bKSG.{{.viabranch}}
-From: {{if .fname}}"{{.fname}}" {{end}}<sip:{{if .fuser}}{{.fuser}}@{{end}}{{.fdomain}}>;tag={{.fromtag}}
-To: {{if .tname}}"{{.tname}}" {{end}}<sip:{{if .tuser}}{{.tuser}}@{{end}}{{.tdomain}}>
+From: {{if .fromuri}}{{.fromuri}}{{else}}{{if .fname}}"{{.fname}}" {{end}}<sip:{{if .fuser}}{{.fuser}}@{{end}}{{.fdomain}}>;tag={{.fromtag}}{{end}}
+To: {{if .touri}}{{.touri}}{{else}}{{if .tname}}"{{.tname}}" {{end}}<sip:{{if .tuser}}{{.tuser}}@{{end}}{{.tdomain}}>{{end}}
 Call-ID: {{.callid}}
 CSeq: {{.cseqnum}} {{.method}}
 {{if .subject}}Subject: {{.subject}}{{else}}$rmeol{{end}}
@@ -237,9 +237,11 @@ type CLIOptions struct {
 	ruri             string
 	ruser            string
 	fuser            string
+	fromuri          string
 	tuser            string
 	fdomain          string
 	tdomain          string
+	touri            string
 	body             string
 	nobody           bool
 	contenttype      string
@@ -291,7 +293,9 @@ var cliops = CLIOptions{
 	method:           "",
 	ruri:             "",
 	fuser:            "",
+	fromuri:          "",
 	tuser:            "",
+	touri:            "",
 	fdomain:          "",
 	tdomain:          "",
 	body:             "",
@@ -387,8 +391,10 @@ func init() {
 	flag.StringVar(&cliops.tuser, "tu", cliops.tuser, "To header URI username")
 	flag.StringVar(&cliops.fdomain, "fdomain", cliops.fdomain, "From header URI domain")
 	flag.StringVar(&cliops.fdomain, "fd", cliops.fdomain, "From header URI domain")
+	flag.StringVar(&cliops.fromuri, "from-uri", cliops.fromuri, "From header URI")
 	flag.StringVar(&cliops.tdomain, "tdomain", cliops.tdomain, "To header URI domain")
 	flag.StringVar(&cliops.tdomain, "td", cliops.tdomain, "To header URI domain")
+	flag.StringVar(&cliops.touri, "to-uri", cliops.touri, "To header URI")
 	flag.StringVar(&cliops.template, "template-file", cliops.template, "path to template file")
 	flag.StringVar(&cliops.template, "tf", cliops.template, "path to template file")
 	flag.StringVar(&cliops.templatebody, "template-body-file", cliops.templatebody, "path to template file for body")
@@ -721,6 +727,21 @@ func main() {
 	}
 	if len(cliops.tdomain) > 0 {
 		tplfields["tdomain"] = cliops.tdomain
+	}
+	if len(cliops.fromuri) > 0 {
+		if cliops.fromuri[0:1] == "<" {
+			tplfields["fromuri"] = cliops.fromuri
+		} else {
+			tplfields["fromuri"] = "<" + cliops.fromuri + ">"
+		}
+	}
+
+	if len(cliops.touri) > 0 {
+		if cliops.touri[0:1] == "<" {
+			tplfields["touri"] = cliops.touri
+		} else {
+			tplfields["touri"] = "<" + cliops.touri + ">"
+		}
 	}
 
 	if len(cliops.useragent) > 0 {
