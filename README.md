@@ -289,6 +289,7 @@ are replaced if the value of the field is a string matching one of the next:
   * `"$rand(max)"` - replace with a random number from `0` to `max`
   * `"$rand(min,max)"` - replace with a random number from `min` to `max`
   * `"$randstr(len)"` - random alphabetic string of length `len`
+  * `"$randstr(minlen,maxlen)"` - random alphabetic string with length from `minlen` to `maxlen`
   * `"$rmeol"` - remove next end of line character `\n`
   * `"$timestamp"` - replace with output of `time.Now().Unix()`
   * `"$lf"` - replace with `\n`
