@@ -648,6 +648,17 @@ func main() {
 							nValB, _ := strconv.Atoi(sArr[1])
 							tplfields[k] = SIPExerRandAlphaString(nValA + mathrand.Intn(nValB-nValA))
 						}
+					} else if strings.Index(sVal, "$randan(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
+						sVal = sVal[9 : len(sVal)-1]
+						sArr := strings.Split(sVal, ",")
+						if len(sArr) == 1 {
+							nVal, _ := strconv.Atoi(sArr[0])
+							tplfields[k] = SIPExerRandAlphaNumString(nVal)
+						} else {
+							nValA, _ := strconv.Atoi(sArr[0])
+							nValB, _ := strconv.Atoi(sArr[1])
+							tplfields[k] = SIPExerRandAlphaNumString(nValA + mathrand.Intn(nValB-nValA))
+						}
 					} else if strings.Index(sVal, "$env(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
 						eVal, ok := os.LookupEnv(sVal[5 : len(sVal)-1])
 						if ok {
@@ -1782,6 +1793,18 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 // SIPExerRandAlphaString - return random alphabetic string
 func SIPExerRandAlphaString(olen int) string {
 	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+	b := make([]rune, olen)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
+}
+
+//
+// SIPExerRandAlphaNumString - return random alpha-numeric string
+func SIPExerRandAlphaNumString(olen int) string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
 	b := make([]rune, olen)
 	for i := range b {
