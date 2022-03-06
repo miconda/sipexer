@@ -288,6 +288,8 @@ are replaced if the value of the field is a string matching one of the next:
   * `"$randseq"` - replace with a random number from `1` to `1 000 000`
   * `"$rand(max)"` - replace with a random number from `0` to `max`
   * `"$rand(min,max)"` - replace with a random number from `min` to `max`
+  * `"$randan(len)"` - random alphanumeric string of length `len`
+  * `"$randan(minlen,maxlen)"` - random alphanumeric string with length from `minlen` to `maxlen`
   * `"$randstr(len)"` - random alphabetic string of length `len`
   * `"$randstr(minlen,maxlen)"` - random alphabetic string with length from `minlen` to `maxlen`
   * `"$rmeol"` - remove next end of line character `\n`
