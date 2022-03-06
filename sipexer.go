@@ -788,7 +788,7 @@ func main() {
 				}
 			}
 		} else if len(flag.Args()) == 2 {
-			dstAddr = "upd:" + flag.Arg(0) + ":" + flag.Arg(1)
+			dstAddr = "udp:" + flag.Arg(0) + ":" + flag.Arg(1)
 		} else if len(flag.Args()) == 3 {
 			dstAddr = flag.Arg(0) + ":" + flag.Arg(1) + ":" + flag.Arg(2)
 		} else {
