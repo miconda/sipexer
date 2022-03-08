@@ -670,6 +670,17 @@ func main() {
 							nValB, _ := strconv.Atoi(sArr[1])
 							tplfields[k] = SIPExerRandNumString(nValA + mathrand.Intn(nValB-nValA))
 						}
+					} else if strings.Index(sVal, "$randhex(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
+						sVal = sVal[9 : len(sVal)-1]
+						sArr := strings.Split(sVal, ",")
+						if len(sArr) == 1 {
+							nVal, _ := strconv.Atoi(sArr[0])
+							tplfields[k] = SIPExerRandHexString(nVal)
+						} else {
+							nValA, _ := strconv.Atoi(sArr[0])
+							nValB, _ := strconv.Atoi(sArr[1])
+							tplfields[k] = SIPExerRandHexString(nValA + mathrand.Intn(nValB-nValA))
+						}
 					} else if strings.Index(sVal, "$env(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
 						eVal, ok := os.LookupEnv(sVal[5 : len(sVal)-1])
 						if ok {
@@ -1828,6 +1839,18 @@ func SIPExerRandAlphaNumString(olen int) string {
 // SIPExerRandNumString - return random numeric string
 func SIPExerRandNumString(olen int) string {
 	var letters = []rune("0123456789")
+
+	b := make([]rune, olen)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
+}
+
+//
+// SIPExerRandHexString - return random hexa string
+func SIPExerRandHexString(olen int) string {
+	var letters = []rune("0123456789ABCDEF")
 
 	b := make([]rune, olen)
 	for i := range b {
