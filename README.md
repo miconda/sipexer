@@ -290,6 +290,10 @@ are replaced if the value of the field is a string matching one of the next:
   * `"$rand(min,max)"` - replace with a random number from `min` to `max`
   * `"$randan(len)"` - random alphanumeric string of length `len`
   * `"$randan(minlen,maxlen)"` - random alphanumeric string with length from `minlen` to `maxlen`
+  * `"$randhex(len)"` - random hexadecimal string of length `len`
+  * `"$randhex(minlen,maxlen)"` - random hexadecimal string with length from `minlen` to `maxlen`
+  * `"$randnum(len)"` - random numeric string of length `len`
+  * `"$randnum(minlen,maxlen)"` - random numeric string with length from `minlen` to `maxlen`
   * `"$randstr(len)"` - random alphabetic string of length `len`
   * `"$randstr(minlen,maxlen)"` - random alphabetic string with length from `minlen` to `maxlen`
   * `"$rmeol"` - remove next end of line character `\n`
