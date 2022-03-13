@@ -620,6 +620,8 @@ func main() {
 					tplfields[k] = time.Now().Format(time.ANSIC)
 				} else if tplfields[k] == "$timestamp" {
 					tplfields[k] = strconv.FormatInt(time.Now().Unix(), 10)
+				} else if tplfields[k] == "$pid" {
+					tplfields[k] = strconv.Itoa(os.Getpid())
 				} else if tplfields[k] == "$cr" {
 					tplfields[k] = "\r"
 				} else if tplfields[k] == "$lf" {
