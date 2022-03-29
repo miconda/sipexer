@@ -92,7 +92,7 @@ const (
 
 var templateDefaultText string = `{{.method}} {{.ruri}} SIP/2.0
 Via: SIP/2.0/{{.viaproto}} {{.viaaddr}}{{.rport}};branch=z9hG4bKSG.{{.viabranch}}
-From: {{if .fromuri}}{{.fromuri}}{{else}}{{if .fname}}"{{.fname}}" {{end}}<sip:{{if .fuser}}{{.fuser}}@{{end}}{{.fdomain}}>;tag={{.fromtag}}{{end}}
+From: {{if .fromuri}}{{.fromuri}}{{else}}{{if .fname}}"{{.fname}}" {{end}}<sip:{{if .fuser}}{{.fuser}}@{{end}}{{.fdomain}}>{{end}};tag={{.fromtag}}
 To: {{if .touri}}{{.touri}}{{else}}{{if .tname}}"{{.tname}}" {{end}}<sip:{{if .tuser}}{{.tuser}}@{{end}}{{.tdomain}}>{{end}}
 Call-ID: {{.callid}}
 CSeq: {{.cseqnum}} {{.method}}
@@ -365,6 +365,53 @@ func sipexer_help_commands() {
 	fmt.Fprintf(os.Stderr, "\n")
 }
 
+func printCLIOptions() {
+	type CLIOptionDef struct {
+		Ops      []string
+		Usage    string
+		DefValue string
+		VType    string
+	}
+	var items []CLIOptionDef
+	flag.VisitAll(func(f *flag.Flag) {
+		var found bool = false
+		for idx, it := range items {
+			if it.Usage == f.Usage {
+				found = true
+				it.Ops = append(it.Ops, f.Name)
+				items[idx] = it
+			}
+		}
+		if !found {
+			items = append(items, CLIOptionDef{
+				Ops:      []string{f.Name},
+				Usage:    f.Usage,
+				DefValue: f.DefValue,
+				VType:    fmt.Sprintf("%T", f.Value),
+			})
+		}
+	})
+	for _, val := range items {
+		vtype := val.VType[6 : len(val.VType)-5]
+		if vtype[len(vtype)-2:] == "64" {
+			vtype = vtype[:len(vtype)-2]
+		}
+		for _, opt := range val.Ops {
+			if vtype == "bool" {
+				fmt.Printf("  -%s\n", opt)
+			} else {
+
+				fmt.Printf("  -%s %s\n", opt, vtype)
+			}
+		}
+		if vtype != "bool" && len(val.DefValue) > 0 {
+			fmt.Printf("      %s [default: %s]\n", val.Usage, val.DefValue)
+		} else {
+			fmt.Printf("      %s\n", val.Usage)
+		}
+	}
+}
+
 //
 // initialize application components
 func init() {
@@ -374,7 +421,8 @@ func init() {
 		fmt.Fprintf(os.Stderr, "    %s [options] [target]\n\n", filepath.Base(os.Args[0]))
 		fmt.Fprintf(os.Stderr, "      * target can be: 'host', 'proto:host', 'host:port', 'proto:host:port' or sip-uri\n")
 		fmt.Fprintf(os.Stderr, "      * some options have short and long version\n\n")
-		flag.PrintDefaults()
+		//flag.PrintDefaults()
+		printCLIOptions()
 		fmt.Fprintf(os.Stderr, "\n")
 		sipexer_help_commands()
 		SIPExerExit(1)
