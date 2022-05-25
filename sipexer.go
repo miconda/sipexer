@@ -1440,7 +1440,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 	seDlg.RecvBuf = make([]byte, cliops.buffersize)
 	// retransmissions loop
 	for {
-		if (seDlg.ProtoId != sgsip.ProtoUDP) || seDlg.Resend {
+		if (seDlg.ProtoId != sgsip.ProtoUDP && seDlg.State != SIPExerDialogEarly) || seDlg.Resend {
 			SIPExerSetWriteTimeout(seDlg)
 			ret = SIPExerSendBytes(seDlg, wmsg)
 			if ret < 0 {
