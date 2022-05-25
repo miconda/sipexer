@@ -220,7 +220,26 @@ func (m paramFieldsType) Set(value string) error {
 }
 
 var paramFields = make(paramFieldsType)
-var headerFields = make(paramFieldsType)
+
+type headerFieldsType [][2]string
+
+func (m *headerFieldsType) String() string {
+	b := new(bytes.Buffer)
+	for _, z := range *m {
+		fmt.Fprintf(b, "%s:%s\n", z[0], z[1])
+	}
+	return b.String()
+}
+
+func (m *headerFieldsType) Set(value string) error {
+	z := strings.SplitN(value, ":", 2)
+	if len(z) > 1 {
+		*m = append(*m, [2]string{z[0], z[1]})
+	}
+	return nil
+}
+
+var headerFields = make(headerFieldsType, 0)
 
 //
 // CLIOptions - structure for command line options
@@ -1084,10 +1103,10 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 	}
 
 	if len(headerFields) > 0 {
-		for hname, hbody := range headerFields {
+		for _, hdrs := range headerFields {
 			var hdrItem sgsip.SGSIPHeader = sgsip.SGSIPHeader{}
-			hdrItem.Name = hname
-			hdrItem.Body = hbody
+			hdrItem.Name = hdrs[0]
+			hdrItem.Body = hdrs[1]
 			msgVal.Headers = append(msgVal.Headers, hdrItem)
 		}
 		msgrebuild = true
