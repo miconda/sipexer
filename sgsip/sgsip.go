@@ -1111,12 +1111,20 @@ func SGSIPInviteToACKString(invReq *SGSIPMessage, invRpl *SGSIPMessage, outputSt
 			sb.WriteString(h.Name + ": " + sList[0] + " ACK\r\n")
 		}
 	}
+
 	// reverse walking for route headers
 	last := len(invRpl.Headers) - 1
 	for i := range invRpl.Headers {
 		switch invRpl.Headers[last-i].HType {
 		case HeaderTypeRecordRoute:
-			sb.WriteString("Route: " + invRpl.Headers[last-i].Body + "\r\n")
+            // Split by comma in case of comma-separated RR hops.
+
+            rrChunks := strings.Split(invRpl.Headers[last-i].Body, ",")
+            lastRRChunk := len(rrChunks) - 1
+
+            for j := range rrChunks {
+                sb.WriteString("Route: " + strings.TrimSpace(rrChunks[lastRRChunk-j]) + "\r\n")
+            } 
 		}
 	}
 	sb.WriteString("Content-Length: 0\r\n\r\n")
