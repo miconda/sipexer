@@ -81,6 +81,13 @@ go build .
 
 The binary `sipexer` should be generated in the current directory.
 
+**Note:** On some OS distributions, it may be required to run the `go build` command
+with `CGO_ENABLED=0`, like:
+
+```
+CGO_ENABLED=0 go build .
+```
+
 ### Download Binary Release ###
 
 Binary releases for `Linux`, `MacOS` and `Windows` are available at:
