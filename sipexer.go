@@ -1386,25 +1386,25 @@ func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 			_, err = seDlg.ConnUDP.Conn.WriteToUDP(bmsg, seDlg.ConnUDP.DstAddr)
 		}
 		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
+			SIPExerPrintf(SIPExerLogError, "error writing on udp (connect: %v) - %v\n", cliops.connectudp, err)
 			return SIPExerErrUDPWrite
 		}
 	} else if seDlg.ProtoId == sgsip.ProtoTCP {
 		_, err = seDlg.ConnTCP.Conn.Write(bmsg)
 		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
+			SIPExerPrintf(SIPExerLogError, "error writing on tcp - %v\n", err)
 			return SIPExerErrTCPWrite
 		}
 	} else if seDlg.ProtoId == sgsip.ProtoTLS {
 		_, err = seDlg.ConnTLS.Conn.Write(bmsg)
 		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
+			SIPExerPrintf(SIPExerLogError, "error writing on tls - %v\n", err)
 			return SIPExerErrTLSWrite
 		}
 	} else if seDlg.ProtoId == sgsip.ProtoWSS {
 		_, err = seDlg.ConnWSS.Conn.Write(bmsg)
 		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "error writing - %v\n", err)
+			SIPExerPrintf(SIPExerLogError, "error writing on wss - %v\n", err)
 			return SIPExerErrWSWrite
 		}
 	} else {
