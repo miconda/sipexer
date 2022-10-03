@@ -1,5 +1,4 @@
 // SIPExer Generic SIP Parsing Library
-//
 package sgsip
 
 import (
@@ -200,6 +199,12 @@ type SGSIPBody struct {
 	ContentLen  int
 	ContentType string
 }
+
+// message flags
+const (
+	SGSIPMFlagNone      = 0
+	SGSIPMFlagLateOffer = 1
+)
 
 type SGSIPMessage struct {
 	Data    string
@@ -734,7 +739,6 @@ func SGSIPHeaderValidName(name string) bool {
 	return true
 }
 
-//
 // SGSIPHeaderParseDigestAuthBody - parse www/proxy-authenticate header body.
 // Return a map of parameters or nil if the header is not Digest auth header.
 func SGSIPHeaderParseDigestAuthBody(hbody string) map[string]string {
@@ -1124,7 +1128,7 @@ func SGSIPInviteToACKString(invReq *SGSIPMessage, invRpl *SGSIPMessage, outputSt
 
 			for j := range rrChunks {
 				sb.WriteString("Route: " + strings.TrimSpace(rrChunks[lastRRChunk-j]) + "\r\n")
-			} 
+			}
 		}
 	}
 	sb.WriteString("Content-Length: 0\r\n\r\n")
