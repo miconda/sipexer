@@ -241,7 +241,6 @@ func (m *headerFieldsType) Set(value string) error {
 
 var headerFields = make(headerFieldsType, 0)
 
-//
 // CLIOptions - structure for command line options
 type CLIOptions struct {
 	method           string
@@ -305,6 +304,7 @@ type CLIOptions struct {
 	sessionwait      int
 	helpcommands     bool
 	dnssrvprint      bool
+	lateoffer        bool
 	version          bool
 }
 
@@ -368,6 +368,7 @@ var cliops = CLIOptions{
 	colormessage:     false,
 	sessionwait:      0,
 	dnssrvprint:      false,
+	lateoffer:        false,
 	helpcommands:     false,
 	version:          false,
 }
@@ -431,7 +432,6 @@ func printCLIOptions() {
 	}
 }
 
-//
 // initialize application components
 func init() {
 	// command line arguments
@@ -552,6 +552,8 @@ func init() {
 
 	flag.BoolVar(&cliops.dnssrvprint, "dns-srv-print", cliops.dnssrvprint, "print DNS SRV records")
 
+	flag.BoolVar(&cliops.lateoffer, "late-offer", cliops.lateoffer, "enable SDP late offer mode")
+
 	flag.BoolVar(&cliops.helpcommands, "help-commands", cliops.helpcommands, "print help with command examples")
 	flag.BoolVar(&cliops.helpcommands, "hc", cliops.helpcommands, "print help with command examples")
 	flag.BoolVar(&cliops.version, "version", cliops.version, "print version")
@@ -561,7 +563,6 @@ func init() {
 
 }
 
-//
 // sipexer application
 func main() {
 	var err error
@@ -1129,6 +1130,9 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 			var tplBody = template.Must(template.New("wbodyout").Parse(templateDefaultInviteBody))
 			tplBody.Execute(&bufBody, tplfields)
 			msgVal.Body.Content = strings.Replace(bufBody.String(), "$rmeol\n", "", -1)
+			if cliops.lateoffer {
+				msgVal.MFlags = msgVal.MFlags | sgsip.SGSIPMFlagLateOffer
+			}
 		}
 
 		if len(msgVal.Body.Content) > 0 {
@@ -1880,7 +1884,6 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 	tchan <- ret
 }
 
-//
 // SIPExerRandAlphaString - return random alphabetic string
 func SIPExerRandAlphaString(olen int) string {
 	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -1892,7 +1895,6 @@ func SIPExerRandAlphaString(olen int) string {
 	return string(b)
 }
 
-//
 // SIPExerRandAlphaNumString - return random alpha-numeric string
 func SIPExerRandAlphaNumString(olen int) string {
 	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
@@ -1904,7 +1906,6 @@ func SIPExerRandAlphaNumString(olen int) string {
 	return string(b)
 }
 
-//
 // SIPExerRandNumString - return random numeric string
 func SIPExerRandNumString(olen int) string {
 	var letters = []rune("0123456789")
@@ -1916,7 +1917,6 @@ func SIPExerRandNumString(olen int) string {
 	return string(b)
 }
 
-//
 // SIPExerRandHexString - return random hexa string
 func SIPExerRandHexString(olen int) string {
 	var letters = []rune("0123456789ABCDEF")
@@ -1928,7 +1928,6 @@ func SIPExerRandHexString(olen int) string {
 	return string(b)
 }
 
-//
 // SIPExerBuildAuthResponseBody - return the body for auth header in response
 func SIPExerBuildAuthResponseBody(username string, password string, hparams map[string]string) string {
 	// https://en.wikipedia.org/wiki/Digest_access_authentication
@@ -1968,7 +1967,6 @@ func SIPExerBuildAuthResponseBody(username string, password string, hparams map[
 	return AuthHeader
 }
 
-//
 // SIPExerRandomKey - return random key (used for cnonce)
 func SIPExerRandomKey() string {
 	key := make([]byte, 12)
@@ -1983,7 +1981,6 @@ func SIPExerRandomKey() string {
 	return base64.StdEncoding.EncodeToString(key)
 }
 
-//
 // SIPExerHMD5 - return a lower-case hex MD5 digest of the parameter
 func SIPExerHMD5(data string) string {
 	md5d := md5.New()
