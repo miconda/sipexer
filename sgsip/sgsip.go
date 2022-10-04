@@ -1035,7 +1035,7 @@ func SGSIPMessageToString(msgVal *SGSIPMessage, outputStr *string) int {
 	}
 	sb.WriteString(msgVal.FLine.Val + "\r\n")
 
-	if msgVal.Body.ContentLen > 0 {
+	if (msgVal.MFlags&SGSIPMFlagLateOffer) == 0 && msgVal.Body.ContentLen > 0 {
 		SGSIPMessageHeaderSet(msgVal, "Content-Length", strconv.Itoa(msgVal.Body.ContentLen))
 		if len(msgVal.Body.ContentType) > 0 {
 			SGSIPMessageHeaderSet(msgVal, "Content-Type", msgVal.Body.ContentType)
@@ -1047,7 +1047,7 @@ func SGSIPMessageToString(msgVal *SGSIPMessage, outputStr *string) int {
 	}
 	sb.WriteString("\r\n")
 
-	if msgVal.Body.ContentLen > 0 {
+	if (msgVal.MFlags&SGSIPMFlagLateOffer) == 0 && msgVal.Body.ContentLen > 0 {
 		sb.WriteString(msgVal.Body.Content)
 	}
 
@@ -1131,7 +1131,17 @@ func SGSIPInviteToACKString(invReq *SGSIPMessage, invRpl *SGSIPMessage, outputSt
 			}
 		}
 	}
-	sb.WriteString("Content-Length: 0\r\n\r\n")
+	if (invReq.MFlags&SGSIPMFlagLateOffer) != 0 && invReq.Body.ContentLen > 0 &&
+		(invRpl.FLine.Code >= 200 && invRpl.FLine.Code < 300) {
+		sb.WriteString("Content-Length: " + strconv.Itoa(invReq.Body.ContentLen) + "\r\n")
+		if len(invReq.Body.ContentType) > 0 {
+			sb.WriteString("Content-Type: " + invReq.Body.ContentType + "\r\n")
+		}
+		sb.WriteString("\r\n")
+		sb.WriteString(invReq.Body.Content)
+	} else {
+		sb.WriteString("Content-Length: 0\r\n\r\n")
+	}
 	*outputStr = sb.String()
 	return SGSIPRetOK
 }
