@@ -420,7 +420,6 @@ func printCLIOptions() {
 			if vtype == "bool" {
 				fmt.Printf("  -%s\n", opt)
 			} else {
-
 				fmt.Printf("  -%s %s\n", opt, vtype)
 			}
 		}
@@ -440,7 +439,6 @@ func init() {
 		fmt.Fprintf(os.Stderr, "    %s [options] [target]\n\n", filepath.Base(os.Args[0]))
 		fmt.Fprintf(os.Stderr, "      * target can be: 'host', 'proto:host', 'host:port', 'proto:host:port' or sip-uri\n")
 		fmt.Fprintf(os.Stderr, "      * some options have short and long version\n\n")
-		//flag.PrintDefaults()
 		printCLIOptions()
 		fmt.Fprintf(os.Stderr, "\n")
 		sipexer_help_commands()
