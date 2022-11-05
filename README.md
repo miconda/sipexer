@@ -55,6 +55,7 @@ Among features:
   * variables for setting field values (e.g., random number, data, time, environment
   variables, uuid, random string, ...)
   * simulate SIP calls at signaling layer (INVITE-wait-BYE)
+  * option for late-offer SDP
   * respond to requests coming during SIP calls (e.g., OPTIONS keepalives)
   * send instant messages with SIP MESSAGE requests
   * color output mode for easier troubleshooting
