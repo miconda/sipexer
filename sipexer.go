@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
@@ -411,6 +412,7 @@ func printCLIOptions() {
 			})
 		}
 	})
+	sort.Slice(items, func(i, j int) bool { return strings.ToLower(items[i].Ops[0]) < strings.ToLower(items[j].Ops[0]) })
 	for _, val := range items {
 		vtype := val.VType[6 : len(val.VType)-5]
 		if vtype[len(vtype)-2:] == "64" {
