@@ -145,6 +145,8 @@ var templateFields = map[string]map[string]interface{}{
 	"FIELDS:EMPTY": {},
 }
 
+var incMap = map[string]int{}
+
 const (
 	SIPExerDialogInit       = 0
 	SIPExerDialogStarted    = 1
@@ -756,6 +758,14 @@ func main() {
 						if ok {
 							tplfields[k] = eVal
 						}
+					} else if strings.Index(sVal, "$inc(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
+						eVal, ok := incMap[sVal[5:len(sVal)-1]]
+						if !ok {
+							eVal = 0
+						}
+						eVal++
+						incMap[sVal[5:len(sVal)-1]] = eVal
+						tplfields[k] = strconv.Itoa(eVal)
 					}
 				}
 				break
