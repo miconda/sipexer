@@ -305,6 +305,7 @@ type CLIOptions struct {
 	coloroutput      bool
 	colormessage     bool
 	sessionwait      int
+	runcount         int
 	helpcommands     bool
 	dnssrvprint      bool
 	lateoffer        bool
@@ -370,6 +371,7 @@ var cliops = CLIOptions{
 	coloroutput:      false,
 	colormessage:     false,
 	sessionwait:      0,
+	runcount:         1,
 	dnssrvprint:      false,
 	lateoffer:        false,
 	helpcommands:     false,
@@ -545,6 +547,8 @@ func init() {
 	flag.IntVar(&cliops.verbosity, "vl", cliops.verbosity, "verbosity level (0..3)")
 	flag.IntVar(&cliops.sessionwait, "sessionwait", cliops.sessionwait, "time in millisecons to wait for a session")
 	flag.IntVar(&cliops.sessionwait, "sw", cliops.sessionwait, "time in millisecons to wait for a session")
+	flag.IntVar(&cliops.runcount, "run-count", cliops.runcount, "how many times to recreate and send the message")
+	flag.IntVar(&cliops.runcount, "rc", cliops.runcount, "how many times to recreate and send the message")
 
 	flag.Var(&paramFields, "field-val", "field value in format 'name:value' (can be provided many times)")
 	flag.Var(&paramFields, "fv", "field value in format 'name:value' (can be provided many times)")
@@ -570,6 +574,7 @@ func main() {
 	var err error
 	var ival int
 	var ok bool
+	var tret int
 
 	flag.Parse()
 
@@ -650,352 +655,357 @@ func main() {
 		templateBody = string(tpldata)
 	}
 
-	tplfields := make(map[string]interface{})
-	if len(cliops.fields) > 0 {
-		fieldsdata, err1 := ioutil.ReadFile(cliops.fields)
-		if err1 != nil {
-			SIPExerPrintf(SIPExerLogError, "error: %v\n", err1)
-			SIPExerExit(SIPExerErrFieldsFileRead)
+	for r := 0; r < cliops.runcount; r++ {
+		tplfields := make(map[string]interface{})
+		if len(cliops.fields) > 0 {
+			fieldsdata, err1 := ioutil.ReadFile(cliops.fields)
+			if err1 != nil {
+				SIPExerPrintf(SIPExerLogError, "error: %v\n", err1)
+				SIPExerExit(SIPExerErrFieldsFileRead)
+			}
+			err = json.Unmarshal(fieldsdata, &tplfields)
+			if err != nil {
+				SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+				SIPExerExit(SIPExerErrFieldsFileFormat)
+			}
+		} else if len(templateDefaultJSONFields) > 0 {
+			err = json.Unmarshal([]byte(templateDefaultJSONFields), &tplfields)
+			if err != nil {
+				SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+				SIPExerExit(SIPExerErrFieldsDefaultFormat)
+			}
+			cliops.fieldseval = true
+		} else {
+			tplfields = templateFields["FIELDS:EMPTY"]
 		}
-		err = json.Unmarshal(fieldsdata, &tplfields)
-		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-			SIPExerExit(SIPExerErrFieldsFileFormat)
+		if cliops.fieldseval {
+			for k := range tplfields {
+				switch tplfields[k].(type) {
+				case string:
+					if tplfields[k] == "$uuid" {
+						tplfields[k] = uuid.New().String()
+					} else if tplfields[k] == "$randseq" {
+						tplfields[k] = strconv.Itoa(1 + mathrand.Intn(999999))
+					} else if tplfields[k] == "$datefull" {
+						tplfields[k] = time.Now().String()
+					} else if tplfields[k] == "$daterfc1123" {
+						tplfields[k] = time.Now().Format(time.RFC1123)
+					} else if tplfields[k] == "$dateunix" {
+						tplfields[k] = time.Now().Format(time.UnixDate)
+					} else if tplfields[k] == "$dateansic" {
+						tplfields[k] = time.Now().Format(time.ANSIC)
+					} else if tplfields[k] == "$timestamp" {
+						tplfields[k] = strconv.FormatInt(time.Now().Unix(), 10)
+					} else if tplfields[k] == "$pid" {
+						tplfields[k] = strconv.Itoa(os.Getpid())
+					} else if tplfields[k] == "$cr" {
+						tplfields[k] = "\r"
+					} else if tplfields[k] == "$lf" {
+						tplfields[k] = "\n"
+					} else {
+						sVal := fmt.Sprint(tplfields[k])
+						if strings.Index(sVal, "$rand(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
+							sVal = sVal[6 : len(sVal)-1]
+							sArr := strings.Split(sVal, ",")
+							if len(sArr) == 1 {
+								nVal, _ := strconv.Atoi(sArr[0])
+								tplfields[k] = strconv.Itoa(mathrand.Intn(nVal))
+							} else {
+								nValA, _ := strconv.Atoi(sArr[0])
+								nValB, _ := strconv.Atoi(sArr[1])
+								tplfields[k] = strconv.Itoa(nValA + mathrand.Intn(nValB-nValA))
+							}
+						} else if strings.Index(sVal, "$randstr(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
+							sVal = sVal[9 : len(sVal)-1]
+							sArr := strings.Split(sVal, ",")
+							if len(sArr) == 1 {
+								nVal, _ := strconv.Atoi(sArr[0])
+								tplfields[k] = SIPExerRandAlphaString(nVal)
+							} else {
+								nValA, _ := strconv.Atoi(sArr[0])
+								nValB, _ := strconv.Atoi(sArr[1])
+								tplfields[k] = SIPExerRandAlphaString(nValA + mathrand.Intn(nValB-nValA))
+							}
+						} else if strings.Index(sVal, "$randan(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
+							sVal = sVal[9 : len(sVal)-1]
+							sArr := strings.Split(sVal, ",")
+							if len(sArr) == 1 {
+								nVal, _ := strconv.Atoi(sArr[0])
+								tplfields[k] = SIPExerRandAlphaNumString(nVal)
+							} else {
+								nValA, _ := strconv.Atoi(sArr[0])
+								nValB, _ := strconv.Atoi(sArr[1])
+								tplfields[k] = SIPExerRandAlphaNumString(nValA + mathrand.Intn(nValB-nValA))
+							}
+						} else if strings.Index(sVal, "$randnum(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
+							sVal = sVal[9 : len(sVal)-1]
+							sArr := strings.Split(sVal, ",")
+							if len(sArr) == 1 {
+								nVal, _ := strconv.Atoi(sArr[0])
+								tplfields[k] = SIPExerRandNumString(nVal)
+							} else {
+								nValA, _ := strconv.Atoi(sArr[0])
+								nValB, _ := strconv.Atoi(sArr[1])
+								tplfields[k] = SIPExerRandNumString(nValA + mathrand.Intn(nValB-nValA))
+							}
+						} else if strings.Index(sVal, "$randhex(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
+							sVal = sVal[9 : len(sVal)-1]
+							sArr := strings.Split(sVal, ",")
+							if len(sArr) == 1 {
+								nVal, _ := strconv.Atoi(sArr[0])
+								tplfields[k] = SIPExerRandHexString(nVal)
+							} else {
+								nValA, _ := strconv.Atoi(sArr[0])
+								nValB, _ := strconv.Atoi(sArr[1])
+								tplfields[k] = SIPExerRandHexString(nValA + mathrand.Intn(nValB-nValA))
+							}
+						} else if strings.Index(sVal, "$env(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
+							eVal, ok := os.LookupEnv(sVal[5 : len(sVal)-1])
+							if ok {
+								tplfields[k] = eVal
+							}
+						} else if strings.Index(sVal, "$inc(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
+							eVal, ok := incMap[sVal[5:len(sVal)-1]]
+							if !ok {
+								eVal = 0
+							}
+							eVal++
+							incMap[sVal[5:len(sVal)-1]] = eVal
+							tplfields[k] = strconv.Itoa(eVal)
+						}
+					}
+					break
+				}
+			}
 		}
-	} else if len(templateDefaultJSONFields) > 0 {
-		err = json.Unmarshal([]byte(templateDefaultJSONFields), &tplfields)
-		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-			SIPExerExit(SIPExerErrFieldsDefaultFormat)
-		}
-		cliops.fieldseval = true
-	} else {
-		tplfields = templateFields["FIELDS:EMPTY"]
-	}
-	if cliops.fieldseval {
-		for k := range tplfields {
-			switch tplfields[k].(type) {
-			case string:
-				if tplfields[k] == "$uuid" {
-					tplfields[k] = uuid.New().String()
-				} else if tplfields[k] == "$randseq" {
-					tplfields[k] = strconv.Itoa(1 + mathrand.Intn(999999))
-				} else if tplfields[k] == "$datefull" {
-					tplfields[k] = time.Now().String()
-				} else if tplfields[k] == "$daterfc1123" {
-					tplfields[k] = time.Now().Format(time.RFC1123)
-				} else if tplfields[k] == "$dateunix" {
-					tplfields[k] = time.Now().Format(time.UnixDate)
-				} else if tplfields[k] == "$dateansic" {
-					tplfields[k] = time.Now().Format(time.ANSIC)
-				} else if tplfields[k] == "$timestamp" {
-					tplfields[k] = strconv.FormatInt(time.Now().Unix(), 10)
-				} else if tplfields[k] == "$pid" {
-					tplfields[k] = strconv.Itoa(os.Getpid())
-				} else if tplfields[k] == "$cr" {
-					tplfields[k] = "\r"
-				} else if tplfields[k] == "$lf" {
-					tplfields[k] = "\n"
+		if len(paramFields) > 0 {
+			for k := range paramFields {
+				if k == "rport" {
+					if strings.Trim(paramFields[k], " \t\r\n") == cliops.noval {
+						tplfields[k] = ""
+					}
+				} else if k == "date" {
+					if strings.Trim(paramFields[k], " \t\r\n") == cliops.noval {
+						delete(tplfields, "date")
+					}
 				} else {
-					sVal := fmt.Sprint(tplfields[k])
-					if strings.Index(sVal, "$rand(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
-						sVal = sVal[6 : len(sVal)-1]
-						sArr := strings.Split(sVal, ",")
-						if len(sArr) == 1 {
-							nVal, _ := strconv.Atoi(sArr[0])
-							tplfields[k] = strconv.Itoa(mathrand.Intn(nVal))
-						} else {
-							nValA, _ := strconv.Atoi(sArr[0])
-							nValB, _ := strconv.Atoi(sArr[1])
-							tplfields[k] = strconv.Itoa(nValA + mathrand.Intn(nValB-nValA))
-						}
-					} else if strings.Index(sVal, "$randstr(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
-						sVal = sVal[9 : len(sVal)-1]
-						sArr := strings.Split(sVal, ",")
-						if len(sArr) == 1 {
-							nVal, _ := strconv.Atoi(sArr[0])
-							tplfields[k] = SIPExerRandAlphaString(nVal)
-						} else {
-							nValA, _ := strconv.Atoi(sArr[0])
-							nValB, _ := strconv.Atoi(sArr[1])
-							tplfields[k] = SIPExerRandAlphaString(nValA + mathrand.Intn(nValB-nValA))
-						}
-					} else if strings.Index(sVal, "$randan(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
-						sVal = sVal[9 : len(sVal)-1]
-						sArr := strings.Split(sVal, ",")
-						if len(sArr) == 1 {
-							nVal, _ := strconv.Atoi(sArr[0])
-							tplfields[k] = SIPExerRandAlphaNumString(nVal)
-						} else {
-							nValA, _ := strconv.Atoi(sArr[0])
-							nValB, _ := strconv.Atoi(sArr[1])
-							tplfields[k] = SIPExerRandAlphaNumString(nValA + mathrand.Intn(nValB-nValA))
-						}
-					} else if strings.Index(sVal, "$randnum(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
-						sVal = sVal[9 : len(sVal)-1]
-						sArr := strings.Split(sVal, ",")
-						if len(sArr) == 1 {
-							nVal, _ := strconv.Atoi(sArr[0])
-							tplfields[k] = SIPExerRandNumString(nVal)
-						} else {
-							nValA, _ := strconv.Atoi(sArr[0])
-							nValB, _ := strconv.Atoi(sArr[1])
-							tplfields[k] = SIPExerRandNumString(nValA + mathrand.Intn(nValB-nValA))
-						}
-					} else if strings.Index(sVal, "$randhex(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
-						sVal = sVal[9 : len(sVal)-1]
-						sArr := strings.Split(sVal, ",")
-						if len(sArr) == 1 {
-							nVal, _ := strconv.Atoi(sArr[0])
-							tplfields[k] = SIPExerRandHexString(nVal)
-						} else {
-							nValA, _ := strconv.Atoi(sArr[0])
-							nValB, _ := strconv.Atoi(sArr[1])
-							tplfields[k] = SIPExerRandHexString(nValA + mathrand.Intn(nValB-nValA))
-						}
-					} else if strings.Index(sVal, "$env(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
-						eVal, ok := os.LookupEnv(sVal[5 : len(sVal)-1])
-						if ok {
-							tplfields[k] = eVal
-						}
-					} else if strings.Index(sVal, "$inc(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
-						eVal, ok := incMap[sVal[5:len(sVal)-1]]
-						if !ok {
-							eVal = 0
-						}
-						eVal++
-						incMap[sVal[5:len(sVal)-1]] = eVal
-						tplfields[k] = strconv.Itoa(eVal)
+					tplfields[k] = paramFields[k]
+				}
+			}
+		}
+
+		if cliops.register {
+			tplfields["method"] = "REGISTER"
+		} else if cliops.message {
+			tplfields["method"] = "MESSAGE"
+		} else if cliops.options {
+			tplfields["method"] = "OPTIONS"
+		} else if cliops.invite {
+			tplfields["method"] = "INVITE"
+		} else if cliops.info {
+			tplfields["method"] = "INFO"
+		} else if cliops.subscribe {
+			tplfields["method"] = "SUBSCRIBE"
+		} else if cliops.publish {
+			tplfields["method"] = "PUBLISH"
+		} else if cliops.notify {
+			tplfields["method"] = "NOTIFY"
+		} else if len(cliops.method) > 0 {
+			tplfields["method"] = strings.ToUpper(cliops.method)
+		}
+
+		// cli flags updates when sip method is set via field value parameter
+		tplMethod := fmt.Sprint(tplfields["method"])
+		if !cliops.options && tplMethod == "OPTIONS" {
+			cliops.options = true
+		} else if !cliops.invite && tplMethod == "INVITE" {
+			cliops.invite = true
+		} else if !cliops.register && tplMethod == "REGISTER" {
+			cliops.register = true
+		}
+
+		if len(cliops.expires) > 0 {
+			ival, err = strconv.Atoi(cliops.expires)
+			if err != nil || ival < 0 {
+				SIPExerPrintf(SIPExerLogError, "invalid expires value: %s\n", cliops.expires)
+				SIPExerExit(SIPExerErrExpiresValue)
+			}
+			tplfields["expires"] = cliops.expires
+		}
+		_, ok = tplfields["contacturi"]
+		if !ok {
+			if len(cliops.contacturi) > 0 {
+				if cliops.contacturi[0:1] == "<" && cliops.contacturi[len(cliops.contacturi)-1:] == ">" {
+					tplfields["contacturi"] = cliops.contacturi
+				} else {
+					tplfields["contacturi"] = "<" + cliops.contacturi + ">"
+				}
+			}
+		}
+		if len(cliops.fuser) > 0 {
+			tplfields["fuser"] = cliops.fuser
+		}
+		if len(cliops.tuser) > 0 {
+			tplfields["tuser"] = cliops.tuser
+		}
+		if len(cliops.fdomain) > 0 {
+			tplfields["fdomain"] = cliops.fdomain
+		}
+		if len(cliops.tdomain) > 0 {
+			tplfields["tdomain"] = cliops.tdomain
+		}
+		if len(cliops.fromuri) > 0 {
+			if cliops.fromuri[0:1] == "<" {
+				tplfields["fromuri"] = cliops.fromuri
+			} else {
+				tplfields["fromuri"] = "<" + cliops.fromuri + ">"
+			}
+		}
+
+		if len(cliops.touri) > 0 {
+			if cliops.touri[0:1] == "<" {
+				tplfields["touri"] = cliops.touri
+			} else {
+				tplfields["touri"] = "<" + cliops.touri + ">"
+			}
+		}
+
+		if len(cliops.useragent) > 0 {
+			if cliops.useragent != cliops.noval {
+				tplfields["useragent"] = cliops.useragent
+			}
+		} else {
+			tplfields["useragent"] = "SIPExer v" + sipexerVersion
+		}
+
+		// delete `cliops.noval` fields
+		_, ok = tplfields["fuser"]
+		if ok && tplfields["fuser"] == cliops.noval {
+			delete(tplfields, "fuser")
+		}
+		_, ok = tplfields["tuser"]
+		if ok && tplfields["tuser"] == cliops.noval {
+			delete(tplfields, "tuser")
+		}
+
+		var wsurlp *url.URL = nil
+		dstAddr := "udp:127.0.0.1:5060"
+		if len(flag.Args()) > 0 {
+			if len(flag.Args()) == 1 {
+				dstAddr = flag.Arg(0)
+				if strings.HasPrefix(dstAddr, "wss://") ||
+					strings.HasPrefix(dstAddr, "ws://") {
+					wsurlp, err = url.Parse(dstAddr)
+					if err != nil {
+						SIPExerPrintf(SIPExerLogError, "invalid websocket target: %v\n", dstAddr)
+						SIPExerExit(SIPExerErrWSURLFormat)
+					}
+					if strings.HasPrefix(dstAddr, "wss://") {
+						dstAddr = "wss:" + wsurlp.Host
+					} else {
+						dstAddr = "ws:" + wsurlp.Host
 					}
 				}
-				break
-			}
-		}
-	}
-	if len(paramFields) > 0 {
-		for k := range paramFields {
-			if k == "rport" {
-				if strings.Trim(paramFields[k], " \t\r\n") == cliops.noval {
-					tplfields[k] = ""
-				}
-			} else if k == "date" {
-				if strings.Trim(paramFields[k], " \t\r\n") == cliops.noval {
-					delete(tplfields, "date")
-				}
+			} else if len(flag.Args()) == 2 {
+				dstAddr = "udp:" + flag.Arg(0) + ":" + flag.Arg(1)
+			} else if len(flag.Args()) == 3 {
+				dstAddr = flag.Arg(0) + ":" + flag.Arg(1) + ":" + flag.Arg(2)
 			} else {
-				tplfields[k] = paramFields[k]
+				SIPExerPrintf(SIPExerLogError, "invalid number of arguments : %d\n", len(flag.Args()))
+				SIPExerExit(SIPExerErrArgumentsNumber)
 			}
 		}
-	}
-
-	if cliops.register {
-		tplfields["method"] = "REGISTER"
-	} else if cliops.message {
-		tplfields["method"] = "MESSAGE"
-	} else if cliops.options {
-		tplfields["method"] = "OPTIONS"
-	} else if cliops.invite {
-		tplfields["method"] = "INVITE"
-	} else if cliops.info {
-		tplfields["method"] = "INFO"
-	} else if cliops.subscribe {
-		tplfields["method"] = "SUBSCRIBE"
-	} else if cliops.publish {
-		tplfields["method"] = "PUBLISH"
-	} else if cliops.notify {
-		tplfields["method"] = "NOTIFY"
-	} else if len(cliops.method) > 0 {
-		tplfields["method"] = strings.ToUpper(cliops.method)
-	}
-
-	// cli flags updates when sip method is set via field value parameter
-	tplMethod := fmt.Sprint(tplfields["method"])
-	if !cliops.options && tplMethod == "OPTIONS" {
-		cliops.options = true
-	} else if !cliops.invite && tplMethod == "INVITE" {
-		cliops.invite = true
-	} else if !cliops.register && tplMethod == "REGISTER" {
-		cliops.register = true
-	}
-
-	if len(cliops.expires) > 0 {
-		ival, err = strconv.Atoi(cliops.expires)
-		if err != nil || ival < 0 {
-			SIPExerPrintf(SIPExerLogError, "invalid expires value: %s\n", cliops.expires)
-			SIPExerExit(SIPExerErrExpiresValue)
-		}
-		tplfields["expires"] = cliops.expires
-	}
-	_, ok = tplfields["contacturi"]
-	if !ok {
-		if len(cliops.contacturi) > 0 {
-			if cliops.contacturi[0:1] == "<" && cliops.contacturi[len(cliops.contacturi)-1:] == ">" {
-				tplfields["contacturi"] = cliops.contacturi
+		var dstSockAddr = sgsip.SGSIPSocketAddress{}
+		var dstURI = sgsip.SGSIPURI{}
+		if sgsip.SGSIPParseSocketAddress(dstAddr, &dstSockAddr) != sgsip.SGSIPRetOK {
+			if sgsip.SGSIPParseURI(dstAddr, &dstURI) != sgsip.SGSIPRetOK {
+				SIPExerPrintf(SIPExerLogError, "invalid destination address: %s\n", dstAddr)
+				SIPExerExit(SIPExerErrDestinationFormat)
 			} else {
-				tplfields["contacturi"] = "<" + cliops.contacturi + ">"
+				SIPExerPrintf(SIPExerLogDebug, "parsed SIP URI argument (%+v)\n", dstURI)
+				sgsip.SGSIPURIToSocketAddress(&dstURI, &dstSockAddr)
 			}
-		}
-	}
-	if len(cliops.fuser) > 0 {
-		tplfields["fuser"] = cliops.fuser
-	}
-	if len(cliops.tuser) > 0 {
-		tplfields["tuser"] = cliops.tuser
-	}
-	if len(cliops.fdomain) > 0 {
-		tplfields["fdomain"] = cliops.fdomain
-	}
-	if len(cliops.tdomain) > 0 {
-		tplfields["tdomain"] = cliops.tdomain
-	}
-	if len(cliops.fromuri) > 0 {
-		if cliops.fromuri[0:1] == "<" {
-			tplfields["fromuri"] = cliops.fromuri
 		} else {
-			tplfields["fromuri"] = "<" + cliops.fromuri + ">"
-		}
-	}
-
-	if len(cliops.touri) > 0 {
-		if cliops.touri[0:1] == "<" {
-			tplfields["touri"] = cliops.touri
-		} else {
-			tplfields["touri"] = "<" + cliops.touri + ">"
-		}
-	}
-
-	if len(cliops.useragent) > 0 {
-		if cliops.useragent != cliops.noval {
-			tplfields["useragent"] = cliops.useragent
-		}
-	} else {
-		tplfields["useragent"] = "SIPExer v" + sipexerVersion
-	}
-
-	// delete `cliops.noval` fields
-	_, ok = tplfields["fuser"]
-	if ok && tplfields["fuser"] == cliops.noval {
-		delete(tplfields, "fuser")
-	}
-	_, ok = tplfields["tuser"]
-	if ok && tplfields["tuser"] == cliops.noval {
-		delete(tplfields, "tuser")
-	}
-
-	var wsurlp *url.URL = nil
-	dstAddr := "udp:127.0.0.1:5060"
-	if len(flag.Args()) > 0 {
-		if len(flag.Args()) == 1 {
-			dstAddr = flag.Arg(0)
-			if strings.HasPrefix(dstAddr, "wss://") ||
-				strings.HasPrefix(dstAddr, "ws://") {
-				wsurlp, err = url.Parse(dstAddr)
-				if err != nil {
-					SIPExerPrintf(SIPExerLogError, "invalid websocket target: %v\n", dstAddr)
-					SIPExerExit(SIPExerErrWSURLFormat)
-				}
-				if strings.HasPrefix(dstAddr, "wss://") {
-					dstAddr = "wss:" + wsurlp.Host
+			SIPExerPrintf(SIPExerLogDebug, "parsed socket address argument (%+v)\n", dstSockAddr)
+			if cliops.setuser {
+				_, ok = tplfields["tuser"]
+				if ok {
+					sgsip.SGSocketAddressToSIPURI(&dstSockAddr, fmt.Sprint(tplfields["tuser"]), 0, &dstURI)
 				} else {
-					dstAddr = "ws:" + wsurlp.Host
+					sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.ruser, 0, &dstURI)
 				}
-			}
-		} else if len(flag.Args()) == 2 {
-			dstAddr = "udp:" + flag.Arg(0) + ":" + flag.Arg(1)
-		} else if len(flag.Args()) == 3 {
-			dstAddr = flag.Arg(0) + ":" + flag.Arg(1) + ":" + flag.Arg(2)
-		} else {
-			SIPExerPrintf(SIPExerLogError, "invalid number of arguments : %d\n", len(flag.Args()))
-			SIPExerExit(SIPExerErrArgumentsNumber)
-		}
-	}
-	var dstSockAddr = sgsip.SGSIPSocketAddress{}
-	var dstURI = sgsip.SGSIPURI{}
-	if sgsip.SGSIPParseSocketAddress(dstAddr, &dstSockAddr) != sgsip.SGSIPRetOK {
-		if sgsip.SGSIPParseURI(dstAddr, &dstURI) != sgsip.SGSIPRetOK {
-			SIPExerPrintf(SIPExerLogError, "invalid destination address: %s\n", dstAddr)
-			SIPExerExit(SIPExerErrDestinationFormat)
-		} else {
-			SIPExerPrintf(SIPExerLogDebug, "parsed SIP URI argument (%+v)\n", dstURI)
-			sgsip.SGSIPURIToSocketAddress(&dstURI, &dstSockAddr)
-		}
-	} else {
-		SIPExerPrintf(SIPExerLogDebug, "parsed socket address argument (%+v)\n", dstSockAddr)
-		if cliops.setuser {
-			_, ok = tplfields["tuser"]
-			if ok {
-				sgsip.SGSocketAddressToSIPURI(&dstSockAddr, fmt.Sprint(tplfields["tuser"]), 0, &dstURI)
 			} else {
 				sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.ruser, 0, &dstURI)
 			}
+		}
+		if len(cliops.ruri) > 0 {
+			tplfields["ruri"] = cliops.ruri
 		} else {
-			sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.ruser, 0, &dstURI)
+			_, ok = tplfields["ruri"]
+			if !ok {
+				tplfields["ruri"] = dstURI.Val
+			}
 		}
-	}
-	if len(cliops.ruri) > 0 {
-		tplfields["ruri"] = cliops.ruri
-	} else {
-		_, ok = tplfields["ruri"]
-		if !ok {
-			tplfields["ruri"] = dstURI.Val
+		if cliops.setdomains {
+			var rURI = sgsip.SGSIPURI{}
+			if sgsip.SGSIPParseURI(fmt.Sprint(tplfields["ruri"]), &rURI) != sgsip.SGSIPRetOK {
+				SIPExerPrintf(SIPExerLogError, "invalid ruri: %v\n", tplfields["ruri"])
+				SIPExerExit(SIPExerErrURIFormat)
+			}
+			tplfields["fdomain"] = rURI.Addr
+			tplfields["tdomain"] = rURI.Addr
 		}
-	}
-	if cliops.setdomains {
-		var rURI = sgsip.SGSIPURI{}
-		if sgsip.SGSIPParseURI(fmt.Sprint(tplfields["ruri"]), &rURI) != sgsip.SGSIPRetOK {
-			SIPExerPrintf(SIPExerLogError, "invalid ruri: %v\n", tplfields["ruri"])
-			SIPExerExit(SIPExerErrURIFormat)
-		}
-		tplfields["fdomain"] = rURI.Addr
-		tplfields["tdomain"] = rURI.Addr
-	}
 
-	var tret int
-	if cliops.templaterun {
-		lTAddr := ""
-		if len(cliops.laddr) > 0 {
-			lTAddr = cliops.laddr
+		if cliops.templaterun {
+			lTAddr := ""
+			if len(cliops.laddr) > 0 {
+				lTAddr = cliops.laddr
+			} else {
+				lTAddr = "127.0.0.1:55060"
+			}
+			var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
+			var smsg string = ""
+			tret = SIPExerPrepareMessage(tplstr, tplfields, dstSockAddr.Proto, lTAddr, dstSockAddr.Addr+":"+dstSockAddr.Port, &msgVal)
+			if tret != 0 {
+				SIPExerExit(tret)
+			}
+			smsg = msgVal.Data
+			msgVal = sgsip.SGSIPMessage{}
+			if sgsip.SGSIPParseMessage(smsg, &msgVal) != sgsip.SGSIPRetOK {
+				SIPExerPrintf(SIPExerLogError, "failed to parse sip message\n%+v\n\n", smsg)
+				SIPExerExit(SIPExerErrSIPMessageFormat)
+			}
+			if cliops.verbosity > 0 {
+				fmt.Printf("%+v\n\n", smsg)
+				fmt.Printf("%+v\n\n", msgVal)
+			}
+
+			if cliops.runcount > 1 {
+				tret = SIPExerRetDone
+				continue
+			}
+			SIPExerExit(SIPExerRetDone)
+		}
+
+		if (dstSockAddr.ProtoId != sgsip.ProtoUDP) && (dstSockAddr.ProtoId != sgsip.ProtoTCP) &&
+			(dstSockAddr.ProtoId != sgsip.ProtoTLS) && (dstSockAddr.ProtoId != sgsip.ProtoWSS) {
+			SIPExerPrintf(SIPExerLogError, "transport protocol not supported yet for target %s\n", dstAddr)
+			SIPExerExit(SIPExerErrProtocolUnsuported)
+		}
+
+		tchan := make(chan int, 1)
+		if dstSockAddr.ProtoId == sgsip.ProtoTCP {
+			go SIPExerSendTCP(dstSockAddr, tplstr, tplfields, tchan)
+		} else if dstSockAddr.ProtoId == sgsip.ProtoTLS {
+			go SIPExerSendTLS(dstSockAddr, tplstr, tplfields, tchan)
+		} else if dstSockAddr.ProtoId == sgsip.ProtoWSS {
+			go SIPExerSendWSS(dstSockAddr, wsurlp, tplstr, tplfields, tchan)
 		} else {
-			lTAddr = "127.0.0.1:55060"
+			go SIPExerSendUDP(dstSockAddr, tplstr, tplfields, tchan)
 		}
-		var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
-		var smsg string = ""
-		tret = SIPExerPrepareMessage(tplstr, tplfields, dstSockAddr.Proto, lTAddr, dstSockAddr.Addr+":"+dstSockAddr.Port, &msgVal)
-		if tret != 0 {
-			SIPExerExit(tret)
-		}
-		smsg = msgVal.Data
-		msgVal = sgsip.SGSIPMessage{}
-		if sgsip.SGSIPParseMessage(smsg, &msgVal) != sgsip.SGSIPRetOK {
-			SIPExerPrintf(SIPExerLogError, "failed to parse sip message\n%+v\n\n", smsg)
-			SIPExerExit(SIPExerErrSIPMessageFormat)
-		}
-		if cliops.verbosity > 0 {
-			fmt.Printf("%+v\n\n", smsg)
-			fmt.Printf("%+v\n\n", msgVal)
-		}
-
-		SIPExerExit(SIPExerRetDone)
+		tret = <-tchan
+		close(tchan)
 	}
-
-	if (dstSockAddr.ProtoId != sgsip.ProtoUDP) && (dstSockAddr.ProtoId != sgsip.ProtoTCP) &&
-		(dstSockAddr.ProtoId != sgsip.ProtoTLS) && (dstSockAddr.ProtoId != sgsip.ProtoWSS) {
-		SIPExerPrintf(SIPExerLogError, "transport protocol not supported yet for target %s\n", dstAddr)
-		SIPExerExit(SIPExerErrProtocolUnsuported)
-	}
-
-	tchan := make(chan int, 1)
-	if dstSockAddr.ProtoId == sgsip.ProtoTCP {
-		go SIPExerSendTCP(dstSockAddr, tplstr, tplfields, tchan)
-	} else if dstSockAddr.ProtoId == sgsip.ProtoTLS {
-		go SIPExerSendTLS(dstSockAddr, tplstr, tplfields, tchan)
-	} else if dstSockAddr.ProtoId == sgsip.ProtoWSS {
-		go SIPExerSendWSS(dstSockAddr, wsurlp, tplstr, tplfields, tchan)
-	} else {
-		go SIPExerSendUDP(dstSockAddr, tplstr, tplfields, tchan)
-	}
-	tret = <-tchan
-	close(tchan)
 
 	SIPExerExit(tret)
 }
