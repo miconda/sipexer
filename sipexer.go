@@ -266,7 +266,7 @@ type CLIOptions struct {
 	body             string
 	nobody           bool
 	contenttype      string
-	laddr            string
+	localaddress     string
 	useragent        string
 	template         string
 	templatebody     string
@@ -324,7 +324,7 @@ var cliops = CLIOptions{
 	body:             "",
 	nobody:           false,
 	contenttype:      "",
-	laddr:            "",
+	localaddress:     "",
 	useragent:        "",
 	template:         "",
 	templatebody:     "",
@@ -472,7 +472,7 @@ func init() {
 	flag.StringVar(&cliops.templatebody, "tbf", cliops.templatebody, "path to template file for body")
 	flag.StringVar(&cliops.fields, "fields-file", cliops.fields, "path to the json fields file")
 	flag.StringVar(&cliops.fields, "ff", cliops.fields, "path to the json fields file")
-	flag.StringVar(&cliops.laddr, "laddr", cliops.laddr, "local address (`ip:port` or `:port`)")
+	flag.StringVar(&cliops.localaddress, "laddr", cliops.localaddress, "local address (`ip:port` or `:port`)")
 	flag.StringVar(&cliops.useragent, "user-agent", cliops.useragent, "user agent value")
 	flag.StringVar(&cliops.useragent, "ua", cliops.useragent, "user agent value")
 	flag.StringVar(&cliops.tlscertificate, "tls-certificate", cliops.tlscertificate, "path to TLS public certificate")
@@ -958,8 +958,8 @@ func main() {
 
 		if cliops.templaterun {
 			lTAddr := ""
-			if len(cliops.laddr) > 0 {
-				lTAddr = cliops.laddr
+			if len(cliops.localaddress) > 0 {
+				lTAddr = cliops.localaddress
 			} else {
 				lTAddr = "127.0.0.1:55060"
 			}
@@ -1655,8 +1655,8 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 			strAFProto = "udp6"
 		}
 	}
-	if len(cliops.laddr) > 0 {
-		seDlg.ConnUDP.SrcAddr, err = net.ResolveUDPAddr(strAFProto, cliops.laddr)
+	if len(cliops.localaddress) > 0 {
+		seDlg.ConnUDP.SrcAddr, err = net.ResolveUDPAddr(strAFProto, cliops.localaddress)
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
 			tchan <- SIPExerErrResolveSrcUDPAddr
@@ -1732,8 +1732,8 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 			strAFProto = "tcp6"
 		}
 	}
-	if len(cliops.laddr) > 0 {
-		seDlg.ConnTCP.SrcAddr, err = net.ResolveTCPAddr(strAFProto, cliops.laddr)
+	if len(cliops.localaddress) > 0 {
+		seDlg.ConnTCP.SrcAddr, err = net.ResolveTCPAddr(strAFProto, cliops.localaddress)
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
 			tchan <- SIPExerErrResolveSrcTCPAddr
