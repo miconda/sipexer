@@ -655,6 +655,11 @@ func main() {
 		templateBody = string(tpldata)
 	}
 
+	if cliops.runcount > 1 && len(cliops.localaddress) > 0 {
+		SIPExerPrintf(SIPExerLogError, "local address parameter is ignored when run count is greater than 1\n")
+		cliops.localaddress = ""
+	}
+
 	for r := 0; r < cliops.runcount; r++ {
 		tplfields := make(map[string]interface{})
 		if len(cliops.fields) > 0 {
