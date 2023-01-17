@@ -934,6 +934,20 @@ func SIPExerPrepareTemplateFields(tplfields map[string]interface{}) int {
 						eVal++
 						incMap[sArr[0]] = eVal
 						tplfields[k] = strconv.Itoa(eVal)
+					} else if strings.Index(sVal, "$dec(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
+						sVal = sVal[5 : len(sVal)-1]
+						sArr := strings.Split(sVal, ",")
+						eVal, ok := incMap[sArr[0]]
+						if !ok {
+							if len(sArr) == 1 {
+								eVal = 1000000
+							} else {
+								eVal, _ = strconv.Atoi(sArr[1])
+							}
+						}
+						eVal--
+						incMap[sArr[0]] = eVal
+						tplfields[k] = strconv.Itoa(eVal)
 					}
 				}
 				break
