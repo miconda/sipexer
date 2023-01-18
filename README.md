@@ -293,6 +293,8 @@ are replaced if the value of the field is a string matching one of the next:
   * `"$daterfc1123"` - replace with output of `time.Now().Format(time.RFC1123)`
   * `"$dateunix"` - replace with output of `time.Now().Format(time.UnixDate)`
   * `"$env(name)"` - replace with the value of the environment variable `name`
+  * `"$dec(name)"` - return the decremented value, first to return is 999999
+  * `"$dec(name,val)"` - return the decremented value, first to return is`val - 1`
   * `"$inc(name)"` - return the incremented value, first to return is 1
   * `"$inc(name,val)"` - return the incremented value, first to return is`val + 1`
   * `"$randseq"` - replace with a random number from `1` to `1 000 000`
