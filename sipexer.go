@@ -981,7 +981,7 @@ func SIPExerPrepareTemplateFields(tplfields map[string]interface{}) int {
 						sArr := strings.Split(sVal, ",")
 						eVal, ok := incMap[sArr[0]]
 						if !ok {
-							eVal = 0
+							eVal = 1
 						}
 						aVal := 1
 						if len(sArr) == 2 {
