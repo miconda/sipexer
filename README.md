@@ -295,6 +295,7 @@ are replaced if the value of the field is a string matching one of the next:
   * `"$env(name)"` - replace with the value of the environment variable `name`
   * `"$add(name)"` - return the current value associate with `name` plus `1` (initial value is `0`)
   * `"$add(name,val)"` - return the current value associate with `name` plus `val` (initial value is `0`)
+  * `"$mul(name,val)"` - return the current value associate with `name` multiplied with `val` (initial value is `1`)
   * `"$dec(name)"` - return the decremented value, first to return is 999999
   * `"$dec(name,val)"` - return the decremented value, first to return is`val - 1`
   * `"$inc(name)"` - return the incremented value, first to return is 1
