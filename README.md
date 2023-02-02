@@ -298,6 +298,7 @@ are replaced if the value of the field is a string matching one of the next:
   * `"$sub(name)"` - return the current value associate with `name` minus `1` (initial value is `0`)
   * `"$sub(name,val)"` - return the current value associate with `name` minus `val` (initial value is `0`)
   * `"$mul(name,val)"` - return the current value associate with `name` multiplied with `val` (initial value is `1`)
+  * `"$div(name,val)"` - return the current value associate with `name` divided by `val` (initial value is `1`)
   * `"$dec(name)"` - return the decremented value, first to return is 999999
   * `"$dec(name,val)"` - return the decremented value, first to return is`val - 1`
   * `"$inc(name)"` - return the incremented value, first to return is 1
