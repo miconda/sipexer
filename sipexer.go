@@ -145,7 +145,7 @@ var templateFields = map[string]map[string]interface{}{
 	"FIELDS:EMPTY": {},
 }
 
-var incMap = map[string]int{}
+var iVarMap = map[string]int{}
 
 const (
 	SIPExerDialogInit       = 0
@@ -923,7 +923,7 @@ func SIPExerPrepareTemplateFields(tplfields map[string]interface{}) int {
 					} else if strings.Index(sVal, "$add(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
 						sVal = sVal[5 : len(sVal)-1]
 						sArr := strings.Split(sVal, ",")
-						eVal, ok := incMap[sArr[0]]
+						eVal, ok := iVarMap[sArr[0]]
 						if !ok {
 							eVal = 0
 						}
@@ -932,12 +932,12 @@ func SIPExerPrepareTemplateFields(tplfields map[string]interface{}) int {
 							aVal, _ = strconv.Atoi(sArr[1])
 						}
 						eVal += aVal
-						incMap[sArr[0]] = eVal
+						iVarMap[sArr[0]] = eVal
 						tplfields[k] = strconv.Itoa(eVal)
 					} else if strings.Index(sVal, "$sub(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
 						sVal = sVal[5 : len(sVal)-1]
 						sArr := strings.Split(sVal, ",")
-						eVal, ok := incMap[sArr[0]]
+						eVal, ok := iVarMap[sArr[0]]
 						if !ok {
 							eVal = 0
 						}
@@ -946,12 +946,12 @@ func SIPExerPrepareTemplateFields(tplfields map[string]interface{}) int {
 							aVal, _ = strconv.Atoi(sArr[1])
 						}
 						eVal -= aVal
-						incMap[sArr[0]] = eVal
+						iVarMap[sArr[0]] = eVal
 						tplfields[k] = strconv.Itoa(eVal)
 					} else if strings.Index(sVal, "$inc(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
 						sVal = sVal[5 : len(sVal)-1]
 						sArr := strings.Split(sVal, ",")
-						eVal, ok := incMap[sArr[0]]
+						eVal, ok := iVarMap[sArr[0]]
 						if !ok {
 							if len(sArr) == 1 {
 								eVal = 0
@@ -960,12 +960,12 @@ func SIPExerPrepareTemplateFields(tplfields map[string]interface{}) int {
 							}
 						}
 						eVal++
-						incMap[sArr[0]] = eVal
+						iVarMap[sArr[0]] = eVal
 						tplfields[k] = strconv.Itoa(eVal)
 					} else if strings.Index(sVal, "$dec(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
 						sVal = sVal[5 : len(sVal)-1]
 						sArr := strings.Split(sVal, ",")
-						eVal, ok := incMap[sArr[0]]
+						eVal, ok := iVarMap[sArr[0]]
 						if !ok {
 							if len(sArr) == 1 {
 								eVal = 1000000
@@ -974,12 +974,12 @@ func SIPExerPrepareTemplateFields(tplfields map[string]interface{}) int {
 							}
 						}
 						eVal--
-						incMap[sArr[0]] = eVal
+						iVarMap[sArr[0]] = eVal
 						tplfields[k] = strconv.Itoa(eVal)
 					} else if strings.Index(sVal, "$mul(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
 						sVal = sVal[5 : len(sVal)-1]
 						sArr := strings.Split(sVal, ",")
-						eVal, ok := incMap[sArr[0]]
+						eVal, ok := iVarMap[sArr[0]]
 						if !ok {
 							eVal = 1
 						}
@@ -988,12 +988,12 @@ func SIPExerPrepareTemplateFields(tplfields map[string]interface{}) int {
 							aVal, _ = strconv.Atoi(sArr[1])
 						}
 						eVal *= aVal
-						incMap[sArr[0]] = eVal
+						iVarMap[sArr[0]] = eVal
 						tplfields[k] = strconv.Itoa(eVal)
 					} else if strings.Index(sVal, "$div(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
 						sVal = sVal[5 : len(sVal)-1]
 						sArr := strings.Split(sVal, ",")
-						eVal, ok := incMap[sArr[0]]
+						eVal, ok := iVarMap[sArr[0]]
 						if !ok {
 							eVal = 1
 						}
@@ -1005,7 +1005,7 @@ func SIPExerPrepareTemplateFields(tplfields map[string]interface{}) int {
 							}
 						}
 						eVal /= aVal
-						incMap[sArr[0]] = eVal
+						iVarMap[sArr[0]] = eVal
 						tplfields[k] = strconv.Itoa(eVal)
 					}
 				}
