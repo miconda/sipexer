@@ -145,8 +145,6 @@ var templateFields = map[string]map[string]interface{}{
 	"FIELDS:EMPTY": {},
 }
 
-var iVarMap = map[string]int{}
-
 const (
 	SIPExerDialogInit       = 0
 	SIPExerDialogStarted    = 1
@@ -243,6 +241,26 @@ func (m *headerFieldsType) Set(value string) error {
 }
 
 var headerFields = make(headerFieldsType, 0)
+
+type iVarMapType map[string]int
+
+func (m iVarMapType) String() string {
+	b := new(bytes.Buffer)
+	for key, value := range m {
+		fmt.Fprintf(b, "%s:%d\n", key, value)
+	}
+	return b.String()
+}
+
+func (m iVarMapType) Set(value string) error {
+	z := strings.SplitN(value, ":", 2)
+	if len(z) > 1 {
+		m[z[0]], _ = strconv.Atoi(z[1])
+	}
+	return nil
+}
+
+var iVarMap = make(iVarMapType)
 
 // CLIOptions - structure for command line options
 type CLIOptions struct {
