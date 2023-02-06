@@ -574,6 +574,9 @@ func init() {
 	flag.Var(&headerFields, "extra-header", "extra header in format 'name:body' (can be provided many times)")
 	flag.Var(&headerFields, "xh", "extra header in format 'name:body' (can be provided many times)")
 
+	flag.Var(&iVarMap, "int-val", "integer value in format 'name:value' (can be provided many times)")
+	flag.Var(&iVarMap, "iv", "integer value in format 'name:value' (can be provided many times)")
+
 	flag.BoolVar(&cliops.dnssrvprint, "dns-srv-print", cliops.dnssrvprint, "print DNS SRV records")
 
 	flag.BoolVar(&cliops.lateoffer, "late-offer", cliops.lateoffer, "enable SDP late offer mode")
