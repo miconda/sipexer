@@ -436,8 +436,13 @@ func printCLIOptions() {
 	})
 	sort.Slice(items, func(i, j int) bool { return strings.ToLower(items[i].Ops[0]) < strings.ToLower(items[j].Ops[0]) })
 	for _, val := range items {
-		vtype := val.VType[6 : len(val.VType)-5]
-		if vtype[len(vtype)-2:] == "64" {
+		vtype := "val"
+		if strings.HasSuffix(val.VType, "Value") {
+			vtype = val.VType[6 : len(val.VType)-5]
+		} else if strings.HasSuffix(val.VType, "Type") {
+			vtype = val.VType[6 : len(val.VType)-4]
+		}
+		if strings.HasSuffix(vtype, "64") {
 			vtype = vtype[:len(vtype)-2]
 		}
 		for _, opt := range val.Ops {
