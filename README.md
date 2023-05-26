@@ -317,7 +317,7 @@ are replaced if the value of the field is a string matching one of the next:
   * `"$rmeol"` - remove next end of line character `\n`
   * `"$timestamp"` - replace with output of `time.Now().Unix()`
   * `"$lf"` - replace with `\n`
-  * `"$uuid"` - replace with a UUID value
+  * `"$uuid"` - replace with a UUID (universally unique identifier) value
 
 When internal template is used, `--fields-eval` is turned on.
 
