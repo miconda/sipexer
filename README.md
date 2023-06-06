@@ -366,7 +366,7 @@ in the template:
   * `localport` - local port
   * `proto` - lower(`proto`) (e.g., `udp`, `tcp`, ...)
   * `protoup` - upper(`proto`) (e.g., `UDP`, `TCP`, ...)
-  * `sdaf` - SDP address family (`IP4` or `IP6`)
+  * `sdpaf` - SDP address family (`IP4` or `IP6`)
   * `targetaddr` - remote address - `ip:port`
   * `targetip` - remote ip
   * `targetport` - remote port
