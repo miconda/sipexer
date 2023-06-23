@@ -102,6 +102,7 @@ CSeq: {{.cseqnum}} {{.method}}
 {{if .contacturi}}Contact: {{.contacturi}}{{if .contactparams}};{{.contactparams}}{{end}}{{else}}$rmeol{{end}}
 {{if .expires}}Expires: {{.expires}}{{else}}$rmeol{{end}}
 {{if .useragent}}User-Agent: {{.useragent}}{{else}}$rmeol{{end}}
+{{if .maxforwards}}Max-Forwards: {{.maxforwards}}{{else}}$rmeol{{end}}
 Content-Length: 0
 
 `
@@ -134,6 +135,7 @@ var templateDefaultJSONFields string = `{
 	"callid": "$uuid",
 	"cseqnum": "$randseq",
 	"date": "$daterfc1123",
+	"maxforwards": "10",
 	"sdpuser": "sipexer",
 	"sdpsessid": "$timestamp",
 	"sdpsessversion": "$timestamp",
