@@ -352,6 +352,7 @@ func SGSIPSetMethodId(method string, methodid *int) {
 // SGSIPParseSocketAddress --
 func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 	if sockstr[0:1] == "[" && sockstr[len(sockstr)-1:] == "]" {
+		sockaddr.Addr = sockstr
 		// assuming only IPv6 address -- fill with defaults
 		sockaddr.AType = SGAddrTypeEx(sockaddr.Addr)
 		if sockaddr.AType != AFIPv6 {
@@ -360,7 +361,6 @@ func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 		sockaddr.Val = sockstr
 		sockaddr.Proto = "udp"
 		sockaddr.ProtoId = ProtoUDP
-		sockaddr.Addr = sockstr
 		sockaddr.Port = "5060"
 		sockaddr.PortNo = 5060
 		return SGSIPRetOK
