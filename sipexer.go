@@ -1811,7 +1811,7 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		var conn1 *net.UDPConn
 		conn1, err = net.DialUDP(strAFProto, nil, seDlg.ConnUDP.DstAddr)
 		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+			SIPExerPrintf(SIPExerLogError, "error: %v (proto: %v - local: %v - remote: %v)\n", err, strAFProto, lAddr, seDlg.ConnUDP.DstAddr)
 			tchan <- SIPExerErrUDPDial
 			return
 		}
