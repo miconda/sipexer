@@ -315,7 +315,8 @@ are replaced if the value of the field is a string matching one of the next:
   * `"$randstr(len)"` - random alphabetic string of length `len`
   * `"$randstr(minlen,maxlen)"` - random alphabetic string with length from `minlen` to `maxlen`
   * `"$rmeol"` - remove next end of line character `\n`
-  * `"$timestamp"` - replace with output of `time.Now().Unix()`
+  * `"$timestamp"` - replace with output of `time.Now().Unix()` - time stamp in seconds
+  * `"$timems"` - replace with output of `time.Now().UnixMilli()` - time stamp in milliseconds
   * `"$lf"` - replace with `\n`
   * `"$uuid"` - replace with a UUID (universally unique identifier) value
 
