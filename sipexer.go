@@ -1305,7 +1305,7 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 	return SIPExerRetOK
 }
 
-func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgsip.SGSIPMessage, skipauth *bool, smsg *string) int {
+func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgsip.SGSIPMessage, skipauth *bool, smsg *string, sack *string) int {
 	if sgsip.SGSIPParseMessage(string(rmsg), sipRes) != sgsip.SGSIPRetOK {
 		SIPExerPrintf(SIPExerLogError, "failed to parse sip response\n%+v\n\n", string(rmsg))
 		return SIPExerErrSIPMessageFormat
@@ -1321,6 +1321,12 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 
 	if sipRes.FLine.Code >= 100 && sipRes.FLine.Code <= 199 {
 		return sipRes.FLine.Code
+	}
+
+	if sipRes.CSeq.MethodId == sgsip.SIPMethodINVITE {
+		if sgsip.SGSIPInviteToACKString(msgVal, sipRes, sack) < 0 {
+			return SIPExerErrSIPMessageResponse
+		}
 	}
 
 	if (sipRes.FLine.Code == 401) || (sipRes.FLine.Code == 407) {
@@ -1564,6 +1570,7 @@ func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 
 func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *SIPExerDialog) int {
 	var smsg string = ""
+	var sack string = ""
 	var err error
 	var wmsg []byte
 
@@ -1629,7 +1636,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 		if seDlg.RecvN > 0 {
 			// absorb 1xx responses or deal with 401/407 auth challenges
 			seDlg.LastResponse = new(sgsip.SGSIPMessage)
-			ret = SIPExerProcessResponse(seDlg.FirstRequest, seDlg.RecvBuf, seDlg.LastResponse, &seDlg.SkipAuth, &smsg)
+			ret = SIPExerProcessResponse(seDlg.FirstRequest, seDlg.RecvBuf, seDlg.LastResponse, &seDlg.SkipAuth, &smsg, &sack)
 			if ret < 0 {
 				return ret
 			}
@@ -1658,11 +1665,6 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 				}
 			}
 			if seDlg.LastResponse.CSeq.MethodId == sgsip.SIPMethodINVITE {
-				var sack string = ""
-				ret1 := sgsip.SGSIPInviteToACKString(seDlg.FirstRequest, seDlg.LastResponse, &sack)
-				if ret1 < 0 {
-					return ret1
-				}
 				SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
 				SIPExerMessagePrint("\n", sack, "\n")
 				SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
@@ -1674,7 +1676,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 						return SIPExerErrSIPMessageFormat
 					}
 				}
-				ret1 = SIPExerSendBytes(seDlg, []byte(sack))
+				ret1 := SIPExerSendBytes(seDlg, []byte(sack))
 				if ret1 < 0 {
 					return ret
 				}
