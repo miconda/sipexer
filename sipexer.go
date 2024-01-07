@@ -94,7 +94,7 @@ const (
 var templateDefaultText string = `{{.method}} {{.ruri}} SIP/2.0
 Via: SIP/2.0/{{.viaproto}} {{.viaaddr}}{{.rport}};{{.viaparams}}branch=z9hG4bKSG.{{.viabranch}}
 From: {{if .fromuri}}{{.fromuri}}{{else}}{{if .fname}}"{{.fname}}" {{end}}<sip:{{if .fuser}}{{.fuser}}@{{end}}{{.fdomain}}>{{end}};tag={{.fromtag}}
-To: {{if .touri}}{{.touri}}{{else}}{{if .tname}}"{{.tname}}" {{end}}<sip:{{if .tuser}}{{.tuser}}@{{end}}{{.tdomain}}>{{end}}
+To: {{if .touri}}{{.touri}}{{else}}{{if .tname}}"{{.tname}}" {{end}}<sip:{{if .tuser}}{{.tuser}}@{{end}}{{.tdomain}}>{{end}}{{if .totag}};tag={{.totag}}{{end}}
 Call-ID: {{.callid}}
 CSeq: {{.cseqnum}} {{.method}}
 {{if .subject}}Subject: {{.subject}}{{else}}$rmeol{{end}}
@@ -133,6 +133,7 @@ var templateDefaultJSONFields string = `{
 	"viaparams": "",
 	"rport": ";rport",
 	"fromtag": "$uuid",
+	"totag": "",
 	"callid": "$uuid",
 	"cseqnum": "$randseq",
 	"date": "$daterfc1123",
