@@ -334,6 +334,7 @@ Example fields file:
 	"viabranch": "$uuid",
 	"rport": ";rport",
 	"fromtag": "$uuid",
+	"totag": "",
 	"callid": "$uuid",
 	"cseqnum": "$randseq",
 	"date": "$daterfc1123",
