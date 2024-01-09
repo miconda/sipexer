@@ -1306,7 +1306,7 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 	return SIPExerRetOK
 }
 
-func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgsip.SGSIPMessage, skipauth *bool, smsg *string, sack *string) int {
+func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgsip.SGSIPMessage, skipauth *bool, smsg *string, sack *string, sauth *string) int {
 	if sgsip.SGSIPParseMessage(string(rmsg), sipRes) != sgsip.SGSIPRetOK {
 		SIPExerPrintf(SIPExerLogError, "failed to parse sip response\n%+v\n\n", string(rmsg))
 		return SIPExerErrSIPMessageFormat
@@ -1369,6 +1369,7 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 			if sipRes.FLine.Code == 401 {
 				sgsip.SGSIPMessageHeaderSet(msgVal, "Authorization", authResponse)
 			} else {
+				*sauth = authResponse;
 				sgsip.SGSIPMessageHeaderSet(msgVal, "Proxy-Authorization", authResponse)
 			}
 			sgsip.SGSIPMessageViaUpdate(msgVal)
@@ -1572,6 +1573,7 @@ func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *SIPExerDialog) int {
 	var smsg string = ""
 	var sack string = ""
+	var sauth string = ""
 	var err error
 	var wmsg []byte
 
@@ -1637,7 +1639,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 		if seDlg.RecvN > 0 {
 			// absorb 1xx responses or deal with 401/407 auth challenges
 			seDlg.LastResponse = new(sgsip.SGSIPMessage)
-			ret = SIPExerProcessResponse(seDlg.FirstRequest, seDlg.RecvBuf, seDlg.LastResponse, &seDlg.SkipAuth, &smsg, &sack)
+			ret = SIPExerProcessResponse(seDlg.FirstRequest, seDlg.RecvBuf, seDlg.LastResponse, &seDlg.SkipAuth, &smsg, &sack, &sauth)
 			if ret < 0 {
 				return ret
 			}
@@ -1676,6 +1678,9 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 						SIPExerPrintf(SIPExerLogError, "failed to parse ack message\n%+v\n\n", sack)
 						return SIPExerErrSIPMessageFormat
 					}
+				}
+				if len(sauth) > 0 {
+					sack = strings.TrimSuffix(sack, "\r\n") + "Proxy-Authorization: " + sauth + "\r\n\r\n"
 				}
 				ret1 := SIPExerSendBytes(seDlg, []byte(sack))
 				if ret1 < 0 {
