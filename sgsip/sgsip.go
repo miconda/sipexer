@@ -136,6 +136,8 @@ const (
 	HeaderTypeRoute
 	HeaderTypeExpires
 	HeaderTypeUserAgent
+	HeaderTypeAuthorization
+	HeaderTypeProxyAuthorization
 	HeaderTypeOther
 )
 
@@ -856,6 +858,10 @@ func SGSIPHeaderGetType(name string) int {
 		return HeaderTypeExpires
 	case "user-agent":
 		return HeaderTypeUserAgent
+	case "authorization":
+		return HeaderTypeAuthorization
+	case "proxy-authorization":
+		return HeaderTypeProxyAuthorization
 	}
 	return HeaderTypeOther
 }
@@ -1131,6 +1137,7 @@ func SGSIPInviteToACKString(invReq *SGSIPMessage, invRpl *SGSIPMessage, outputSt
 			}
 		}
 	}
+
 	if (invReq.MFlags&SGSIPMFlagLateOffer) != 0 && invReq.Body.ContentLen > 0 &&
 		(invRpl.FLine.Code >= 200 && invRpl.FLine.Code < 300) {
 		sb.WriteString("Content-Length: " + strconv.Itoa(invReq.Body.ContentLen) + "\r\n")
