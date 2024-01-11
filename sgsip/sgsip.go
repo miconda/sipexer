@@ -1138,6 +1138,16 @@ func SGSIPInviteToACKString(invReq *SGSIPMessage, invRpl *SGSIPMessage, outputSt
 		}
 	}
 
+	// add authentication headers
+	for _, h := range invReq.Headers {
+		switch h.HType {
+		case HeaderTypeAuthorization:
+			sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+		case HeaderTypeProxyAuthorization:
+			sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+		}
+	}
+
 	if (invReq.MFlags&SGSIPMFlagLateOffer) != 0 && invReq.Body.ContentLen > 0 &&
 		(invRpl.FLine.Code >= 200 && invRpl.FLine.Code < 300) {
 		sb.WriteString("Content-Length: " + strconv.Itoa(invReq.Body.ContentLen) + "\r\n")
