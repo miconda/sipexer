@@ -103,6 +103,7 @@ CSeq: {{.cseqnum}} {{.method}}
 {{if .expires}}Expires: {{.expires}}{{else}}$rmeol{{end}}
 {{if .useragent}}User-Agent: {{.useragent}}{{else}}$rmeol{{end}}
 {{if .maxforwards}}Max-Forwards: {{.maxforwards}}{{else}}$rmeol{{end}}
+{{if .contenttype}}Content-Type: {{.contenttype}}{{else}}$rmeol{{end}}
 Content-Length: 0
 
 `
@@ -136,6 +137,7 @@ var templateDefaultJSONFields string = `{
 	"totag": "",
 	"callid": "$uuid",
 	"cseqnum": "$randseq",
+	"contenttype": "",
 	"date": "$daterfc1123",
 	"maxforwards": "10",
 	"sdpuser": "sipexer",
