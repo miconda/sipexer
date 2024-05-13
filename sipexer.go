@@ -2030,6 +2030,10 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 	} else if strings.HasPrefix(laddr, "http://") {
 		laddr = strings.TrimPrefix(laddr, "http://")
 	}
+	colPos := strings.LastIndex(laddr, ":")
+	if colPos == -1 {
+		laddr = laddr + ":" + strconv.Itoa(rand.Intn(40000)+20000)
+	}
 
 	seDlg.LocalAddr = laddr
 	seDlg.TargetAddr = seDlg.ConnWSS.Conn.RemoteAddr().String()
