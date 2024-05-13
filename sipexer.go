@@ -2024,7 +2024,14 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 	}
 	defer seDlg.ConnWSS.Conn.Close()
 
-	seDlg.LocalAddr = seDlg.ConnWSS.Conn.LocalAddr().String()
+	laddr := seDlg.ConnWSS.Conn.LocalAddr().String()
+	if strings.HasPrefix(laddr, "https://") {
+		laddr = strings.TrimPrefix(laddr, "https://")
+	} else if strings.HasPrefix(laddr, "http://") {
+		laddr = strings.TrimPrefix(laddr, "http://")
+	}
+
+	seDlg.LocalAddr = laddr
 	seDlg.TargetAddr = seDlg.ConnWSS.Conn.RemoteAddr().String()
 	seDlg.RecvAddr = seDlg.TargetAddr
 	seDlg.TimeoutStep = cliops.timeout
