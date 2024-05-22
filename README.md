@@ -23,7 +23,7 @@ Project URL:
   * [License](#license)
   * [Contributions](#contributions)
 
-## Overview ##
+## Overview
 
 `sipexer` is a cli tool that facilitates sending SIP requests to servers. It uses a flexible template
 system to allow defining many parts of the SIP request via command line parameters. It has support
@@ -41,7 +41,7 @@ quickly after thought of it as the shortening of `SIP EXEcutoR`.
 
 ![SIP OPTIONS Request](https://github.com/miconda/sipexer/raw/main/misc/img/sipexer-options.gif)
 
-## Features ##
+## Features
 
 Among features:
 
@@ -62,9 +62,9 @@ Among features:
   * support for many transport layers: IPv4 and IPv6, UDP, TCP, TLS and WebSocket (for WebRTC)
   * send SIP requests of any type (e.g., INFO, SUBSCRIBE, NOTIFY, ...)
 
-## Installation ##
+## Installation
 
-### Compile From Sources ###
+### Compile From Sources
 
 First install [Go](http://golang.org). Once the Go environment is configured, clone `sipexer` git repository:
 
@@ -89,13 +89,13 @@ with `CGO_ENABLED=0`, like:
 CGO_ENABLED=0 go build .
 ```
 
-### Download Binary Release ###
+### Download Binary Release
 
 Binary releases for `Linux`, `MacOS` and `Windows` are available at:
 
   * https://github.com/miconda/sipexer/releases
 
-## Usage ##
+## Usage
 
 Prototype:
 
@@ -113,7 +113,7 @@ Defaults:
   * To user: `bob`
   * To domain: `localhost`
 
-### Examples ###
+### Examples
 
 Send an `OPTIONS` request over `UDP` to `127.0.0.1` and port `5060` - couple of variants:
 
@@ -212,7 +212,7 @@ with higher verbosity level (`3`) and color printing:
 sipexer -invite -vl 3 -co -com -fuser alice -tuser bob -cb -ap "4a4a4a4a4a..." -ha1 -sw 10000 -sd -su udp:server.com:5060
 ```
 
-## Target Address ##
+## Target Address
 
 The target address can be provided as last arguments to the `sipexer` command. It is
 optional, if not provided, then the SIP message is sent over `UDP` to `127.0.0.1` port `5060`.
@@ -230,9 +230,9 @@ The format can be:
   * `proto host port` (same as `proto:host:port`)
 
 
-## Message Template ##
+## Message Template
 
-### Template Data ###
+### Template Data
 
 The message to be sent via the SIP connection is built from a template file and a fields file.
 
@@ -277,7 +277,7 @@ The internal templates can be found at the top of `sipexer.go` file:
 
   * https://github.com/miconda/sipexer/blob/main/sipexer.go
 
-### Template Fields ###
+### Template Fields
 
 The fields file has to contain a JSON document with the fields to be replaced
 in the template file. The path to the JSON file is provided via `-ff` or `--fields-file`
@@ -377,7 +377,7 @@ in the template:
   * `tab` - `\t`
 
 
-## Alternatives ##
+## Alternatives
 
 There are several alternatives that might be useful to consider:
 
@@ -387,13 +387,13 @@ There are several alternatives that might be useful to consider:
   * `baresip` - cli SIP softphone
   * `pjsua` - cli SIP softphone
 
-## License ##
+## License
 
 `GPLv3`
 
 Copyright: `Daniel-Constantin Mierla` ([Asipto](https://www.asipto.com))
 
-## Contributions ##
+## Contributions
 
 Contributions are welcome!
 
