@@ -1804,12 +1804,12 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	} else {
 		seDlg.ConnUDP.Conn, err = net.ListenUDP(strAFProto, seDlg.ConnUDP.SrcAddr)
 	}
-	defer seDlg.ConnUDP.Conn.Close()
 	if err != nil {
 		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
 		tchan <- SIPExerErrUDPSocket
 		return
 	}
+	defer seDlg.ConnUDP.Conn.Close()
 
 	// get local address
 	lAddr := seDlg.ConnUDP.Conn.LocalAddr().String()
