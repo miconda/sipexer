@@ -279,6 +279,7 @@ type CLIOptions struct {
 	subscribe        bool
 	publish          bool
 	notify           bool
+	cancel           bool
 	ruri             string
 	ruser            string
 	fuser            string
@@ -386,6 +387,7 @@ var cliops = CLIOptions{
 	subscribe:        false,
 	publish:          false,
 	notify:           false,
+	cancel:           false,
 	registerparty:    false,
 	raw:              false,
 	noparse:          false,
@@ -554,6 +556,7 @@ func init() {
 	flag.BoolVar(&cliops.publish, "publish", cliops.publish, "set method to PUBLISH")
 	flag.BoolVar(&cliops.subscribe, "subscribe", cliops.subscribe, "set method to SUBSCRIBE")
 	flag.BoolVar(&cliops.notify, "notify", cliops.notify, "set method to NOTIFY")
+	flag.BoolVar(&cliops.cancel, "cancel", cliops.cancel, "set method to CANCEL")
 	flag.BoolVar(&cliops.contactbuild, "contact-build", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.contactbuild, "cb", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.registerparty, "register-party", cliops.registerparty, "register a third party To user")
@@ -1079,6 +1082,8 @@ func SIPExerPrepareTemplateFields(tplfields map[string]interface{}) int {
 		tplfields["method"] = "PUBLISH"
 	} else if cliops.notify {
 		tplfields["method"] = "NOTIFY"
+	} else if cliops.cancel {
+		tplfields["method"] = "CANCEL"
 	} else if len(cliops.method) > 0 {
 		tplfields["method"] = strings.ToUpper(cliops.method)
 	}
