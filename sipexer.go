@@ -281,6 +281,7 @@ type CLIOptions struct {
 	notify           bool
 	cancel           bool
 	ack              bool
+	kdmq             bool
 	ruri             string
 	ruser            string
 	fuser            string
@@ -390,6 +391,7 @@ var cliops = CLIOptions{
 	notify:           false,
 	cancel:           false,
 	ack:              false,
+	kdmq:             false,
 	registerparty:    false,
 	raw:              false,
 	noparse:          false,
@@ -560,6 +562,7 @@ func init() {
 	flag.BoolVar(&cliops.notify, "notify", cliops.notify, "set method to NOTIFY")
 	flag.BoolVar(&cliops.cancel, "cancel", cliops.cancel, "set method to CANCEL")
 	flag.BoolVar(&cliops.ack, "ack", cliops.ack, "set method to ACK")
+	flag.BoolVar(&cliops.kdmq, "kdmq", cliops.kdmq, "set method to KDMQ")
 	flag.BoolVar(&cliops.contactbuild, "contact-build", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.contactbuild, "cb", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.registerparty, "register-party", cliops.registerparty, "register a third party To user")
@@ -1089,6 +1092,8 @@ func SIPExerPrepareTemplateFields(tplfields map[string]interface{}) int {
 		tplfields["method"] = "CANCEL"
 	} else if cliops.ack {
 		tplfields["method"] = "ACK"
+	} else if cliops.kdmq {
+		tplfields["method"] = "KDMQ"
 	} else if len(cliops.method) > 0 {
 		tplfields["method"] = strings.ToUpper(cliops.method)
 	}
