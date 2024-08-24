@@ -527,8 +527,8 @@ func init() {
 	flag.StringVar(&cliops.authapassword, "auth-password", cliops.authapassword, "authentication password")
 	flag.StringVar(&cliops.authapassword, "ap", cliops.authapassword, "authentication password")
 	flag.StringVar(&cliops.noval, "no-val", cliops.noval, "no value string")
-	flag.StringVar(&cliops.contacturi, "contact-uri", cliops.contacturi, "contact uri")
-	flag.StringVar(&cliops.contacturi, "cu", cliops.contacturi, "contact uri")
+	flag.StringVar(&cliops.contacturi, "contact-uri", cliops.contacturi, "contact header uri")
+	flag.StringVar(&cliops.contacturi, "cu", cliops.contacturi, "contact header uri")
 	flag.StringVar(&cliops.expires, "expires", cliops.expires, "expires header value")
 	flag.StringVar(&cliops.expires, "ex", cliops.expires, "expires header value")
 
