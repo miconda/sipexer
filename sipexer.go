@@ -17,7 +17,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	mathrand "math/rand"
@@ -673,7 +672,7 @@ func main() {
 
 	var tplstr = ""
 	if len(cliops.template) > 0 {
-		tpldata, err1 := ioutil.ReadFile(cliops.template)
+		tpldata, err1 := os.ReadFile(cliops.template)
 		if err1 != nil {
 			SIPExerPrintf(SIPExerLogError, "error: %v\n", err1)
 			SIPExerExit(SIPExerErrTemplateRead)
@@ -687,7 +686,7 @@ func main() {
 	}
 
 	if len(cliops.templatebody) > 0 {
-		tpldata, err1 := ioutil.ReadFile(cliops.templatebody)
+		tpldata, err1 := os.ReadFile(cliops.templatebody)
 		if err1 != nil {
 			SIPExerPrintf(SIPExerLogError, "error: %v\n", err1)
 			SIPExerExit(SIPExerErrTemplateRead)
@@ -855,7 +854,7 @@ func SIPExerPrepareTemplateFields(tplfields map[string]interface{}) int {
 	var ok bool
 
 	if len(cliops.fields) > 0 {
-		fieldsdata, err1 := ioutil.ReadFile(cliops.fields)
+		fieldsdata, err1 := os.ReadFile(cliops.fields)
 		if err1 != nil {
 			SIPExerPrintf(SIPExerLogError, "error: %v\n", err1)
 			SIPExerExit(SIPExerErrFieldsFileRead)
