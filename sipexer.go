@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	mathrand "math/rand"
 	"net"
 	"net/http"
@@ -604,9 +603,6 @@ func init() {
 	flag.BoolVar(&cliops.helpcommands, "hc", cliops.helpcommands, "print help with command examples")
 	flag.BoolVar(&cliops.version, "version", cliops.version, "print version")
 	flag.BoolVar(&cliops.version, "v", cliops.version, "print version")
-
-	rand.Seed(time.Now().UnixNano())
-
 }
 
 // sipexer application
@@ -2041,7 +2037,7 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 	}
 	colPos := strings.LastIndex(laddr, ":")
 	if colPos == -1 {
-		laddr = laddr + ":" + strconv.Itoa(rand.Intn(40000)+20000)
+		laddr = laddr + ":" + strconv.Itoa(mathrand.Intn(40000)+20000)
 	}
 
 	seDlg.LocalAddr = laddr
@@ -2060,7 +2056,7 @@ func SIPExerRandAlphaString(olen int) string {
 
 	b := make([]rune, olen)
 	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+		b[i] = letters[mathrand.Intn(len(letters))]
 	}
 	return string(b)
 }
@@ -2071,7 +2067,7 @@ func SIPExerRandAlphaNumString(olen int) string {
 
 	b := make([]rune, olen)
 	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+		b[i] = letters[mathrand.Intn(len(letters))]
 	}
 	return string(b)
 }
@@ -2082,7 +2078,7 @@ func SIPExerRandNumString(olen int) string {
 
 	b := make([]rune, olen)
 	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+		b[i] = letters[mathrand.Intn(len(letters))]
 	}
 	return string(b)
 }
@@ -2093,7 +2089,7 @@ func SIPExerRandHexString(olen int) string {
 
 	b := make([]rune, olen)
 	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+		b[i] = letters[mathrand.Intn(len(letters))]
 	}
 	return string(b)
 }
