@@ -1901,11 +1901,6 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	}
 
 	defer seDlg.ConnTCP.Conn.Close()
-	if err != nil {
-		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-		tchan <- SIPExerErrTCPDial
-		return
-	}
 
 	seDlg.LocalAddr = seDlg.ConnTCP.Conn.LocalAddr().String()
 	seDlg.TargetAddr = seDlg.ConnTCP.Conn.RemoteAddr().String()
