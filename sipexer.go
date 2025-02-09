@@ -1046,7 +1046,6 @@ func SIPExerPrepareTemplateFields(tplfields map[string]interface{}) int {
 						tplfields[k] = strconv.Itoa(eVal)
 					}
 				}
-				break
 			}
 		}
 	}
