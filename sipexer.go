@@ -1955,7 +1955,15 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		tlc.InsecureSkipVerify = true
 	}
 
-	seDlg.ConnTLS.Conn, err = tls.Dial(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port, &tlc)
+	if cliops.timeoutconnect > 0 {
+		netDialer := net.Dialer{
+			Timeout: time.Millisecond * time.Duration(cliops.timeoutconnect),
+		}
+		seDlg.ConnTLS.Conn, err = tls.DialWithDialer(&netDialer, strAFProto,
+			dstSockAddr.Addr+":"+dstSockAddr.Port, &tlc)
+	} else {
+		seDlg.ConnTLS.Conn, err = tls.Dial(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port, &tlc)
+	}
 	if err != nil {
 		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
 		tchan <- SIPExerErrTLSDial
