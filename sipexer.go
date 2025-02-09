@@ -2028,6 +2028,10 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 		tlc.InsecureSkipVerify = true
 	}
 
+	netDialer := net.Dialer{}
+	if cliops.timeoutconnect > 0 {
+		netDialer.Timeout = time.Millisecond * time.Duration(cliops.timeoutconnect)
+	}
 	// open ws connection
 	// ws, err := websocket.Dial(wsurl, "", wsorigin)
 	seDlg.ConnWSS.Conn, err = websocket.DialConfig(&websocket.Config{
@@ -2036,6 +2040,7 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 		Protocol:  []string{cliops.wsproto},
 		Version:   13,
 		TlsConfig: &tlc,
+		Dialer:    &netDialer,
 		Header:    http.Header{"User-Agent": {"sipexer v" + sipexerVersion}},
 	})
 	if err != nil {
