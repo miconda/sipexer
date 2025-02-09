@@ -454,9 +454,8 @@ func printCLIOptions() {
 		} else if strings.HasSuffix(val.VType, "Type") {
 			vtype = val.VType[6 : len(val.VType)-4]
 		}
-		if strings.HasSuffix(vtype, "64") {
-			vtype = vtype[:len(vtype)-2]
-		}
+		vtype = strings.TrimSuffix(vtype, "64")
+
 		for _, opt := range val.Ops {
 			if vtype == "bool" {
 				fmt.Printf("  -%s\n", opt)
