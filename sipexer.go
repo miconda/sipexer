@@ -305,6 +305,7 @@ type CLIOptions struct {
 	timert2          int
 	timeout          int
 	timeoutwrite     int
+	timeoutconnect   int
 	buffersize       int
 	connectudp       bool
 	af               int
@@ -363,6 +364,7 @@ var cliops = CLIOptions{
 	timert2:          4000,
 	timeout:          32000,
 	timeoutwrite:     4000,
+	timeoutconnect:   32000,
 	buffersize:       32 * 1024,
 	connectudp:       false,
 	af:               0,
@@ -582,6 +584,7 @@ func init() {
 	flag.IntVar(&cliops.sessionwait, "sessionwait", cliops.sessionwait, "time in millisecons to wait for a session")
 	flag.IntVar(&cliops.sessionwait, "sw", cliops.sessionwait, "time in millisecons to wait for a session")
 	flag.IntVar(&cliops.timeout, "timeout", cliops.timeout, "timeout waiting to receice data (milliseconds)")
+	flag.IntVar(&cliops.timeoutconnect, "timeout-connect", cliops.timeoutconnect, "timeout for connecting to remote server (milliseconds)")
 	flag.IntVar(&cliops.timeoutwrite, "timeout-write", cliops.timeoutwrite, "timeout to write data to socket (milliseconds)")
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
 	flag.IntVar(&cliops.timert2, "timer-t2", cliops.timert2, "value of t2 timer (milliseconds)")
@@ -1883,8 +1886,19 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		return
 	}
 
-	seDlg.ConnTCP.Conn, err = net.DialTCP(strAFProto, seDlg.ConnTCP.SrcAddr, seDlg.ConnTCP.DstAddr)
-
+	if cliops.timeoutconnect > 0 {
+		netDialer := net.Dialer{
+			LocalAddr: seDlg.ConnTCP.SrcAddr,
+			Timeout:   time.Millisecond * time.Duration(cliops.timeoutconnect),
+		}
+		var conn net.Conn
+		conn, err = netDialer.Dial(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port)
+		if err == nil {
+			seDlg.ConnTCP.Conn, _ = conn.(*net.TCPConn)
+		}
+	} else {
+		seDlg.ConnTCP.Conn, err = net.DialTCP(strAFProto, seDlg.ConnTCP.SrcAddr, seDlg.ConnTCP.DstAddr)
+	}
 	if err != nil {
 		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
 		tchan <- SIPExerErrTCPDial
