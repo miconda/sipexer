@@ -703,6 +703,15 @@ func main() {
 		if len(flag.Args()) > 0 {
 			if len(flag.Args()) == 1 {
 				dstAddr = flag.Arg(0)
+				if strings.HasPrefix(dstAddr, "wss:") &&
+					!strings.HasPrefix(dstAddr, "wss://") {
+					dstAddr = strings.TrimPrefix(dstAddr, "wss:")
+					dstAddr = "wss://" + dstAddr
+				} else if strings.HasPrefix(dstAddr, "ws:") &&
+					!strings.HasPrefix(dstAddr, "ws://") {
+					dstAddr = strings.TrimPrefix(dstAddr, "ws:")
+					dstAddr = "ws://" + dstAddr
+				}
 				if strings.HasPrefix(dstAddr, "wss://") ||
 					strings.HasPrefix(dstAddr, "ws://") {
 					wsurlp, err = url.Parse(dstAddr)
@@ -2003,9 +2012,15 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 	seDlg.AType = dstSockAddr.AType
 	seDlg.ConnWSS = new(SIPExerConnWSS)
 
+	if wsurlp == nil {
+		SIPExerPrintf(SIPExerLogError, "nil ws url\n")
+		tchan <- SIPExerErrWSDial
+		return
+	}
+
 	wsorgp, err = url.Parse(cliops.wsorigin)
 	if err != nil {
-		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+		SIPExerPrintf(SIPExerLogError, "error parsing origin url: %v\n", err)
 		tchan <- SIPExerErrWSOrigin
 		return
 	}
