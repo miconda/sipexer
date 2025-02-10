@@ -721,7 +721,8 @@ func main() {
 			} else if len(flag.Args()) == 3 {
 				dstAddr = flag.Arg(0) + ":" + flag.Arg(1) + ":" + flag.Arg(2)
 			} else {
-				SIPExerPrintf(SIPExerLogError, "invalid number of arguments : %d\n", len(flag.Args()))
+				SIPExerPrintf(SIPExerLogError, "invalid number of arguments : %d [%v]\n",
+					len(flag.Args()), flag.Args())
 				SIPExerExit(SIPExerErrArgumentsNumber)
 			}
 		}
