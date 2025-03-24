@@ -1211,7 +1211,21 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rPro
 
 	_, ok = tplfields["viaaddr"]
 	if !ok {
-		tplfields["viaaddr"] = lAddr
+		if strings.HasPrefix(lAddr, "wss://") {
+			tplfields["viaaddr"] = strings.TrimPrefix(lAddr, "wss://")
+		} else if strings.HasPrefix(lAddr, "wss:") {
+			tplfields["viaaddr"] = strings.TrimPrefix(lAddr, "wss:")
+		} else if strings.HasPrefix(lAddr, "ws://") {
+			tplfields["viaaddr"] = strings.TrimPrefix(lAddr, "ws://")
+		} else if strings.HasPrefix(lAddr, "ws:") {
+			tplfields["viaaddr"] = strings.TrimPrefix(lAddr, "ws:")
+		} else if strings.HasPrefix(lAddr, "https://") {
+			tplfields["viaaddr"] = strings.TrimPrefix(lAddr, "https://")
+		} else if strings.HasPrefix(lAddr, "http://") {
+			tplfields["viaaddr"] = strings.TrimPrefix(lAddr, "http://")
+		} else {
+			tplfields["viaaddr"] = lAddr
+		}
 	}
 	_, ok = tplfields["viaproto"]
 	if !ok {
