@@ -582,7 +582,7 @@ func init() {
 	flag.IntVar(&cliops.runcount, "run-count", cliops.runcount, "how many times to recreate and send the message")
 	flag.IntVar(&cliops.sessionwait, "sessionwait", cliops.sessionwait, "time in millisecons to wait for a session")
 	flag.IntVar(&cliops.sessionwait, "sw", cliops.sessionwait, "time in millisecons to wait for a session")
-	flag.IntVar(&cliops.timeout, "timeout", cliops.timeout, "timeout waiting to receice data (milliseconds)")
+	flag.IntVar(&cliops.timeout, "timeout", cliops.timeout, "timeout waiting to receive data (milliseconds)")
 	flag.IntVar(&cliops.timeoutconnect, "timeout-connect", cliops.timeoutconnect, "timeout for connecting to remote server (milliseconds)")
 	flag.IntVar(&cliops.timeoutwrite, "timeout-write", cliops.timeoutwrite, "timeout to write data to socket (milliseconds)")
 	flag.IntVar(&cliops.timert1, "timer-t1", cliops.timert1, "value of t1 timer (milliseconds)")
