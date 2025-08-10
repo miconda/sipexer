@@ -236,7 +236,7 @@ The format can be:
 
 The message to be sent via the SIP connection is built from a template file and a fields file.
 
-The template file can contain any any of the directives supported by Go package `text/template` - for more see:
+The template file can contain any of the directives supported by Go package `text/template` - for more see:
 
   * https://golang.org/pkg/text/template/
 
