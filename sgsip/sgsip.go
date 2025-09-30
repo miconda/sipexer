@@ -647,7 +647,7 @@ func SGSIPParamsGet(paramStr string, paramName string, vmode int, paramVal *SGSI
 		pStr = pStr + ";"
 	}
 
-	if strings.Index(pStr, ";"+paramName+";") >= 0 {
+	if strings.Contains(pStr, ";"+paramName+";") {
 		// parameter without value
 		paramVal.Name = paramName
 		paramVal.Value = ""
