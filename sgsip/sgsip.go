@@ -1029,8 +1029,7 @@ func SGSIPParseMessage(inputStr string, msgVal *SGSIPMessage) int {
 	if ret != SGSIPRetOK {
 		return ret
 	}
-	ret = SGSIPParseBody(inputStr, &msgVal.Body)
-	return SGSIPRetOK
+	return SGSIPParseBody(inputStr, &msgVal.Body)
 }
 
 // SGSIPMessageToString --
