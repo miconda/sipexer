@@ -1821,7 +1821,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 					if seDlg.SkipAuth {
 						return ret
 					}
-					if len(cliops.authapassword) == 0 {
+					if len(cliops.authapassword) == 0 && len(cliops.akakey) == 0 {
 						return ret
 					}
 					// authentication - send the new message
