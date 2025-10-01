@@ -1725,14 +1725,14 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 
 		if seDlg.RecvN > 0 {
 			// absorb 1xx responses or deal with 401/407 auth challenges
+			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", seDlg.RecvAddr, seDlg.RecvN)
+			SIPExerMessagePrint("\n", string(seDlg.RecvBuf), "\n")
+			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 			seDlg.LastResponse = new(sgsip.SGSIPMessage)
 			ret = SIPExerProcessResponse(seDlg.FirstRequest, seDlg.RecvBuf, seDlg.LastResponse, &seDlg.SkipAuth, &smsg, &sack)
 			if ret < 0 {
 				return ret
 			}
-			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", seDlg.RecvAddr, seDlg.RecvN)
-			SIPExerMessagePrint("\n", string(seDlg.RecvBuf), "\n")
-			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 			if ret/100 == 1 {
 				// 1xx response - read again, but do not re-send UDP request
 				if seDlg.ProtoId == sgsip.ProtoUDP {
