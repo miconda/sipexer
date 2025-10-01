@@ -755,7 +755,7 @@ func SGSIPHeaderParseDigestAuthBody(hbody string) map[string]string {
 		if len(parts) != 2 {
 			continue
 		}
-		params[strings.ToUpper(strings.Trim(parts[0], "\" "))] = strings.Trim(parts[1], "\" ")
+		params[strings.ToLower(strings.Trim(parts[0], "\" "))] = strings.Trim(parts[1], "\" ")
 	}
 	return params
 }
