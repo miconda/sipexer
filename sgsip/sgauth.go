@@ -1,0 +1,343 @@
+// SIPExer Generic SIP Parsing Library - Auth Digest and AKA helper functions
+package sgsip
+
+import (
+	"bytes"
+	"crypto/aes"
+	"crypto/md5"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"fmt"
+)
+
+// SGAKAParseNonce parses the base64-encoded nonce containing RAND and AUTN
+func SGAKAParseNonce(nonceStr string) ([]byte, []byte, error) {
+	decoded, err := base64.StdEncoding.DecodeString(nonceStr)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to decode nonce: %w", err)
+	}
+
+	// RAND is first 16 bytes, AUTN is next 16 bytes
+	if len(decoded) < 32 {
+		return nil, nil, errors.New("invalid nonce length")
+	}
+
+	rand := decoded[:16]
+	autn := decoded[16:32]
+
+	return rand, autn, nil
+}
+
+// SGAKACompareBytes compares to byte arrays
+func SGAKACompareBytes(v1, v2 []byte) int {
+	if len(v1) < len(v2) {
+		return -2
+	}
+	if len(v1) > len(v2) {
+		return 2
+	}
+	for i := 0; i < len(v1); i++ {
+		if v1[i] < v2[i] {
+			return -1
+		}
+		if v1[i] > v2[i] {
+			return 1
+		}
+	}
+	return 0
+}
+
+// SGAKAXor performs XOR with bytes of two arrays, returning a new array
+func SGAKAXor(v1, v2 []byte) []byte {
+	var lv int
+	if len(v1) < len(v2) {
+		lv = len(v1)
+	} else {
+		lv = len(v2)
+	}
+
+	out := make([]byte, lv)
+	for i := 0; i < lv; i++ {
+		out[i] = v1[i] ^ v2[i]
+	}
+	return out
+}
+
+// SGAKAComputeOPc computes OPc from K and OP inside m.
+func SGAKAComputeOPc(K, OP []byte) ([]byte, error) {
+	OPc := make([]byte, 16)
+
+	block, err := aes.NewCipher(K)
+	if err != nil {
+		return nil, err
+	}
+	eData := make([]byte, len(OP))
+	block.Encrypt(eData, OP)
+
+	xBytes := SGAKAXor(eData, OP)
+	for i, b := range xBytes {
+		if i > len(OPc) {
+			break
+		}
+		OPc[i] = b
+	}
+	return OPc, nil
+}
+
+// SGAKAEncrypt encrypts text with key using AES cipher
+func SGAKAEncrypt(key, text []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	eBytes := make([]byte, len(text))
+	block.Encrypt(eBytes, text)
+	return eBytes, nil
+}
+
+// SGAKAComputeF1Base computes the first base for F1
+func SGAKAComputeF1Base(K, OP, OPC, RAND, sqn, amf []byte) ([]byte, error) {
+	var OPcV []byte
+	var err error
+
+	if OPC == nil {
+		OPcV, err = SGAKAComputeOPc(K, OP)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		OPcV = OPC
+	}
+
+	eData := make([]byte, 16)
+	for i := 0; i < 16; i++ {
+		eData[i] = RAND[i] ^ OPcV[i]
+	}
+
+	tmp, err := SGAKAEncrypt(K, eData)
+	if err != nil {
+		return nil, err
+	}
+
+	in1 := make([]byte, 16)
+	for i := 0; i < 6; i++ {
+		in1[i] = sqn[i]
+		in1[i+8] = sqn[i]
+	}
+	for i := 0; i < 2; i++ {
+		in1[i+6] = amf[i]
+		in1[i+14] = amf[i]
+	}
+
+	for i := 0; i < 16; i++ {
+		eData[(i+8)%16] = in1[i] ^ OPcV[i]
+	}
+
+	for i := 0; i < 16; i++ {
+		eData[i] ^= tmp[i]
+	}
+
+	out, err := SGAKAEncrypt(K, eData)
+	if err != nil {
+		return nil, err
+	}
+
+	return SGAKAXor(out, OPcV), nil
+}
+
+// SGAKAComputeF1 computes the F1
+func SGAKAComputeF1(K, OP, OPC, RAND, SQN, AMF []byte) ([]byte, error) {
+	mac, err := SGAKAComputeF1Base(K, OP, OPC, RAND, SQN, AMF)
+	if err != nil {
+		return nil, err
+	}
+
+	return mac[:8], nil
+}
+
+// SGAKAComputeF2345 computes F2/3/4/5
+func SGAKAComputeF2345(K, OP, OPC, RAND []byte) (res, ck, ik, ak []byte, errv error) {
+	var OPcV []byte
+	var err error
+
+	if OPC == nil {
+		OPcV, err = SGAKAComputeOPc(K, OP)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+	} else {
+		OPcV = OPC
+	}
+
+	eData := make([]byte, 16)
+	for i := 0; i < 16; i++ {
+		eData[i] = RAND[i] ^ OPcV[i]
+	}
+
+	tmp, err := SGAKAEncrypt(K, eData)
+	if err != nil {
+		return
+	}
+
+	for i := 0; i < 16; i++ {
+		eData[i] = tmp[i] ^ OPcV[i]
+	}
+	eData[15] ^= 1
+
+	out, err := SGAKAEncrypt(K, eData)
+	if err != nil {
+		return
+	}
+	tv := SGAKAXor(out, OPcV)
+	res = tv[8:]
+	ak = tv[:6]
+
+	for i := 0; i < 16; i++ {
+		eData[(i+12)%16] = tmp[i] ^ OPcV[i]
+	}
+	eData[15] ^= 2
+
+	out, err = SGAKAEncrypt(K, eData)
+	if err != nil {
+		return
+	}
+	ck = SGAKAXor(out, OPcV)
+
+	for i := 0; i < 16; i++ {
+		eData[(i+8)%16] = tmp[i] ^ OPcV[i]
+	}
+	eData[15] ^= 4
+
+	out, err = SGAKAEncrypt(K, eData)
+	if err != nil {
+		return
+	}
+	ik = SGAKAXor(out, OPcV)
+
+	return res, ck, ik, ak, nil
+}
+
+// GAKAGenerateClientNonce generates a client nonce
+func SGAKAGenerateClientNonce(cnsize int) string {
+	// Create a byte slice to hold the random data
+	b := make([]byte, cnsize)
+
+	// Read cryptographically secure random bytes
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
+
+	// Encode the random bytes as a hexadecimal string
+	return hex.EncodeToString(b)
+}
+
+// SGAKAHandleChallenge processes the authentication challenge from the server
+func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengeParams map[string]string) (string, error) {
+	var uri, nonce, realm, method, qop string
+
+	nonce = challengeParams["nonce"]
+	realm = challengeParams["realm"]
+	method = challengeParams["method"]
+	qop = challengeParams["qop"]
+	if _, ok := challengeParams["uri"]; ok {
+		uri = challengeParams["uri"]
+	} else {
+		uri = fmt.Sprintf("sip:%s", realm)
+	}
+	fmt.Printf("- uri=%s, realm=%s, nonce=%s\n", uri, realm, nonce)
+	if nonce == "" || realm == "" {
+		return "", errors.New("missing required parameters in challenge")
+	}
+
+	rand, autn, err := SGAKAParseNonce(nonce)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse nonce: %w", err)
+	}
+
+	// Generate RES
+	sqnxorak := autn[0:6]
+	amfin := autn[6:8]
+	mac := autn[8:16]
+
+	if SGAKACompareBytes(amf, amfin) != 0 {
+		return "", fmt.Errorf("failed to match amf")
+	}
+
+	res, ck, ik, ak, err := SGAKAComputeF2345(key, op, opc, rand)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate res: %w", err)
+	}
+	sqn := SGAKAXor(sqnxorak, ak)
+
+	xmac, err := SGAKAComputeF1(key, op, opc, rand, sqn, amfin)
+	if err != nil {
+		return "", fmt.Errorf("failed to xmac: %w", err)
+	}
+	if SGAKACompareBytes(mac, xmac) != 0 {
+		return "", fmt.Errorf("failed to match xmac")
+	}
+
+	a1b := make([]byte, 0, len(username)+len(realm)+len(res)+2)
+	a1w := bytes.NewBuffer(a1b)
+	a1w.WriteString(username)
+	a1w.WriteRune(':')
+	a1w.WriteString(realm)
+	a1w.WriteRune(':')
+	a1w.Write(res)
+
+	ha1 := fmt.Sprintf("%x", md5.Sum(a1w.Bytes()))
+
+	a2b := make([]byte, 0, len(method)+len(uri)+1)
+	a2w := bytes.NewBuffer(a2b)
+	a2w.WriteString(method)
+	a2w.WriteRune(':')
+	a2w.WriteString(uri)
+
+	ha2 := fmt.Sprintf("%x", md5.Sum(a2w.Bytes()))
+
+	nc := fmt.Sprintf("%08x", 1)
+	cnonce := SGAKAGenerateClientNonce(8)
+
+	a3b := make([]byte, 0, len(ha1)+len(nonce)+len(nc)+len(cnonce)+len(qop)+len(ha2)+7)
+	a3w := bytes.NewBuffer(a3b)
+	a2w.WriteString(ha1)
+	a2w.WriteRune(':')
+	a2w.WriteString(nonce)
+	a2w.WriteRune(':')
+	a2w.WriteString(nc)
+	a2w.WriteRune(':')
+	a2w.WriteString(cnonce)
+	a2w.WriteRune(':')
+	a2w.WriteString(qop)
+	a2w.WriteRune(':')
+	a2w.WriteString(ha2)
+	authres := fmt.Sprintf("%x", md5.Sum(a3w.Bytes()))
+
+	authHeader := fmt.Sprintf(`Digest username="%s",
+                         realm="%s",
+                         nonce="%s",
+                         response="%s",
+                         uri="%s",
+                         algorithm="AKAv1-MD5",
+                         cnonce="%s",
+                         nc=%s,
+                         qop="%s",
+						 ck="%s",
+						 ik="%s"`,
+		username,
+		realm,
+		nonce,
+		authres,
+		uri,
+		cnonce,
+		nc,
+		qop,
+		fmt.Sprintf("%x", ck),
+		fmt.Sprintf("%x", ik),
+	)
+
+	return authHeader, nil
+}

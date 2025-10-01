@@ -13,6 +13,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -87,6 +88,11 @@ const (
 	SIPExerErrWSSetReadTimeout    = -1164
 	SIPExerErrWSRead              = -1165
 	SIPExerErrRandomKey           = -1170
+	SIPExerErrAKAInvalidKey       = -1180
+	SIPExerErrAKAInvalidOP        = -1181
+	SIPExerErrAKAInvalidOPC       = -1182
+	SIPExerErrAKAInvalidAMF       = -1183
+	SIPExerErrAKAHeaderFailure    = -1184
 )
 
 var templateDefaultText string = `{{.method}} {{.ruri}} SIP/2.0
@@ -335,6 +341,11 @@ type CLIOptions struct {
 	helpcommands     bool
 	dnssrvprint      bool
 	lateoffer        bool
+	akauser          string
+	akakey           string
+	akaop            string
+	akaopc           string
+	akaamf           string
 	version          bool
 }
 
@@ -406,6 +417,11 @@ var cliops = CLIOptions{
 	lateoffer:        false,
 	helpcommands:     false,
 	version:          false,
+	akauser:          "",
+	akakey:           "",
+	akaop:            "",
+	akaopc:           "",
+	akaamf:           "",
 }
 
 func sipexer_help_commands() {
@@ -530,6 +546,11 @@ func init() {
 	flag.StringVar(&cliops.wsorigin, "wso", cliops.wsorigin, "websocket origin http url")
 	flag.StringVar(&cliops.wsproto, "websocket-proto", cliops.wsproto, "websocket sub-protocol")
 	flag.StringVar(&cliops.wsproto, "wsp", cliops.wsproto, "websocket sub-protocol")
+	flag.StringVar(&cliops.akauser, "aka-user", cliops.akauser, "aka authentication user name")
+	flag.StringVar(&cliops.akakey, "aka-key", cliops.akakey, "aka authentication user key - k")
+	flag.StringVar(&cliops.akaop, "aka-op", cliops.akaop, "aka authentication operator key - op")
+	flag.StringVar(&cliops.akaopc, "aka-opc", cliops.akaopc, "aka authentication operator derived key - opc")
+	flag.StringVar(&cliops.akaamf, "aka-amf", cliops.akaamf, "aka authentication management field - amf")
 
 	flag.BoolVar(&cliops.ack, "ack", cliops.ack, "set method to ACK")
 	flag.BoolVar(&cliops.cancel, "cancel", cliops.cancel, "set method to CANCEL")
@@ -1396,7 +1417,42 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 		hparams["method"] = s[0]
 		hparams["uri"] = s[1]
 		SIPExerPrintf(SIPExerLogDebug, "\nAuth params map:\n    %+v\n\n", hparams)
-		authResponse := SIPExerBuildAuthResponseBody(cliops.authuser, cliops.authapassword, hparams)
+		authResponse := ""
+		if hparams["algorithm"] == "AKAv1-MD5" {
+			akakey, err := hex.DecodeString(cliops.akakey)
+			if err != nil {
+				SIPExerPrintf(SIPExerLogError, "failed to decode AKA-Key\n")
+				return SIPExerErrAKAInvalidKey
+			}
+			var akaop []byte
+			if len(cliops.akaop) > 0 {
+				akaop, err = hex.DecodeString(cliops.akaop)
+				if err != nil {
+					SIPExerPrintf(SIPExerLogError, "failed to decode AKA-OP\n")
+					return SIPExerErrAKAInvalidOP
+				}
+			}
+			var akaopc []byte
+			if len(cliops.akaopc) > 0 {
+				akaopc, err = hex.DecodeString(cliops.akaopc)
+				if err != nil {
+					SIPExerPrintf(SIPExerLogError, "failed to decode AKA-OPc\n")
+					return SIPExerErrAKAInvalidOPC
+				}
+			}
+			akaamf, err := hex.DecodeString(cliops.akaamf)
+			if err != nil {
+				SIPExerPrintf(SIPExerLogError, "failed to decode AKA-AMF\n")
+				return SIPExerErrAKAInvalidAMF
+			}
+			authResponse, err = sgsip.SGAKAHandleChallenge(cliops.akauser, akakey, akaop, akaopc, akaamf, hparams)
+			if err != nil {
+				SIPExerPrintf(SIPExerLogError, "failed to build AKA response header\n")
+				return SIPExerErrAKAHeaderFailure
+			}
+		} else {
+			authResponse = SIPExerBuildAuthResponseBody(cliops.authuser, cliops.authapassword, hparams)
+		}
 		if len(authResponse) > 0 {
 			SIPExerPrintf(SIPExerLogDebug, "authentication header body: [[%s]]\n", authResponse)
 			if sipRes.FLine.Code == 401 {
