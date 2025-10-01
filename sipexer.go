@@ -1586,7 +1586,7 @@ func SIPExerSessionWaitAndRead(seDlg *SIPExerDialog) int {
 		}
 		if ret == SIPExerRetOK && seDlg.RecvN > 0 {
 			SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", seDlg.RecvAddr, seDlg.RecvN)
-			SIPExerMessagePrint("\n", string(seDlg.RecvBuf), "\n")
+			SIPExerMessagePrint("\n\n", string(seDlg.RecvBuf), "\n")
 			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 			if len(seDlg.RecvBuf) > 16 {
 				sipRcv := sgsip.SGSIPMessage{}
@@ -1611,7 +1611,7 @@ func SIPExerSessionWaitAndRead(seDlg *SIPExerDialog) int {
 					}
 					SIPExerSetWriteTimeoutValue(seDlg, 1000)
 					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
-					SIPExerMessagePrint("\n", smsg, "\n")
+					SIPExerMessagePrint("\n\n", smsg, "\n")
 					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 					SIPExerSendBytes(seDlg, []byte(smsg))
 				}
@@ -1678,7 +1678,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 	SIPExerPrintf(SIPExerLogInfo, "local socket address: %v (%v)\n", seDlg.LocalAddr, seDlg.Proto)
 	SIPExerPrintf(SIPExerLogInfo, "local via address: %v\n", tplfields["viaaddr"])
 	SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
-	SIPExerMessagePrint("\n", smsg, "\n")
+	SIPExerMessagePrint("\n\n", smsg, "\n")
 	SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 
 	wmsg = []byte(smsg)
@@ -1726,7 +1726,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 		if seDlg.RecvN > 0 {
 			// absorb 1xx responses or deal with 401/407 auth challenges
 			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", seDlg.RecvAddr, seDlg.RecvN)
-			SIPExerMessagePrint("\n", string(seDlg.RecvBuf), "\n")
+			SIPExerMessagePrint("\n\n", string(seDlg.RecvBuf), "\n")
 			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 			seDlg.LastResponse = new(sgsip.SGSIPMessage)
 			ret = SIPExerProcessResponse(seDlg.FirstRequest, seDlg.RecvBuf, seDlg.LastResponse, &seDlg.SkipAuth, &smsg, &sack)
@@ -1756,7 +1756,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 			}
 			if seDlg.LastResponse.CSeq.MethodId == sgsip.SIPMethodINVITE {
 				SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
-				SIPExerMessagePrint("\n", sack, "\n")
+				SIPExerMessagePrint("\n\n", sack, "\n")
 				SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 				if cliops.sessionwait > 0 && ret >= 200 && ret < 300 {
 					// store 200-ack in dialog structure
@@ -1804,7 +1804,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 					// send the new message
 					wmsg = []byte(smsg)
 					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
-					SIPExerMessagePrint("\n", smsg, "\n")
+					SIPExerMessagePrint("\n\n", smsg, "\n")
 					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 					if seDlg.ProtoId == sgsip.ProtoUDP {
 						seDlg.TimeoutStep = cliops.timert1
@@ -1827,7 +1827,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 					// authentication - send the new message
 					wmsg = []byte(smsg)
 					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
-					SIPExerMessagePrint("\n", smsg, "\n")
+					SIPExerMessagePrint("\n\n", smsg, "\n")
 					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
 					if seDlg.ProtoId == sgsip.ProtoUDP {
 						seDlg.TimeoutStep = cliops.timert1
@@ -1846,7 +1846,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 	}
 
 	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", seDlg.RecvAddr, seDlg.RecvN)
-	SIPExerMessagePrint("\n", string(seDlg.RecvBuf), "\n")
+	SIPExerMessagePrint("\n\n", string(seDlg.RecvBuf), "\n")
 	SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 	return SIPExerRetOK
 }
