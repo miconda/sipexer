@@ -247,7 +247,6 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 	} else {
 		uri = fmt.Sprintf("sip:%s", realm)
 	}
-	fmt.Printf("- uri=%s, realm=%s, nonce=%s\n", uri, realm, nonce)
 	if nonce == "" || realm == "" {
 		return "", errors.New("missing required parameters in challenge")
 	}
@@ -301,19 +300,19 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 	nc := fmt.Sprintf("%08x", 1)
 	cnonce := SGAKAGenerateClientNonce(8)
 
-	a3b := make([]byte, 0, len(ha1)+len(nonce)+len(nc)+len(cnonce)+len(qop)+len(ha2)+7)
+	a3b := make([]byte, 0, len(ha1)+len(nonce)+len(nc)+len(cnonce)+len(qop)+len(ha2)+5)
 	a3w := bytes.NewBuffer(a3b)
-	a2w.WriteString(ha1)
-	a2w.WriteRune(':')
-	a2w.WriteString(nonce)
-	a2w.WriteRune(':')
-	a2w.WriteString(nc)
-	a2w.WriteRune(':')
-	a2w.WriteString(cnonce)
-	a2w.WriteRune(':')
-	a2w.WriteString(qop)
-	a2w.WriteRune(':')
-	a2w.WriteString(ha2)
+	a3w.WriteString(ha1)
+	a3w.WriteRune(':')
+	a3w.WriteString(nonce)
+	a3w.WriteRune(':')
+	a3w.WriteString(nc)
+	a3w.WriteRune(':')
+	a3w.WriteString(cnonce)
+	a3w.WriteRune(':')
+	a3w.WriteString(qop)
+	a3w.WriteRune(':')
+	a3w.WriteString(ha2)
 	authres := fmt.Sprintf("%x", md5.Sum(a3w.Bytes()))
 
 	authHeader := fmt.Sprintf(`Digest username="%s",
@@ -321,10 +320,10 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
                          nonce="%s",
                          response="%s",
                          uri="%s",
-                         algorithm="AKAv1-MD5",
+                         algorithm=%s,
                          cnonce="%s",
                          nc=%s,
-                         qop="%s",
+                         qop=%s,
                          ck="%s",
                          ik="%s"`,
 		username,
@@ -332,6 +331,7 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 		nonce,
 		authres,
 		uri,
+		challengeParams["algorithm"],
 		cnonce,
 		nc,
 		qop,
