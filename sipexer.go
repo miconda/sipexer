@@ -1388,7 +1388,7 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 		if *skipauth {
 			return sipRes.FLine.Code
 		}
-		if len(cliops.authapassword) == 0 {
+		if len(cliops.authapassword) == 0 && len(cliops.akakey) == 0 {
 			return sipRes.FLine.Code
 		}
 		var hbody string = ""
