@@ -279,6 +279,9 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 		return "", fmt.Errorf("failed to match xmac")
 	}
 
+	challengeParams["ck"] = fmt.Sprintf("%x", ck)
+	challengeParams["ik"] = fmt.Sprintf("%x", ik)
+
 	a1b := make([]byte, 0, len(username)+len(realm)+len(res)+2)
 	a1w := bytes.NewBuffer(a1b)
 	a1w.WriteString(username)
@@ -316,27 +319,23 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 	authres := fmt.Sprintf("%x", md5.Sum(a3w.Bytes()))
 
 	authHeader := fmt.Sprintf(`Digest username="%s",
-                         realm="%s",
-                         nonce="%s",
-                         response="%s",
-                         uri="%s",
-                         algorithm=%s,
-                         cnonce="%s",
-                         nc=%s,
-                         qop=%s,
-                         ck="%s",
-                         ik="%s"`,
+                 realm="%s",
+                 uri="%s",
+                 algorithm=%s,
+                 nonce="%s",
+                 qop=%s,
+                 nc=%s,
+                 cnonce="%s",
+                 response="%s"`,
 		username,
 		realm,
-		nonce,
-		authres,
 		uri,
 		challengeParams["algorithm"],
-		cnonce,
-		nc,
+		nonce,
 		qop,
-		fmt.Sprintf("%x", ck),
-		fmt.Sprintf("%x", ik),
+		nc,
+		cnonce,
+		authres,
 	)
 
 	return authHeader, nil
