@@ -1447,11 +1447,16 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 			}
 			authResponse, err = sgsip.SGAKAHandleChallenge(cliops.akauser, akakey, akaop, akaopc, akaamf, hparams)
 			if err != nil {
-				SIPExerPrintf(SIPExerLogError, "failed to build AKA response header\n")
+				SIPExerPrintf(SIPExerLogError, "failed to build AKA response header (%v)\n", err)
 				return SIPExerErrAKAHeaderFailure
 			}
 		} else {
-			authResponse = SIPExerBuildAuthResponseBody(cliops.authuser, cliops.authapassword, hparams)
+			var err error
+			authResponse, err = SIPExerBuildAuthResponseBody(cliops.authuser, cliops.authapassword, hparams)
+			if err != nil {
+				SIPExerPrintf(SIPExerLogError, "failed to build auth response header (%v)\n", err)
+				return SIPExerErrAKAHeaderFailure
+			}
 		}
 		if len(authResponse) > 0 {
 			SIPExerPrintf(SIPExerLogDebug, "authentication header body: [[%s]]\n", authResponse)
@@ -2202,7 +2207,7 @@ func SIPExerRandHexString(olen int) string {
 }
 
 // SIPExerBuildAuthResponseBody - return the body for auth header in response
-func SIPExerBuildAuthResponseBody(username string, password string, hparams map[string]string) string {
+func SIPExerBuildAuthResponseBody(username string, password string, hparams map[string]string) (string, error) {
 	// https://en.wikipedia.org/wiki/Digest_access_authentication
 	// HA1
 	var HA1 string = ""
@@ -2230,6 +2235,9 @@ func SIPExerBuildAuthResponseBody(username string, password string, hparams map[
 		AuthHeader = fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", algorithm=MD5, response="%s"`,
 			username, hparams["realm"], hparams["nonce"], hparams["uri"], response)
 	} else {
+		if strings.ToLower(hparams["qop"]) != "auth" {
+			return "", fmt.Errorf("unsupported qop value: %s", hparams["qop"])
+		}
 		// build digest response
 		cnonce := SIPExerRandomKey()
 		response := SIPExerHMD5(strings.Join([]string{HA1, hparams["nonce"], "00000001", cnonce, hparams["qop"], HA2}, ":"))
@@ -2237,7 +2245,7 @@ func SIPExerBuildAuthResponseBody(username string, password string, hparams map[
 		AuthHeader = fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", cnonce="%s", nc=00000001, qop=%s, opaque="%s", algorithm=MD5, response="%s"`,
 			username, hparams["realm"], hparams["nonce"], hparams["uri"], cnonce, hparams["qop"], hparams["opaque"], response)
 	}
-	return AuthHeader
+	return AuthHeader, nil
 }
 
 // SIPExerRandomKey - return random key (used for cnonce)
