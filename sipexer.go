@@ -8,16 +8,12 @@ package main
 
 import (
 	"bytes"
-	"crypto/md5"
-	cryptorand "crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	mathrand "math/rand"
 	"net"
@@ -1453,7 +1449,7 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 			}
 		} else {
 			var err error
-			authResponse, err = SIPExerBuildAuthResponseBody(cliops.authuser, cliops.authapassword, hparams)
+			authResponse, err = sgsip.SGAuthBuildResponseBody(cliops.authuser, cliops.authapassword, cliops.ha1, hparams)
 			if err != nil {
 				SIPExerPrintf(SIPExerLogError, "failed to build auth response header (%v)\n", err)
 				return SIPExerErrHeaderAuthFailure
@@ -2205,69 +2201,6 @@ func SIPExerRandHexString(olen int) string {
 		b[i] = letters[mathrand.Intn(len(letters))]
 	}
 	return string(b)
-}
-
-// SIPExerBuildAuthResponseBody - return the body for auth header in response
-func SIPExerBuildAuthResponseBody(username string, password string, hparams map[string]string) (string, error) {
-	// https://en.wikipedia.org/wiki/Digest_access_authentication
-	// HA1
-	var HA1 string = ""
-	h := md5.New()
-	if cliops.ha1 {
-		HA1 = password
-	} else {
-		A1 := fmt.Sprintf("%s:%s:%s", username, hparams["realm"], password)
-		io.WriteString(h, A1)
-		HA1 = fmt.Sprintf("%x", h.Sum(nil))
-		// prepare for HA2
-		h = md5.New()
-	}
-
-	// HA2
-	A2 := fmt.Sprintf("%s:%s", hparams["method"], hparams["uri"])
-	io.WriteString(h, A2)
-	HA2 := fmt.Sprintf("%x", h.Sum(nil))
-
-	var AuthHeader string
-	if _, ok := hparams["qop"]; !ok {
-		// build digest response
-		response := SIPExerHMD5(strings.Join([]string{HA1, hparams["nonce"], HA2}, ":"))
-		// build header body
-		AuthHeader = fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", algorithm=MD5, response="%s"`,
-			username, hparams["realm"], hparams["nonce"], hparams["uri"], response)
-	} else {
-		if strings.ToLower(hparams["qop"]) != "auth" {
-			return "", fmt.Errorf("unsupported qop value: %s", hparams["qop"])
-		}
-		// build digest response
-		cnonce := SIPExerRandomKey()
-		response := SIPExerHMD5(strings.Join([]string{HA1, hparams["nonce"], "00000001", cnonce, hparams["qop"], HA2}, ":"))
-		// build header body
-		AuthHeader = fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", cnonce="%s", nc=00000001, qop=%s, opaque="%s", algorithm=MD5, response="%s"`,
-			username, hparams["realm"], hparams["nonce"], hparams["uri"], cnonce, hparams["qop"], hparams["opaque"], response)
-	}
-	return AuthHeader, nil
-}
-
-// SIPExerRandomKey - return random key (used for cnonce)
-func SIPExerRandomKey() string {
-	key := make([]byte, 12)
-	for b := 0; b < len(key); {
-		n, err := cryptorand.Read(key[b:])
-		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "failed to get random bytes: %v\n", err)
-			SIPExerExit(SIPExerErrRandomKey)
-		}
-		b += n
-	}
-	return base64.StdEncoding.EncodeToString(key)
-}
-
-// SIPExerHMD5 - return a lower-case hex MD5 digest of the parameter
-func SIPExerHMD5(data string) string {
-	md5d := md5.New()
-	md5d.Write([]byte(data))
-	return fmt.Sprintf("%x", md5d.Sum(nil))
 }
 
 func SIPExerMessagePrint(prefix string, smsg string, suffix string) {
