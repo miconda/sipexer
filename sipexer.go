@@ -61,6 +61,7 @@ const (
 	SIPExerErrProtocolUnsuported  = -1090
 	SIPExerErrHeaderAuthGet       = -1100
 	SIPExerErrHeaderAuthParse     = -1101
+	SIPExerErrHeaderAuthFailure   = -1102
 	SIPExerErrResolveSrcUDPAddr   = -1120
 	SIPExerErrResolveDstUDPAddr   = -1121
 	SIPExerErrUDPSocket           = -1122
@@ -1455,7 +1456,7 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 			authResponse, err = SIPExerBuildAuthResponseBody(cliops.authuser, cliops.authapassword, hparams)
 			if err != nil {
 				SIPExerPrintf(SIPExerLogError, "failed to build auth response header (%v)\n", err)
-				return SIPExerErrAKAHeaderFailure
+				return SIPExerErrHeaderAuthFailure
 			}
 		}
 		if len(authResponse) > 0 {
