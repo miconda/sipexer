@@ -10,7 +10,72 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
 )
+
+// SGHashMD5 - return a lower-case hex MD5 digest of the parameter
+func SGHashMD5(data string) string {
+	md5d := md5.New()
+	md5d.Write([]byte(data))
+	return fmt.Sprintf("%x", md5d.Sum(nil))
+}
+
+// SGClientNonce generates a client nonce
+func SGCreateClientNonce(cnsize int) string {
+	// Create a byte slice to hold the random data
+	b := make([]byte, cnsize)
+
+	// Read cryptographically secure random bytes
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
+
+	// Encode the random bytes as a hexadecimal string
+	return hex.EncodeToString(b)
+}
+
+// SGAuthBuildResponseBody - return the body for auth header in response
+func SGAuthBuildResponseBody(username string, password string, ha1mode bool, hparams map[string]string) (string, error) {
+	// https://en.wikipedia.org/wiki/Digest_access_authentication
+	// HA1
+	var HA1 string = ""
+	h := md5.New()
+	if ha1mode {
+		HA1 = password
+	} else {
+		A1 := fmt.Sprintf("%s:%s:%s", username, hparams["realm"], password)
+		io.WriteString(h, A1)
+		HA1 = fmt.Sprintf("%x", h.Sum(nil))
+		// prepare for HA2
+		h = md5.New()
+	}
+
+	// HA2
+	A2 := fmt.Sprintf("%s:%s", hparams["method"], hparams["uri"])
+	io.WriteString(h, A2)
+	HA2 := fmt.Sprintf("%x", h.Sum(nil))
+
+	var AuthHeader string
+	if _, ok := hparams["qop"]; !ok {
+		// build digest response
+		response := SGHashMD5(strings.Join([]string{HA1, hparams["nonce"], HA2}, ":"))
+		// build header body
+		AuthHeader = fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", algorithm=MD5, response="%s"`,
+			username, hparams["realm"], hparams["nonce"], hparams["uri"], response)
+	} else {
+		if strings.ToLower(hparams["qop"]) != "auth" {
+			return "", fmt.Errorf("unsupported qop value: %s", hparams["qop"])
+		}
+		// build digest response
+		cnonce := SGCreateClientNonce(6)
+		response := SGHashMD5(strings.Join([]string{HA1, hparams["nonce"], "00000001", cnonce, hparams["qop"], HA2}, ":"))
+		// build header body
+		AuthHeader = fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", cnonce="%s", nc=00000001, qop=%s, opaque="%s", algorithm=MD5, response="%s"`,
+			username, hparams["realm"], hparams["nonce"], hparams["uri"], cnonce, hparams["qop"], hparams["opaque"], response)
+	}
+	return AuthHeader, nil
+}
 
 // SGAKAParseNonce parses the base64-encoded nonce containing RAND and AUTN
 func SGAKAParseNonce(nonceStr string) ([]byte, []byte, error) {
@@ -220,20 +285,6 @@ func SGAKAComputeF2345(K, OP, OPC, RAND []byte) (res, ck, ik, ak []byte, errv er
 	return res, ck, ik, ak, nil
 }
 
-// GAKAGenerateClientNonce generates a client nonce
-func SGAKAGenerateClientNonce(cnsize int) string {
-	// Create a byte slice to hold the random data
-	b := make([]byte, cnsize)
-
-	// Read cryptographically secure random bytes
-	if _, err := rand.Read(b); err != nil {
-		return ""
-	}
-
-	// Encode the random bytes as a hexadecimal string
-	return hex.EncodeToString(b)
-}
-
 // SGAKAHandleChallenge processes the authentication challenge from the server
 func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengeParams map[string]string) (string, error) {
 	var uri, nonce, realm, method, qop string
@@ -301,7 +352,7 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 	ha2 := fmt.Sprintf("%x", md5.Sum(a2w.Bytes()))
 
 	nc := fmt.Sprintf("%08x", 1)
-	cnonce := SGAKAGenerateClientNonce(8)
+	cnonce := SGCreateClientNonce(8)
 
 	a3b := make([]byte, 0, len(ha1)+len(nonce)+len(nc)+len(cnonce)+len(qop)+len(ha2)+5)
 	a3w := bytes.NewBuffer(a3b)
