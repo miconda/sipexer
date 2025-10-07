@@ -6,11 +6,11 @@ import (
 	"crypto/aes"
 	"crypto/md5"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 )
 
@@ -19,6 +19,25 @@ func SGHashMD5(data string) string {
 	md5d := md5.New()
 	md5d.Write([]byte(data))
 	return fmt.Sprintf("%x", md5d.Sum(nil))
+}
+
+// SGHashSHA256 - return a lower-case hex SHA256 digest of the parameter
+func SGHashSHA256(data string) string {
+	h := sha256.New()
+	h.Write([]byte(data))
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// SGHashX - return a lower-case hex of the hashed parameter
+func SGHashX(sAlg string, sData string) string {
+	sHash := ""
+	switch strings.ToLower(strings.Replace(sAlg, "-", "", 1)) {
+	case "sha256":
+		sHash = SGHashSHA256(sData)
+	default:
+		sHash = SGHashMD5(sData)
+	}
+	return sHash
 }
 
 // SGClientNonce generates a client nonce
@@ -38,28 +57,23 @@ func SGCreateClientNonce(cnsize int) string {
 // SGAuthBuildResponseBody - return the body for auth header in response
 func SGAuthBuildResponseBody(username string, password string, ha1mode bool, hparams map[string]string) (string, error) {
 	// https://en.wikipedia.org/wiki/Digest_access_authentication
-	// HA1
-	var HA1 string = ""
-	h := md5.New()
-	if ha1mode {
-		HA1 = password
-	} else {
-		A1 := fmt.Sprintf("%s:%s:%s", username, hparams["realm"], password)
-		io.WriteString(h, A1)
-		HA1 = fmt.Sprintf("%x", h.Sum(nil))
-		// prepare for HA2
-		h = md5.New()
-	}
 
-	// HA2
-	A2 := fmt.Sprintf("%s:%s", hparams["method"], hparams["uri"])
-	io.WriteString(h, A2)
-	HA2 := fmt.Sprintf("%x", h.Sum(nil))
+	vAlg, ok := hparams["algorithm"]
+	if !ok {
+		vAlg = "MD5"
+	}
+	sHA1 := ""
+	if ha1mode {
+		sHA1 = password
+	} else {
+		sHA1 = SGHashX(vAlg, username+":"+hparams["realm"]+":"+password)
+	}
+	sHA2 := SGHashX(vAlg, hparams["method"]+":"+hparams["uri"])
 
 	var AuthHeader string
-	if _, ok := hparams["qop"]; !ok {
+	if _, ok = hparams["qop"]; !ok {
 		// build digest response
-		response := SGHashMD5(strings.Join([]string{HA1, hparams["nonce"], HA2}, ":"))
+		response := SGHashX(vAlg, sHA1+":"+hparams["nonce"]+":"+sHA2)
 		// build header body
 		AuthHeader = fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", algorithm=MD5, response="%s"`,
 			username, hparams["realm"], hparams["nonce"], hparams["uri"], response)
@@ -69,7 +83,7 @@ func SGAuthBuildResponseBody(username string, password string, ha1mode bool, hpa
 		}
 		// build digest response
 		cnonce := SGCreateClientNonce(6)
-		response := SGHashMD5(strings.Join([]string{HA1, hparams["nonce"], "00000001", cnonce, hparams["qop"], HA2}, ":"))
+		response := SGHashX(vAlg, sHA1+":"+hparams["nonce"]+":"+"00000001"+":"+cnonce+":"+hparams["qop"]+":"+sHA2)
 		// build header body
 		AuthHeader = fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", cnonce="%s", nc=00000001, qop=%s, opaque="%s", algorithm=MD5, response="%s"`,
 			username, hparams["realm"], hparams["nonce"], hparams["uri"], cnonce, hparams["qop"], hparams["opaque"], response)
