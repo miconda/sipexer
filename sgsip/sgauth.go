@@ -7,6 +7,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -28,12 +29,21 @@ func SGHashSHA256(data string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
+// SGHashSHA512_256 - return a lower-case hex SHA512-256 digest of the parameter
+func SGHashSHA512_256(input string) string {
+	h := sha512.New512_256()
+	h.Write([]byte(input))
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
 // SGHashX - return a lower-case hex of the hashed parameter
 func SGHashX(sAlg string, sData string) string {
 	sHash := ""
-	switch strings.ToLower(strings.Replace(sAlg, "-", "", 1)) {
+	switch strings.ToLower(strings.Replace(sAlg, "-", "", 2)) {
 	case "sha256":
 		sHash = SGHashSHA256(sData)
+	case "sha512256":
+		sHash = SGHashSHA512_256(sData)
 	default:
 		sHash = SGHashMD5(sData)
 	}
