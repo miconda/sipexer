@@ -49,6 +49,7 @@ Among features:
   * do registration and un-registration with customized expires value
   and contact URI
   * authentication with plain or HA1 passwords
+  * hashing algorithms for authentication: MD5, SHA256, SHA512-256
   * set custom SIP headers
   * template system for building SIP requests
   * fields in the templates can be set via command line parameters or a JSON file
