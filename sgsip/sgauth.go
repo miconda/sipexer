@@ -36,6 +36,13 @@ func SGHashSHA512_256(input string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
+// SGHashSHA512 - return a lower-case hex SHA512 digest of the parameter
+func SGHashSHA512(input string) string {
+	h := sha512.New()
+	h.Write([]byte(input))
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
 // SGHashX - return a lower-case hex of the hashed parameter
 func SGHashX(sAlg string, sData string) string {
 	sHash := ""
@@ -44,6 +51,8 @@ func SGHashX(sAlg string, sData string) string {
 		sHash = SGHashSHA256(sData)
 	case "sha512256":
 		sHash = SGHashSHA512_256(sData)
+	case "sha512":
+		sHash = SGHashSHA512(sData)
 	default:
 		sHash = SGHashMD5(sData)
 	}
