@@ -213,6 +213,19 @@ with higher verbosity level (`3`) and color printing:
 sipexer -invite -vl 3 -co -com -fuser alice -tuser bob -cb -ap "4a4a4a4a4a..." -ha1 -sw 10000 -sd -su udp:server.com:5060
 ```
 
+To remove the default value for implicit fields (e.g., `useragent`), the `-no-val` value can
+be provided (which is default `no`), like:
+
+```shell
+sipexer -ua no ...
+```
+
+Or:
+
+```shell
+sipexer -no-val skip -ua skip ...
+```
+
 ## Target Address
 
 The target address can be provided as last arguments to the `sipexer` command. It is
