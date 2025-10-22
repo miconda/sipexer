@@ -1413,6 +1413,7 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 
 		hparams["method"] = s[0]
 		hparams["uri"] = s[1]
+		hparams["body"] = msgVal.Body.Content
 		SIPExerPrintf(SIPExerLogDebug, "\nAuth params map:\n    %+v\n\n", hparams)
 		authResponse := ""
 		if strings.ToLower(hparams["algorithm"]) == "akav1-md5" {
