@@ -81,28 +81,49 @@ func SGAuthBuildResponseBody(username string, password string, ha1mode bool, hpa
 	if !ok {
 		vAlg = "MD5"
 	}
+	vQop, ok := hparams["qop"]
+	if !ok {
+		vQop = "none"
+	} else {
+		vQop = strings.ToLower(vQop)
+	}
+	if vQop != "none" && vQop != "auth" && vQop != "auth-int" {
+		return "", fmt.Errorf("unsupported qop value: %s", vQop)
+	}
 	sHA1 := ""
 	if ha1mode {
 		sHA1 = password
 	} else {
 		sHA1 = SGHashX(vAlg, username+":"+hparams["realm"]+":"+password)
 	}
-	sHA2 := SGHashX(vAlg, hparams["method"]+":"+hparams["uri"])
 
 	var AuthHeader string
-	if _, ok = hparams["qop"]; !ok {
+	var sHA2 string
+
+	if vQop == "none" {
+		sHA2 = SGHashX(vAlg, hparams["method"]+":"+hparams["uri"])
 		// build digest response
 		response := SGHashX(vAlg, sHA1+":"+hparams["nonce"]+":"+sHA2)
 		// build header body
 		AuthHeader = fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", algorithm=MD5, response="%s"`,
 			username, hparams["realm"], hparams["nonce"], hparams["uri"], response)
 	} else {
-		if strings.ToLower(hparams["qop"]) != "auth" {
-			return "", fmt.Errorf("unsupported qop value: %s", hparams["qop"])
+		if vQop == "auth" {
+			sHA2 = SGHashX(vAlg, hparams["method"]+":"+hparams["uri"])
+		} else {
+			vBody, ok := hparams["body"]
+			if !ok {
+				vBody = ""
+			}
+			sHA2 = SGHashX(vAlg, hparams["method"]+":"+hparams["uri"]+":"+SGHashX(vAlg, vBody))
 		}
 		// build digest response
 		cnonce := SGCreateClientNonce(6)
-		response := SGHashX(vAlg, sHA1+":"+hparams["nonce"]+":"+"00000001"+":"+cnonce+":"+hparams["qop"]+":"+sHA2)
+		response := ""
+		if strings.ToLower(hparams["qop"]) != "auth" {
+			response = SGHashX(vAlg, sHA1+":"+hparams["nonce"]+":"+"00000001"+":"+cnonce+":"+hparams["qop"]+":"+sHA2)
+		} else {
+		}
 		// build header body
 		AuthHeader = fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", cnonce="%s", nc=00000001, qop=%s, opaque="%s", algorithm=MD5, response="%s"`,
 			username, hparams["realm"], hparams["nonce"], hparams["uri"], cnonce, hparams["qop"], hparams["opaque"], response)
