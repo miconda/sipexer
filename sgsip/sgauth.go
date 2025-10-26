@@ -6,6 +6,7 @@ import (
 	"crypto/aes"
 	"crypto/md5"
 	"crypto/rand"
+	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
@@ -20,6 +21,13 @@ func SGHashMD5(data string) string {
 	md5d := md5.New()
 	md5d.Write([]byte(data))
 	return fmt.Sprintf("%x", md5d.Sum(nil))
+}
+
+// SGHashSHA1 - return a lower-case hex SHA1 digest of the parameter
+func SGHashSHA1(data string) string {
+	h := sha1.New()
+	h.Write([]byte(data))
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 // SGHashSHA256 - return a lower-case hex SHA256 digest of the parameter
@@ -47,6 +55,8 @@ func SGHashSHA512(input string) string {
 func SGHashX(sAlg string, sData string) string {
 	sHash := ""
 	switch strings.ToLower(strings.Replace(sAlg, "-", "", 2)) {
+	case "sha1":
+		sHash = SGHashSHA1(sData)
 	case "sha256":
 		sHash = SGHashSHA256(sData)
 	case "sha512256":
