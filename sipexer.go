@@ -98,13 +98,13 @@ From: {{if .fromhdr}}{{.fromhdr}}{{else}}{{if .fromuri}}{{.fromuri}}{{else}}{{if
 To: {{if .tohdr}}{{.tohdr}}{{else}}{{if .touri}}{{.touri}}{{else}}{{if .tname}}"{{.tname}}" {{end}}<sip:{{if .tuser}}{{.tuser}}@{{end}}{{.tdomain}}>{{end}}{{if .totag}};tag={{.totag}}{{end}}{{end}}
 Call-ID: {{.callid}}
 CSeq: {{.cseqnum}} {{.method}}
-{{if .subject}}Subject: {{.subject}}{{else}}$rmeol{{end}}
-{{if .date}}Date: {{.date}}{{else}}$rmeol{{end}}
-{{if .contacturi}}Contact: {{.contacturi}}{{if .contactparams}};{{.contactparams}}{{end}}{{else}}$rmeol{{end}}
-{{if .expires}}Expires: {{.expires}}{{else}}$rmeol{{end}}
-{{if .useragent}}User-Agent: {{.useragent}}{{else}}$rmeol{{end}}
-{{if .maxforwards}}Max-Forwards: {{.maxforwards}}{{else}}$rmeol{{end}}
-{{if .contenttype}}Content-Type: {{.contenttype}}{{else}}$rmeol{{end}}
+{{if .subject}}Subject: {{.subject}}{{ "\n" }}{{end -}}
+{{if .date}}Date: {{.date}}{{ "\n" }}{{end -}}
+{{if .contacturi}}Contact: {{.contacturi}}{{if .contactparams}};{{.contactparams}}{{end}}{{ "\n" }}{{end -}}
+{{if .expires}}Expires: {{.expires}}{{ "\n" }}{{end -}}
+{{if .useragent}}User-Agent: {{.useragent}}{{ "\n" }}{{end -}}
+{{if .maxforwards}}Max-Forwards: {{.maxforwards}}{{ "\n" }}{{end -}}
+{{if .contenttype}}Content-Type: {{.contenttype}}{{ "\n" }}{{end -}}
 Content-Length: 0
 
 `
