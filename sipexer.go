@@ -148,7 +148,7 @@ var templateDefaultJSONFields string = `{
 	"sdprtpport": "$rand(20000,40000)"
 }`
 
-var templateFields = map[string]map[string]interface{}{
+var templateFields = map[string]map[string]any{
 	"FIELDS:EMPTY": {},
 }
 
@@ -712,7 +712,7 @@ func main() {
 	}
 
 	for r := 0; r < cliops.runcount; r++ {
-		tplfields := make(map[string]interface{})
+		tplfields := make(map[string]any)
 
 		SIPExerPrepareTemplateFields(tplfields)
 
@@ -870,7 +870,7 @@ func SIPExerExit(ret int) {
 	os.Exit(nret)
 }
 
-func SIPExerPrepareTemplateFields(tplfields map[string]interface{}) int {
+func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
 	var err error
 	var ival int
 	var ok bool
@@ -1195,7 +1195,7 @@ func SIPExerPrepareTemplateFields(tplfields map[string]interface{}) int {
 	return 0
 }
 
-func SIPExerPrepareMessage(tplstr string, tplfields map[string]interface{}, rProto string, lAddr string, rAddr string, msgVal *sgsip.SGSIPMessage) int {
+func SIPExerPrepareMessage(tplstr string, tplfields map[string]any, rProto string, lAddr string, rAddr string, msgVal *sgsip.SGSIPMessage) int {
 	var buf bytes.Buffer
 	var tpl = template.Must(template.New("wsout").Parse(tplstr))
 	var msgrebuild bool = false
@@ -1661,7 +1661,7 @@ func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 	return SIPExerRetOK
 }
 
-func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *SIPExerDialog) int {
+func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDialog) int {
 	var smsg string = ""
 	var sack string = ""
 	var err error
@@ -1854,7 +1854,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]interface{}, seDlg *S
 	return SIPExerRetOK
 }
 
-func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]interface{}, tchan chan int) {
+func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]any, tchan chan int) {
 	var seDlg SIPExerDialog = SIPExerDialog{}
 	var err error
 
@@ -1931,7 +1931,7 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	tchan <- ret
 }
 
-func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]interface{}, tchan chan int) {
+func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]any, tchan chan int) {
 	var seDlg SIPExerDialog = SIPExerDialog{}
 	var err error
 
@@ -1998,7 +1998,7 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	tchan <- ret
 }
 
-func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]interface{}, tchan chan int) {
+func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]any, tchan chan int) {
 	var seDlg SIPExerDialog = SIPExerDialog{}
 	var err error
 
@@ -2075,7 +2075,7 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	tchan <- ret
 }
 
-func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, tplfields map[string]interface{}, tchan chan int) {
+func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, tplfields map[string]any, tchan chan int) {
 	var seDlg SIPExerDialog = SIPExerDialog{}
 	var err error
 	var wsorgp *url.URL = nil
