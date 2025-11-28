@@ -129,11 +129,7 @@ func SGAuthBuildResponseBody(username string, password string, ha1mode bool, hpa
 		}
 		// build digest response
 		cnonce := SGCreateClientNonce(6)
-		response := ""
-		if strings.ToLower(hparams["qop"]) != "auth" {
-			response = SGHashX(vAlg, sHA1+":"+hparams["nonce"]+":"+"00000001"+":"+cnonce+":"+hparams["qop"]+":"+sHA2)
-		} else {
-		}
+		response := SGHashX(vAlg, sHA1+":"+hparams["nonce"]+":"+"00000001"+":"+cnonce+":"+hparams["qop"]+":"+sHA2)
 		// build header body
 		AuthHeader = fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", cnonce="%s", nc=00000001, qop=%s, opaque="%s", algorithm=MD5, response="%s"`,
 			username, hparams["realm"], hparams["nonce"], hparams["uri"], cnonce, hparams["qop"], hparams["opaque"], response)
