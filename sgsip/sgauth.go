@@ -83,6 +83,11 @@ func SGCreateClientNonce(cnsize int) string {
 	return hex.EncodeToString(b)
 }
 
+// SGAuthGetNC generates nonce count
+func SGAuthGetNC(vNC int) string {
+	return fmt.Sprintf("%08x", vNC)
+}
+
 // SGAuthBuildResponseBody - return the body for auth header in response
 func SGAuthBuildResponseBody(username string, password string, ha1mode bool, hparams map[string]string) (string, error) {
 	// https://en.wikipedia.org/wiki/Digest_access_authentication
@@ -129,10 +134,11 @@ func SGAuthBuildResponseBody(username string, password string, ha1mode bool, hpa
 		}
 		// build digest response
 		cnonce := SGCreateClientNonce(6)
-		response := SGHashX(vAlg, sHA1+":"+hparams["nonce"]+":"+"00000001"+":"+cnonce+":"+hparams["qop"]+":"+sHA2)
+		nc := SGAuthGetNC(1)
+		response := SGHashX(vAlg, sHA1+":"+hparams["nonce"]+":"+nc+":"+cnonce+":"+hparams["qop"]+":"+sHA2)
 		// build header body
-		AuthHeader = fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", cnonce="%s", nc=00000001, qop=%s, opaque="%s", algorithm=MD5, response="%s"`,
-			username, hparams["realm"], hparams["nonce"], hparams["uri"], cnonce, hparams["qop"], hparams["opaque"], response)
+		AuthHeader = fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", cnonce="%s", nc=%s, qop=%s, opaque="%s", algorithm=%s, response="%s"`,
+			username, hparams["realm"], hparams["nonce"], hparams["uri"], cnonce, nc, hparams["qop"], hparams["opaque"], vAlg, response)
 	}
 	return AuthHeader, nil
 }
