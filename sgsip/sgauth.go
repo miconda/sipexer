@@ -96,6 +96,11 @@ func SGAuthBuildResponseBody(username string, password string, ha1mode bool, hpa
 	if !ok {
 		vAlg = "MD5"
 	}
+	vSess := false
+	if strings.HasSuffix(vAlg, "-sess") {
+		vAlg = strings.TrimSuffix(vAlg, "-sess")
+		vSess = true
+	}
 	vQop, ok := hparams["qop"]
 	if !ok {
 		vQop = "none"
@@ -110,6 +115,11 @@ func SGAuthBuildResponseBody(username string, password string, ha1mode bool, hpa
 		sHA1 = password
 	} else {
 		sHA1 = SGHashX(vAlg, username+":"+hparams["realm"]+":"+password)
+	}
+	cnonce := ""
+	if vSess {
+		cnonce = SGCreateClientNonce(6)
+		sHA1 = SGHashX(vAlg, sHA1+":"+hparams["nonce"]+":"+cnonce)
 	}
 
 	var AuthHeader string
@@ -133,7 +143,9 @@ func SGAuthBuildResponseBody(username string, password string, ha1mode bool, hpa
 			sHA2 = SGHashX(vAlg, hparams["method"]+":"+hparams["uri"]+":"+SGHashX(vAlg, vBody))
 		}
 		// build digest response
-		cnonce := SGCreateClientNonce(6)
+		if len(cnonce) == 0 {
+			cnonce = SGCreateClientNonce(6)
+		}
 		nc := SGAuthGetNC(1)
 		response := SGHashX(vAlg, sHA1+":"+hparams["nonce"]+":"+nc+":"+cnonce+":"+hparams["qop"]+":"+sHA2)
 		// build header body
