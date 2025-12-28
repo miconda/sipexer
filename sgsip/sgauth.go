@@ -380,6 +380,14 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 		return "", errors.New("missing required parameters in challenge")
 	}
 
+	vAlg := ""
+	vSess := false
+	if strings.HasSuffix(challengeParams["algorithm"], "-sess") {
+		vSess = true
+		vAlg = strings.TrimSuffix(challengeParams["algorithm"], "-sess")
+	} else {
+		vAlg = challengeParams["algorithm"]
+	}
 	rand, autn, err := SGAKAParseNonce(nonce)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse nonce: %w", err)
@@ -419,7 +427,19 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 	a1w.WriteRune(':')
 	a1w.Write(res)
 
-	ha1 := fmt.Sprintf("%x", md5.Sum(a1w.Bytes()))
+	ha1 := ""
+	if strings.ToLower(vAlg) == "akav1-sha256" {
+		// SHA256
+		ha1 = fmt.Sprintf("%x", sha256.Sum256(a1w.Bytes()))
+	} else {
+		// MD5
+		ha1 = fmt.Sprintf("%x", md5.Sum(a1w.Bytes()))
+	}
+	cnonce := ""
+	if vSess {
+		cnonce = SGCreateClientNonce(8)
+		ha1 = SGHashX(vAlg, ha1+":"+challengeParams["nonce"]+":"+cnonce)
+	}
 
 	a2b := make([]byte, 0, len(method)+len(uri)+1)
 	a2w := bytes.NewBuffer(a2b)
@@ -430,7 +450,9 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 	ha2 := fmt.Sprintf("%x", md5.Sum(a2w.Bytes()))
 
 	nc := fmt.Sprintf("%08x", 1)
-	cnonce := SGCreateClientNonce(8)
+	if len(cnonce) == 0 {
+		cnonce = SGCreateClientNonce(8)
+	}
 
 	a3b := make([]byte, 0, len(ha1)+len(nonce)+len(nc)+len(cnonce)+len(qop)+len(ha2)+5)
 	a3w := bytes.NewBuffer(a3b)
