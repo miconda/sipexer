@@ -388,6 +388,8 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 	} else {
 		vAlg = challengeParams["algorithm"]
 	}
+	vAlg = strings.TrimPrefix(strings.ToLower(vAlg), "akav1")
+
 	rand, autn, err := SGAKAParseNonce(nonce)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse nonce: %w", err)
@@ -428,7 +430,7 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 	a1w.Write(res)
 
 	ha1 := ""
-	if strings.ToLower(vAlg) == "akav1-sha256" {
+	if vAlg == "sha256" {
 		// SHA256
 		ha1 = fmt.Sprintf("%x", sha256.Sum256(a1w.Bytes()))
 	} else {
@@ -447,7 +449,12 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 	a2w.WriteRune(':')
 	a2w.WriteString(uri)
 
-	ha2 := fmt.Sprintf("%x", md5.Sum(a2w.Bytes()))
+	ha2 := ""
+	if vAlg == "sha256" {
+		ha2 = fmt.Sprintf("%x", sha256.Sum256(a2w.Bytes()))
+	} else {
+		ha2 = fmt.Sprintf("%x", md5.Sum(a2w.Bytes()))
+	}
 
 	nc := fmt.Sprintf("%08x", 1)
 	if len(cnonce) == 0 {
@@ -467,8 +474,12 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 	a3w.WriteString(qop)
 	a3w.WriteRune(':')
 	a3w.WriteString(ha2)
-	authres := fmt.Sprintf("%x", md5.Sum(a3w.Bytes()))
-
+	authres := ""
+	if vAlg == "sha256" {
+		authres = fmt.Sprintf("%x", sha256.Sum256(a3w.Bytes()))
+	} else {
+		authres = fmt.Sprintf("%x", md5.Sum(a3w.Bytes()))
+	}
 	authHeader := fmt.Sprintf(`Digest username="%s",
                  realm="%s",
                  uri="%s",
