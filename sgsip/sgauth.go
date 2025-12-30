@@ -363,6 +363,15 @@ func SGAKAComputeF2345(K, OP, OPC, RAND []byte) (res, ck, ik, ak []byte, errv er
 	return res, ck, ik, ak, nil
 }
 
+// SGHashBytes compute hash of data
+func SGHashBytes(vAlg string, vData []byte) string {
+	if vAlg == "sha256" {
+		return fmt.Sprintf("%x", sha256.Sum256(vData))
+	} else {
+		return fmt.Sprintf("%x", md5.Sum(vData))
+	}
+}
+
 // SGAKAHandleChallenge processes the authentication challenge from the server
 func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengeParams map[string]string) (string, error) {
 	var uri, nonce, realm, method, qop string
@@ -429,14 +438,8 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 	a1w.WriteRune(':')
 	a1w.Write(res)
 
-	ha1 := ""
-	if vAlg == "sha256" {
-		// SHA256
-		ha1 = fmt.Sprintf("%x", sha256.Sum256(a1w.Bytes()))
-	} else {
-		// MD5
-		ha1 = fmt.Sprintf("%x", md5.Sum(a1w.Bytes()))
-	}
+	ha1 := SGHashBytes(vAlg, a1w.Bytes())
+
 	cnonce := ""
 	if vSess {
 		cnonce = SGCreateClientNonce(8)
@@ -449,12 +452,7 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 	a2w.WriteRune(':')
 	a2w.WriteString(uri)
 
-	ha2 := ""
-	if vAlg == "sha256" {
-		ha2 = fmt.Sprintf("%x", sha256.Sum256(a2w.Bytes()))
-	} else {
-		ha2 = fmt.Sprintf("%x", md5.Sum(a2w.Bytes()))
-	}
+	ha2 := SGHashBytes(vAlg, a2w.Bytes())
 
 	nc := fmt.Sprintf("%08x", 1)
 	if len(cnonce) == 0 {
@@ -474,12 +472,8 @@ func SGAKAHandleChallenge(username string, key, op, opc, amf []byte, challengePa
 	a3w.WriteString(qop)
 	a3w.WriteRune(':')
 	a3w.WriteString(ha2)
-	authres := ""
-	if vAlg == "sha256" {
-		authres = fmt.Sprintf("%x", sha256.Sum256(a3w.Bytes()))
-	} else {
-		authres = fmt.Sprintf("%x", md5.Sum(a3w.Bytes()))
-	}
+	authres := SGHashBytes(vAlg, a3w.Bytes())
+
 	authHeader := fmt.Sprintf(`Digest username="%s",
                  realm="%s",
                  uri="%s",
