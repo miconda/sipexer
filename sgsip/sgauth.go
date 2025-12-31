@@ -365,7 +365,9 @@ func SGAKAComputeF2345(K, OP, OPC, RAND []byte) (res, ck, ik, ak []byte, errv er
 
 // SGHashBytes compute hash of data
 func SGHashBytes(vAlg string, vData []byte) string {
-	if vAlg == "sha256" {
+	if vAlg == "md5" {
+		return fmt.Sprintf("%x", md5.Sum(vData))
+	} else if vAlg == "sha256" {
 		return fmt.Sprintf("%x", sha256.Sum256(vData))
 	} else {
 		return fmt.Sprintf("%x", md5.Sum(vData))
