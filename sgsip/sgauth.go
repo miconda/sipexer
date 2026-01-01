@@ -55,6 +55,8 @@ func SGHashSHA512(input string) string {
 func SGHashX(sAlg string, sData string) string {
 	sHash := ""
 	switch strings.ToLower(strings.Replace(sAlg, "-", "", 2)) {
+	case "md5":
+		sHash = SGHashMD5(sData)
 	case "sha1":
 		sHash = SGHashSHA1(sData)
 	case "sha256":
