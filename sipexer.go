@@ -282,6 +282,7 @@ type CLIOptions struct {
 	notify           bool
 	cancel           bool
 	ack              bool
+	prack            bool
 	kdmq             bool
 	ruri             string
 	ruser            string
@@ -399,6 +400,7 @@ var cliops = CLIOptions{
 	notify:           false,
 	cancel:           false,
 	ack:              false,
+	prack:            false,
 	kdmq:             false,
 	registerparty:    false,
 	raw:              false,
@@ -578,6 +580,7 @@ func init() {
 	flag.BoolVar(&cliops.notify, "notify", cliops.notify, "set method to NOTIFY")
 	flag.BoolVar(&cliops.options, "o", cliops.options, "set method to OPTIONS")
 	flag.BoolVar(&cliops.options, "options", cliops.options, "set method to OPTIONS")
+	flag.BoolVar(&cliops.prack, "prack", cliops.prack, "set method to PRACK")
 	flag.BoolVar(&cliops.publish, "publish", cliops.publish, "set method to PUBLISH")
 	flag.BoolVar(&cliops.raw, "raw", cliops.registerparty, "sent raw template content (no evaluation)")
 	flag.BoolVar(&cliops.register, "r", cliops.register, "set method to REGISTER")
@@ -1112,6 +1115,8 @@ func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
 		tplfields["method"] = "CANCEL"
 	} else if cliops.ack {
 		tplfields["method"] = "ACK"
+	} else if cliops.prack {
+		tplfields["method"] = "PRACK"
 	} else if cliops.kdmq {
 		tplfields["method"] = "KDMQ"
 	} else if len(cliops.method) > 0 {
