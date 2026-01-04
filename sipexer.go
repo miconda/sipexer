@@ -1,6 +1,6 @@
 /**
  * SIP (RFC3261) Command Line Tool
- * (C) Copyright 2021-2022 Daniel-Constantin Mierla (asipto.com)
+ * (C) Copyright 2021-2026 Daniel-Constantin Mierla (asipto.com)
  * License: GPLv3
  */
 
