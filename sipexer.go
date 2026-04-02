@@ -93,7 +93,7 @@ const (
 )
 
 var templateDefaultText string = `{{.method}} {{.ruri}} SIP/2.0
-Via: SIP/2.0/{{.viaproto}} {{.viaaddr}}{{.rport}};{{.viaparams}}branch=z9hG4bKSG.{{.viabranch}}
+Via: SIP/2.0/{{.viaproto}} {{.viaaddr}}{{.rport}};{{.viaparams}}{{if .viabranch}}branch=z9hG4bKSG.{{.viabranch}}{{end}}
 From: {{if .fromhdr}}{{.fromhdr}}{{else}}{{if .fromuri}}{{.fromuri}}{{else}}{{if .fname}}"{{.fname}}" {{end}}<sip:{{if .fuser}}{{.fuser}}@{{end}}{{.fdomain}}>{{end}}{{if .fromtag}};tag={{.fromtag}}{{end}}{{end}}
 To: {{if .tohdr}}{{.tohdr}}{{else}}{{if .touri}}{{.touri}}{{else}}{{if .tname}}"{{.tname}}" {{end}}<sip:{{if .tuser}}{{.tuser}}@{{end}}{{.tdomain}}>{{end}}{{if .totag}};tag={{.totag}}{{end}}{{end}}
 Call-ID: {{.callid}}
