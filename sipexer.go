@@ -229,6 +229,26 @@ func (m paramFieldsType) Set(value string) error {
 
 var paramFields = make(paramFieldsType)
 
+type paramFieldsUnsetType map[string]bool
+
+func (m paramFieldsUnsetType) String() string {
+	b := new(bytes.Buffer)
+	for key := range m {
+		fmt.Fprintf(b, "%s\n", key)
+	}
+	return b.String()
+}
+
+func (m paramFieldsUnsetType) Set(value string) error {
+	v := strings.TrimSpace(value)
+	if len(v) > 0 {
+		m[v] = true
+	}
+	return nil
+}
+
+var paramFieldsUnset = make(paramFieldsUnsetType)
+
 type headerFieldsType [][2]string
 
 func (m *headerFieldsType) String() string {
@@ -617,6 +637,8 @@ func init() {
 	flag.Var(&iVarMap, "iv", "integer value in format 'name:value' (can be provided many times)")
 	flag.Var(&paramFields, "field-val", "field value in format 'name:value' (can be provided many times)")
 	flag.Var(&paramFields, "fv", "field value in format 'name:value' (can be provided many times)")
+	flag.Var(&paramFieldsUnset, "field-unset", "field name to unset value (can be provided many times)")
+	flag.Var(&paramFieldsUnset, "fvu", "field name to unset value (can be provided many times)")
 
 	flag.BoolVar(&cliops.helpcommands, "help-commands", cliops.helpcommands, "print help with command examples")
 	flag.BoolVar(&cliops.helpcommands, "hc", cliops.helpcommands, "print help with command examples")
@@ -1195,6 +1217,11 @@ func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
 	_, ok = tplfields["tuser"]
 	if ok && tplfields["tuser"] == cliops.noval {
 		delete(tplfields, "tuser")
+	}
+	for k := range paramFieldsUnset {
+		if len(strings.TrimSpace(k)) > 0 {
+			tplfields[k] = ""
+		}
 	}
 
 	return 0

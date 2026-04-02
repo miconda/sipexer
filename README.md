@@ -372,6 +372,16 @@ sipexer --field-val="domain:openrcs.com" ...
 The value provided via `--field-val` overwrites the value provided in the
 JSON fields file.
 
+To explicitly unset a field value from CLI, use `--field-unset` (alias: `-fvu` - field
+value unset), for example:
+
+```shell
+sipexer --field-unset rport --field-unset viabranch ...
+```
+
+If both `--field-val` and `--field-unset` are provided for the same field, the
+unset operation takes precedence.
+
 When sending out, before the template is evaluated, the following fields are also
 added internally and will replace the corresponding `{{.name}}` (e.g., `{{.proto}}`)
 in the template:
