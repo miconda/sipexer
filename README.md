@@ -332,6 +332,8 @@ are replaced if the value of the field is a string matching one of the next:
   * `"$timestamp"` - replace with output of `time.Now().Unix()` - time stamp in seconds
   * `"$timems"` - replace with output of `time.Now().UnixMilli()` - time stamp in milliseconds
   * `"$lf"` - replace with `\n`
+  * `"$viabranchid"` - replace with `z9hG4bKSG.` concatenated with a UUID (universally unique
+    identifier) value
   * `"$uuid"` - replace with a UUID (universally unique identifier) value
 
 When internal template is used, `--fields-eval` is turned on.
