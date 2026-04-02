@@ -947,6 +947,8 @@ func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
 					tplfields[k] = "\r"
 				} else if tplfields[k] == "$lf" {
 					tplfields[k] = "\n"
+				} else if tplfields[k] == "$viabranchid" {
+					tplfields[k] = "z9hG4bKSG." + uuid.New().String()
 				} else {
 					sVal := fmt.Sprint(tplfields[k])
 					if strings.Index(sVal, "$rand(") == 0 && strings.LastIndex(sVal, ")") == len(sVal)-1 {
