@@ -335,6 +335,7 @@ are replaced if the value of the field is a string matching one of the next:
   * `"$viabranchid"` - replace with `z9hG4bKSG.` concatenated with a UUID (universally unique
     identifier) value
   * `"$uuid"` - replace with a UUID (universally unique identifier) value
+  * `"$uuidb64u"` - replace with a UUID in base64url (no padding) format
 
 When internal template is used, `--fields-eval` is turned on.
 

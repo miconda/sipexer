@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -927,6 +928,9 @@ func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
 			case string:
 				if tplfields[k] == "$uuid" {
 					tplfields[k] = uuid.New().String()
+				} else if tplfields[k] == "$uuidb64u" {
+					uuidVal := uuid.New()
+					tplfields[k] = base64.RawURLEncoding.EncodeToString(uuidVal[:])
 				} else if tplfields[k] == "$randseq" {
 					tplfields[k] = strconv.Itoa(1 + mathrand.Intn(999999))
 				} else if tplfields[k] == "$datefull" {
