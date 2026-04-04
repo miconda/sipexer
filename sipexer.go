@@ -132,7 +132,7 @@ var templateDefaultJSONFields string = `{
 	"fdomain": "localhost",
 	"tuser": "bob",
 	"tdomain": "localhost",
-	"viabranch": "$viabranchid",
+	"viabranch": "$viabranchidr",
 	"viaparams": "",
 	"rport": "rport",
 	"fromtag": "$uuid",
