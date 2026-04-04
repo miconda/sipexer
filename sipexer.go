@@ -931,6 +931,10 @@ func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
 				} else if tplfields[k] == "$uuidb64u" {
 					uuidVal := uuid.New()
 					tplfields[k] = base64.RawURLEncoding.EncodeToString(uuidVal[:])
+				} else if tplfields[k] == "$uuidb64r" {
+					uuidVal := uuid.New()
+					escapeX := strings.NewReplacer("9", "99", "-", "90", "_", "91")
+					tplfields[k] = escapeX.Replace(base64.RawURLEncoding.EncodeToString(uuidVal[:]))
 				} else if tplfields[k] == "$randseq" {
 					tplfields[k] = strconv.Itoa(1 + mathrand.Intn(999999))
 				} else if tplfields[k] == "$datefull" {
