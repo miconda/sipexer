@@ -896,6 +896,13 @@ func SIPExerExit(ret int) {
 	os.Exit(nret)
 }
 
+// return UUID encoded with Base64URL, replacing 9 with 99, - with 90, _ with 91
+func SIPExerGetUUIDB64R() string {
+	uuidVal := uuid.New()
+	escapeX := strings.NewReplacer("9", "99", "-", "90", "_", "91")
+	return escapeX.Replace(base64.RawURLEncoding.EncodeToString(uuidVal[:]))
+}
+
 func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
 	var err error
 	var ival int
@@ -932,9 +939,7 @@ func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
 					uuidVal := uuid.New()
 					tplfields[k] = base64.RawURLEncoding.EncodeToString(uuidVal[:])
 				} else if tplfields[k] == "$uuidb64r" {
-					uuidVal := uuid.New()
-					escapeX := strings.NewReplacer("9", "99", "-", "90", "_", "91")
-					tplfields[k] = escapeX.Replace(base64.RawURLEncoding.EncodeToString(uuidVal[:]))
+					tplfields[k] = SIPExerGetUUIDB64R()
 				} else if tplfields[k] == "$randseq" {
 					tplfields[k] = strconv.Itoa(1 + mathrand.Intn(999999))
 				} else if tplfields[k] == "$datefull" {
