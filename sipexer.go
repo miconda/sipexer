@@ -851,8 +851,7 @@ func main() {
 			SIPExerExit(SIPExerRetDone)
 		}
 
-		if (dstSockAddr.ProtoId != sgsip.ProtoUDP) && (dstSockAddr.ProtoId != sgsip.ProtoTCP) &&
-			(dstSockAddr.ProtoId != sgsip.ProtoTLS) && (dstSockAddr.ProtoId != sgsip.ProtoWSS) {
+		if !SIPExerTargetProtoSupported(dstSockAddr.ProtoId) {
 			SIPExerPrintf(SIPExerLogError, "transport protocol not supported yet for target %s\n", dstAddr)
 			SIPExerExit(SIPExerErrProtocolUnsuported)
 		}
@@ -862,8 +861,8 @@ func main() {
 			go SIPExerSendTCP(dstSockAddr, tplstr, tplfields, tchan)
 		} else if dstSockAddr.ProtoId == sgsip.ProtoTLS {
 			go SIPExerSendTLS(dstSockAddr, tplstr, tplfields, tchan)
-		} else if dstSockAddr.ProtoId == sgsip.ProtoWSS {
-			go SIPExerSendWSS(dstSockAddr, wsurlp, tplstr, tplfields, tchan)
+		} else if dstSockAddr.ProtoId == sgsip.ProtoWSS || dstSockAddr.ProtoId == sgsip.ProtoWS {
+			go SIPExerSendWSX(dstSockAddr, wsurlp, tplstr, tplfields, tchan)
 		} else {
 			go SIPExerSendUDP(dstSockAddr, tplstr, tplfields, tchan)
 		}
@@ -901,6 +900,14 @@ func SIPExerGetUUIDB64R() string {
 	uuidVal := uuid.New()
 	escapeX := strings.NewReplacer("9", "99", "-", "90", "_", "91")
 	return escapeX.Replace(base64.RawURLEncoding.EncodeToString(uuidVal[:]))
+}
+
+func SIPExerTargetProtoSupported(protoId int) bool {
+	return protoId == sgsip.ProtoUDP ||
+		protoId == sgsip.ProtoTCP ||
+		protoId == sgsip.ProtoTLS ||
+		protoId == sgsip.ProtoWS ||
+		protoId == sgsip.ProtoWSS
 }
 
 func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
@@ -1534,7 +1541,7 @@ func SIPExerSetWriteTimeoutValue(seDlg *SIPExerDialog, tVal int) {
 		seDlg.ConnTCP.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(tVal)))
 	} else if seDlg.ProtoId == sgsip.ProtoTLS {
 		seDlg.ConnTLS.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(tVal)))
-	} else if seDlg.ProtoId == sgsip.ProtoWSS {
+	} else if seDlg.ProtoId == sgsip.ProtoWSS || seDlg.ProtoId == sgsip.ProtoWS {
 		seDlg.ConnWSS.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(tVal)))
 	}
 }
@@ -1562,7 +1569,7 @@ func SIPExerSetReadTimeoutValue(seDlg *SIPExerDialog, tVal int) int {
 		if err != nil {
 			return SIPExerErrTLSSetReadTimeout
 		}
-	} else if seDlg.ProtoId == sgsip.ProtoWSS {
+	} else if seDlg.ProtoId == sgsip.ProtoWSS || seDlg.ProtoId == sgsip.ProtoWS {
 		err = seDlg.ConnWSS.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(tVal)))
 		if err != nil {
 			return SIPExerErrWSSetReadTimeout
@@ -1609,7 +1616,7 @@ func SIPExerDialogReadBytes(seDlg *SIPExerDialog) int {
 			SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
 			return SIPExerErrTLSRead
 		}
-	} else if seDlg.ProtoId == sgsip.ProtoWSS {
+	} else if seDlg.ProtoId == sgsip.ProtoWSS || seDlg.ProtoId == sgsip.ProtoWS {
 		seDlg.RecvN, err = seDlg.ConnWSS.Conn.Read(seDlg.RecvBuf)
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
@@ -1698,10 +1705,10 @@ func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 			SIPExerPrintf(SIPExerLogError, "error writing on tls - %v\n", err)
 			return SIPExerErrTLSWrite
 		}
-	} else if seDlg.ProtoId == sgsip.ProtoWSS {
+	} else if seDlg.ProtoId == sgsip.ProtoWSS || seDlg.ProtoId == sgsip.ProtoWS {
 		_, err = seDlg.ConnWSS.Conn.Write(bmsg)
 		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "error writing on wss - %v\n", err)
+			SIPExerPrintf(SIPExerLogError, "error writing on ws - %v\n", err)
 			return SIPExerErrWSWrite
 		}
 	} else {
@@ -2124,13 +2131,13 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	tchan <- ret
 }
 
-func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, tplfields map[string]any, tchan chan int) {
+func SIPExerSendWSX(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, tplfields map[string]any, tchan chan int) {
 	var seDlg SIPExerDialog = SIPExerDialog{}
 	var err error
 	var wsorgp *url.URL = nil
 
-	seDlg.Proto = "wss"
-	seDlg.ProtoId = sgsip.ProtoWSS
+	seDlg.Proto = dstSockAddr.Proto
+	seDlg.ProtoId = dstSockAddr.ProtoId
 	seDlg.AType = dstSockAddr.AType
 	seDlg.ConnWSS = new(SIPExerConnWSS)
 
@@ -2147,23 +2154,25 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 		return
 	}
 
-	var tlc tls.Config
-	if len(cliops.tlscertificate) > 0 && len(cliops.tlskey) > 0 {
-		var tlscert tls.Certificate
-		tlscert, err = tls.LoadX509KeyPair(cliops.tlscertificate, cliops.tlskey)
-		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-			tchan <- SIPExerErrTLSReadCertificates
-			return
-		}
-		tlc = tls.Config{Certificates: []tls.Certificate{tlscert}, InsecureSkipVerify: false}
-	} else {
-		tlc = tls.Config{
-			InsecureSkipVerify: false,
-		}
+	var tlc *tls.Config = nil
+	tlcv := tls.Config{
+		InsecureSkipVerify: false,
 	}
-	if cliops.tlsinsecure {
-		tlc.InsecureSkipVerify = true
+	var tlscert tls.Certificate
+	if seDlg.ProtoId == sgsip.ProtoWSS {
+		if len(cliops.tlscertificate) > 0 && len(cliops.tlskey) > 0 {
+			tlscert, err = tls.LoadX509KeyPair(cliops.tlscertificate, cliops.tlskey)
+			if err != nil {
+				SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+				tchan <- SIPExerErrTLSReadCertificates
+				return
+			}
+			tlcv.Certificates = []tls.Certificate{tlscert}
+		}
+		if cliops.tlsinsecure {
+			tlcv.InsecureSkipVerify = true
+		}
+		tlc = &tlcv
 	}
 
 	netDialer := net.Dialer{}
@@ -2177,7 +2186,7 @@ func SIPExerSendWSS(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 		Origin:    wsorgp,
 		Protocol:  []string{cliops.wsproto},
 		Version:   13,
-		TlsConfig: &tlc,
+		TlsConfig: tlc,
 		Dialer:    &netDialer,
 		Header:    http.Header{"User-Agent": {"sipexer v" + sipexerVersion}},
 	})
