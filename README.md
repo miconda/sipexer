@@ -199,6 +199,12 @@ Send `MESSAGE` request with body over `wss` (WebSocket Secure):
 sipexer -message -mb 'Hello!' -sd -su wss://server.com:8443/sip
 ```
 
+Send `MESSAGE` request with body over `ws` (WebSocket):
+
+```
+sipexer -message -mb 'Hello!' -sd -su ws://server.com:8080/sip
+```
+
 Send `INVITE` request with default From user `alice` and To user `bob`:
 
 ```
@@ -235,6 +241,7 @@ The format can be:
 
   * SIP URI (e.g., `sip:user@server.com:5080;transport=tls`)
   * SIP proxy socket address in format `proto:host:port` (e.g., `tls:server.com:5061`)
+  * WS URL (e.g., `ws://server.com:8080/webrtc`)
   * WSS URL (e.g., `wss://server.com:8442/webrtc`)
   * only the server `hostname` or `IP` (e.g., `server.com`)
   * `host:port` (transport protocol is set to `UDP`)
