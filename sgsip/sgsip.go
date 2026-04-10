@@ -1165,8 +1165,7 @@ func SGSIPInviteToACKString(invReq *SGSIPMessage, invRpl *SGSIPMessage, outputSt
 // SGSIPACKToByeString --
 func SGSIPACKToByeString(ackReq *SGSIPMessage, outputStr *string) int {
 	var sb strings.Builder
-	if len(ackReq.FLine.Val) == 0 || len(ackReq.Headers) == 0 ||
-		len(ackReq.FLine.Val) == 0 || len(ackReq.Headers) == 0 {
+	if len(ackReq.FLine.Val) == 0 || len(ackReq.Headers) == 0 {
 		return SGSIPRetErrMessageNotSet
 	}
 	sb.WriteString("BYE " + ackReq.FLine.URI + " SIP/2.0\r\n")
@@ -1210,8 +1209,7 @@ func SGSIPACKToByeString(ackReq *SGSIPMessage, outputStr *string) int {
 
 func SGSIPMessageToResponseString(sipReq *SGSIPMessage, scode string, sreason string, outputStr *string) int {
 	var sb strings.Builder
-	if len(sipReq.FLine.Val) == 0 || len(sipReq.Headers) == 0 ||
-		len(sipReq.FLine.Val) == 0 || len(sipReq.Headers) == 0 {
+	if len(sipReq.FLine.Val) == 0 || len(sipReq.Headers) == 0 {
 		return SGSIPRetErrMessageNotSet
 	}
 
