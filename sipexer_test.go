@@ -447,3 +447,24 @@ func TestPrepareMessageCRLFNormalization(t *testing.T) {
 		}
 	})
 }
+
+func TestTargetProtoSupported(t *testing.T) {
+	if !SIPExerTargetProtoSupported(sgsip.ProtoUDP) {
+		t.Fatalf("expected UDP to be supported")
+	}
+	if !SIPExerTargetProtoSupported(sgsip.ProtoTCP) {
+		t.Fatalf("expected TCP to be supported")
+	}
+	if !SIPExerTargetProtoSupported(sgsip.ProtoTLS) {
+		t.Fatalf("expected TLS to be supported")
+	}
+	if !SIPExerTargetProtoSupported(sgsip.ProtoWS) {
+		t.Fatalf("expected WS to be supported")
+	}
+	if !SIPExerTargetProtoSupported(sgsip.ProtoWSS) {
+		t.Fatalf("expected WSS to be supported")
+	}
+	if SIPExerTargetProtoSupported(sgsip.ProtoSCTP) {
+		t.Fatalf("expected SCTP to be unsupported")
+	}
+}
