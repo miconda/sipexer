@@ -365,6 +365,9 @@ type CLIOptions struct {
 	akaop            string
 	akaopc           string
 	akaamf           string
+	callself         bool
+	ringtime         int
+	callduration     int
 	version          bool
 }
 
@@ -442,6 +445,9 @@ var cliops = CLIOptions{
 	akaop:            "",
 	akaopc:           "",
 	akaamf:           "",
+	callself:         false,
+	ringtime:         2000,
+	callduration:     10000,
 }
 
 func sipexer_help_commands() {
@@ -579,6 +585,8 @@ func init() {
 	flag.BoolVar(&cliops.coloroutput, "co", cliops.coloroutput, "color output")
 	flag.BoolVar(&cliops.coloroutput, "color-output", cliops.coloroutput, "color output")
 	flag.BoolVar(&cliops.connectudp, "connect-udp", cliops.connectudp, "attempt first a connect for UDP (dial ICMP connect)")
+	flag.BoolVar(&cliops.callself, "call-self", cliops.callself, "perform REGISTER then self-call scenario")
+	flag.BoolVar(&cliops.callself, "cs", cliops.callself, "perform REGISTER then self-call scenario")
 	flag.BoolVar(&cliops.contactbuild, "cb", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.contactbuild, "contact-build", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.dnssrvprint, "dns-srv-print", cliops.dnssrvprint, "print DNS SRV records")
@@ -622,6 +630,10 @@ func init() {
 	flag.IntVar(&cliops.af, "af", cliops.af, "enforce address family for socket (4 or 6)")
 	flag.IntVar(&cliops.runcount, "rc", cliops.runcount, "how many times to recreate and send the message")
 	flag.IntVar(&cliops.runcount, "run-count", cliops.runcount, "how many times to recreate and send the message")
+	flag.IntVar(&cliops.ringtime, "ring-time", cliops.ringtime, "ringing time in milliseconds before 200 OK in self-call mode")
+	flag.IntVar(&cliops.ringtime, "rt", cliops.ringtime, "ringing time in milliseconds before 200 OK in self-call mode")
+	flag.IntVar(&cliops.callduration, "call-duration", cliops.callduration, "call duration in milliseconds before BYE in self-call mode")
+	flag.IntVar(&cliops.callduration, "cd", cliops.callduration, "call duration in milliseconds before BYE in self-call mode")
 	flag.IntVar(&cliops.sessionwait, "sessionwait", cliops.sessionwait, "time in millisecons to wait for a session")
 	flag.IntVar(&cliops.sessionwait, "sw", cliops.sessionwait, "time in millisecons to wait for a session")
 	flag.IntVar(&cliops.timeout, "timeout", cliops.timeout, "timeout waiting to receive data (milliseconds)")
@@ -855,19 +867,11 @@ func main() {
 			SIPExerPrintf(SIPExerLogError, "transport protocol not supported yet for target %s\n", dstAddr)
 			SIPExerExit(SIPExerErrProtocolUnsuported)
 		}
-
-		tchan := make(chan int, 1)
-		if dstSockAddr.ProtoId == sgsip.ProtoTCP {
-			go SIPExerSendTCP(dstSockAddr, tplstr, tplfields, tchan)
-		} else if dstSockAddr.ProtoId == sgsip.ProtoTLS {
-			go SIPExerSendTLS(dstSockAddr, tplstr, tplfields, tchan)
-		} else if dstSockAddr.ProtoId == sgsip.ProtoWSS || dstSockAddr.ProtoId == sgsip.ProtoWS {
-			go SIPExerSendWSX(dstSockAddr, wsurlp, tplstr, tplfields, tchan)
+		if cliops.callself {
+			tret = SIPExerRunCallSelf(dstSockAddr, wsurlp, tplstr, tplfields)
 		} else {
-			go SIPExerSendUDP(dstSockAddr, tplstr, tplfields, tchan)
+			tret = SIPExerRunSend(dstSockAddr, wsurlp, tplstr, tplfields)
 		}
-		tret = <-tchan
-		close(tchan)
 	}
 
 	SIPExerExit(tret)
@@ -908,6 +912,82 @@ func SIPExerTargetProtoSupported(protoId int) bool {
 		protoId == sgsip.ProtoTLS ||
 		protoId == sgsip.ProtoWS ||
 		protoId == sgsip.ProtoWSS
+}
+
+func SIPExerRunSend(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, tplfields map[string]any) int {
+	tchan := make(chan int, 1)
+	if dstSockAddr.ProtoId == sgsip.ProtoTCP {
+		go SIPExerSendTCP(dstSockAddr, tplstr, tplfields, tchan)
+	} else if dstSockAddr.ProtoId == sgsip.ProtoTLS {
+		go SIPExerSendTLS(dstSockAddr, tplstr, tplfields, tchan)
+	} else if dstSockAddr.ProtoId == sgsip.ProtoWSS || dstSockAddr.ProtoId == sgsip.ProtoWS {
+		go SIPExerSendWSX(dstSockAddr, wsurlp, tplstr, tplfields, tchan)
+	} else {
+		go SIPExerSendUDP(dstSockAddr, tplstr, tplfields, tchan)
+	}
+	tret := <-tchan
+	close(tchan)
+	return tret
+}
+
+func SIPExerCloneTplFields(src map[string]any) map[string]any {
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func SIPExerRunCallSelf(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, baseTplFields map[string]any) int {
+	fuser := fmt.Sprint(baseTplFields["fuser"])
+	if len(strings.TrimSpace(fuser)) == 0 {
+		SIPExerPrintf(SIPExerLogError, "self-call mode requires 'fuser' to be set\n")
+		return SIPExerErrTemplateData
+	}
+	if cliops.ringtime < 0 {
+		SIPExerPrintf(SIPExerLogError, "invalid ring-time value: %d\n", cliops.ringtime)
+		return SIPExerRetErr
+	}
+	if cliops.callduration < 0 {
+		SIPExerPrintf(SIPExerLogError, "invalid call-duration value: %d\n", cliops.callduration)
+		return SIPExerRetErr
+	}
+
+	svRegister := cliops.register
+	svInvite := cliops.invite
+	svMethod := cliops.method
+	svSessionWait := cliops.sessionwait
+	defer func() {
+		cliops.register = svRegister
+		cliops.invite = svInvite
+		cliops.method = svMethod
+		cliops.sessionwait = svSessionWait
+	}()
+
+	cliops.sessionwait = 0
+
+	regFields := SIPExerCloneTplFields(baseTplFields)
+	regFields["method"] = "REGISTER"
+	cliops.register = true
+	cliops.invite = false
+	cliops.method = "REGISTER"
+	SIPExerPrintf(SIPExerLogInfo, "self-call stage: REGISTER\n")
+	ret := SIPExerRunSend(dstSockAddr, wsurlp, tplstr, regFields)
+	if ret < 200 || ret >= 300 {
+		return ret
+	}
+
+	invFields := SIPExerCloneTplFields(baseTplFields)
+	invFields["method"] = "INVITE"
+	invFields["tuser"] = fuser
+	var selfURI sgsip.SGSIPURI
+	sgsip.SGSocketAddressToSIPURI(&dstSockAddr, fuser, 0, &selfURI)
+	invFields["ruri"] = selfURI.Val
+	cliops.register = false
+	cliops.invite = true
+	cliops.method = "INVITE"
+	SIPExerPrintf(SIPExerLogInfo, "self-call stage: INVITE self user '%s'\n", fuser)
+	return SIPExerRunSend(dstSockAddr, wsurlp, tplstr, invFields)
 }
 
 func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
@@ -1791,6 +1871,94 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 			ret = SIPExerProcessResponse(seDlg.FirstRequest, seDlg.RecvBuf, seDlg.LastResponse, &seDlg.SkipAuth, &smsg, &sack)
 			if ret < 0 {
 				return ret
+			}
+			if cliops.callself && seDlg.LastResponse.FLine.MType == sgsip.FLineRequest {
+				if seDlg.LastResponse.FLine.MethodId == sgsip.SIPMethodINVITE {
+					for _, resp := range []struct {
+						code   string
+						reason string
+					}{
+						{code: "100", reason: "Trying"},
+						{code: "180", reason: "Ringing"},
+					} {
+						if sgsip.SGSIPMessageToResponseString(seDlg.LastResponse, resp.code, resp.reason, &smsg) != sgsip.SGSIPRetOK {
+							SIPExerPrintf(SIPExerLogError, "failed to build %s response\n", resp.code)
+							return SIPExerErrSIPMessageToString
+						}
+						SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
+						SIPExerMessagePrint("\n\n", smsg, "\n")
+						SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+						ret = SIPExerSendBytes(seDlg, []byte(smsg))
+						if ret < 0 {
+							return ret
+						}
+					}
+					if cliops.ringtime > 0 {
+						time.Sleep(time.Millisecond * time.Duration(cliops.ringtime))
+					}
+					if sgsip.SGSIPMessageToResponseString(seDlg.LastResponse, "200", "OK", &smsg) != sgsip.SGSIPRetOK {
+						SIPExerPrintf(SIPExerLogError, "failed to build 200 response\n")
+						return SIPExerErrSIPMessageToString
+					}
+					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
+					SIPExerMessagePrint("\n\n", smsg, "\n")
+					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+					ret = SIPExerSendBytes(seDlg, []byte(smsg))
+					if ret < 0 {
+						return ret
+					}
+					seDlg.State = SIPExerDialogAnswered
+					seDlg.RecvBuf = make([]byte, cliops.buffersize)
+					continue
+				}
+				if seDlg.LastResponse.FLine.MethodId == sgsip.SIPMethodACK {
+					if cliops.callduration > 0 {
+						time.Sleep(time.Millisecond * time.Duration(cliops.callduration))
+					}
+					if sgsip.SGSIPACKToByeString(seDlg.LastResponse, &smsg) != sgsip.SGSIPRetOK {
+						SIPExerPrintf(SIPExerLogError, "failed to build sip bye message\n")
+						return SIPExerErrSIPMessageToString
+					}
+					wmsg = []byte(smsg)
+					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
+					SIPExerMessagePrint("\n\n", smsg, "\n")
+					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+					if seDlg.ProtoId == sgsip.ProtoUDP {
+						seDlg.TimeoutStep = cliops.timert1
+						seDlg.TimeoutVal = seDlg.TimeoutStep
+						seDlg.Resend = true
+					}
+					ret = SIPExerSendBytes(seDlg, wmsg)
+					if ret < 0 {
+						return ret
+					}
+					seDlg.State = SIPExerDialogConfirmed
+					seDlg.RecvBuf = make([]byte, cliops.buffersize)
+					continue
+				}
+				if seDlg.LastResponse.FLine.MethodId == sgsip.SIPMethodBYE {
+					if sgsip.SGSIPMessageToResponseString(seDlg.LastResponse, "200", "OK", &smsg) != sgsip.SGSIPRetOK {
+						SIPExerPrintf(SIPExerLogError, "failed to build 200 response to BYE\n")
+						return SIPExerErrSIPMessageToString
+					}
+					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
+					SIPExerMessagePrint("\n\n", smsg, "\n")
+					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+					ret = SIPExerSendBytes(seDlg, []byte(smsg))
+					if ret < 0 {
+						return ret
+					}
+					seDlg.State = SIPExerDialogTerminated
+					return SIPExerRetOK
+				}
+				if sgsip.SGSIPMessageToResponseString(seDlg.LastResponse, "200", "OK", &smsg) == sgsip.SGSIPRetOK {
+					ret = SIPExerSendBytes(seDlg, []byte(smsg))
+					if ret < 0 {
+						return ret
+					}
+				}
+				seDlg.RecvBuf = make([]byte, cliops.buffersize)
+				continue
 			}
 			if ret/100 == 1 {
 				// 1xx response - read again, but do not re-send UDP request

@@ -219,6 +219,12 @@ with higher verbosity level (`3`) and color printing:
 sipexer -invite -vl 3 -co -com -fuser alice -tuser bob -cb -ap "4a4a4a4a4a..." -ha1 -sw 10000 -sd -su udp:server.com:5060
 ```
 
+Run a self-call flow (REGISTER, self-INVITE, `100/180/200`, wait ACK, then BYE):
+
+```shell
+sipexer --call-self --ring-time 2000 --call-duration 10000 -fuser alice -cb -sd -su udp:server.com:5060
+```
+
 To remove the default value for implicit fields (e.g., `useragent`), the `-no-val` value can
 be provided (which is default `no`), like:
 
