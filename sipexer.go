@@ -208,6 +208,7 @@ type SIPExerDialog struct {
 	TimeoutVal   int
 	Resend       bool
 	SkipAuth     bool
+	CallSelfBye  bool
 }
 
 type paramFieldsType map[string]string
@@ -1071,13 +1072,33 @@ func SIPExerRunCallSelf(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, t
 
 	cliops.sessionwait = 0
 
+	var seDlg *SIPExerDialog
+	if dstSockAddr.ProtoId == sgsip.ProtoUDP ||
+		dstSockAddr.ProtoId == sgsip.ProtoTCP ||
+		dstSockAddr.ProtoId == sgsip.ProtoTLS ||
+		dstSockAddr.ProtoId == sgsip.ProtoWS ||
+		dstSockAddr.ProtoId == sgsip.ProtoWSS {
+		seDlg = &SIPExerDialog{}
+		ret := SIPExerInitDialog(dstSockAddr, wsurlp, seDlg)
+		if ret != SIPExerRetOK {
+			return ret
+		}
+		defer SIPExerDialogCloseConn(seDlg)
+	}
+
 	regFields := SIPExerCloneTplFields(baseTplFields)
 	regFields["method"] = "REGISTER"
 	cliops.register = true
 	cliops.invite = false
 	cliops.method = "REGISTER"
 	SIPExerPrintf(SIPExerLogInfo, "self-call stage: REGISTER\n")
-	ret := SIPExerRunSend(dstSockAddr, wsurlp, tplstr, regFields)
+	ret := SIPExerRetErr
+	if seDlg != nil {
+		SIPExerDialogResetForRequest(seDlg)
+		ret = SIPExerDialogLoop(tplstr, regFields, seDlg)
+	} else {
+		ret = SIPExerRunSend(dstSockAddr, wsurlp, tplstr, regFields)
+	}
 	if ret < 200 || ret >= 300 {
 		return ret
 	}
@@ -1092,6 +1113,10 @@ func SIPExerRunCallSelf(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, t
 	cliops.invite = true
 	cliops.method = "INVITE"
 	SIPExerPrintf(SIPExerLogInfo, "self-call stage: INVITE self user '%s'\n", fuser)
+	if seDlg != nil {
+		SIPExerDialogResetForRequest(seDlg)
+		return SIPExerDialogLoop(tplstr, invFields, seDlg)
+	}
 	return SIPExerRunSend(dstSockAddr, wsurlp, tplstr, invFields)
 }
 
@@ -2187,6 +2212,34 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 		}
 		ret = SIPExerDialogReadBytes(seDlg)
 		if ret < 0 {
+			if cliops.callself && !seDlg.CallSelfBye && seDlg.AckRequest != nil && seDlg.State >= SIPExerDialogAnswered {
+				if cliops.callduration > 0 {
+					time.Sleep(time.Millisecond * time.Duration(cliops.callduration))
+				}
+				if sgsip.SGSIPACKToByeString(seDlg.AckRequest, &smsg) != sgsip.SGSIPRetOK {
+					SIPExerPrintf(SIPExerLogError, "failed to build sip bye message\n")
+					return SIPExerErrSIPMessageToString
+				}
+				wmsg = []byte(smsg)
+				SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
+				SIPExerMessagePrint("\n\n", smsg, "\n")
+				SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+				if seDlg.ProtoId == sgsip.ProtoUDP {
+					seDlg.TimeoutStep = cliops.timert1
+					seDlg.TimeoutVal = seDlg.TimeoutStep
+					seDlg.Resend = true
+				} else {
+					seDlg.Resend = false
+					seDlg.State = SIPExerDialogEarly
+				}
+				ret = SIPExerSendBytes(seDlg, wmsg)
+				if ret < 0 {
+					return ret
+				}
+				seDlg.CallSelfBye = true
+				seDlg.RecvBuf = make([]byte, cliops.buffersize)
+				continue
+			}
 			if seDlg.ProtoId == sgsip.ProtoUDP && ret == SIPExerErrUDPReceiveTimeout {
 				// perform udp retransmission
 				if seDlg.TimeoutStep < cliops.timert2 {
@@ -2244,6 +2297,18 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 						SIPExerPrintf(SIPExerLogError, "failed to build 200 response\n")
 						return SIPExerErrSIPMessageToString
 					}
+					if cliops.callself {
+						invRpl := sgsip.SGSIPMessage{}
+						if sgsip.SGSIPParseMessage(smsg, &invRpl) == sgsip.SGSIPRetOK {
+							sackLocal := ""
+							if sgsip.SGSIPInviteToACKString(seDlg.LastResponse, &invRpl, &sackLocal) == sgsip.SGSIPRetOK {
+								ackReq := sgsip.SGSIPMessage{}
+								if sgsip.SGSIPParseMessage(sackLocal, &ackReq) == sgsip.SGSIPRetOK {
+									seDlg.AckRequest = &ackReq
+								}
+							}
+						}
+					}
 					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
 					SIPExerMessagePrint("\n\n", smsg, "\n")
 					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
@@ -2256,7 +2321,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					continue
 				}
 				if seDlg.LastResponse.FLine.MethodId == sgsip.SIPMethodACK {
-					if cliops.callself {
+					if cliops.callself && !seDlg.CallSelfBye {
 						if cliops.callduration > 0 {
 							time.Sleep(time.Millisecond * time.Duration(cliops.callduration))
 						}
@@ -2277,6 +2342,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 						if ret < 0 {
 							return ret
 						}
+						seDlg.CallSelfBye = true
 					}
 					seDlg.State = SIPExerDialogConfirmed
 					seDlg.RecvBuf = make([]byte, cliops.buffersize)
@@ -2343,12 +2409,50 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 				if ret1 < 0 {
 					return ret
 				}
+				if cliops.callself && ret/100 == 2 && !seDlg.CallSelfBye {
+					ackReq := sgsip.SGSIPMessage{}
+					if sgsip.SGSIPParseMessage(sack, &ackReq) != sgsip.SGSIPRetOK {
+						SIPExerPrintf(SIPExerLogError, "failed to parse ack message for call-self bye\n%+v\n\n", sack)
+						return SIPExerErrSIPMessageFormat
+					}
+					if cliops.callduration > 0 {
+						time.Sleep(time.Millisecond * time.Duration(cliops.callduration))
+					}
+					if sgsip.SGSIPACKToByeString(&ackReq, &smsg) != sgsip.SGSIPRetOK {
+						SIPExerPrintf(SIPExerLogError, "failed to build sip bye message\n")
+						return SIPExerErrSIPMessageToString
+					}
+					wmsg = []byte(smsg)
+					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
+					SIPExerMessagePrint("\n\n", smsg, "\n")
+					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+					if seDlg.ProtoId == sgsip.ProtoUDP {
+						seDlg.TimeoutStep = cliops.timert1
+						seDlg.TimeoutVal = seDlg.TimeoutStep
+						seDlg.Resend = true
+					}
+					ret1 = SIPExerSendBytes(seDlg, wmsg)
+					if ret1 < 0 {
+						return ret
+					}
+					seDlg.CallSelfBye = true
+				}
 				if ret/100 == 2 {
 					if seDlg.State == SIPExerDialogAnswered {
 						seDlg.State = SIPExerDialogConfirmed
 					}
 				}
 				time.Sleep(200 * time.Millisecond)
+				if cliops.callself && ret >= 200 && ret < 300 {
+					// In call-self mode keep the loop alive after INVITE 2xx so we can
+					// complete the BYE transaction instead of returning immediately.
+					if seDlg.ProtoId != sgsip.ProtoUDP {
+						seDlg.Resend = false
+						seDlg.State = SIPExerDialogEarly
+					}
+					seDlg.RecvBuf = make([]byte, cliops.buffersize)
+					continue
+				}
 			}
 			if cliops.sessionwait > 0 && ret >= 200 && ret < 300 && (cliops.invite || cliops.register) {
 				SIPExerSessionWaitAndRead(seDlg)
@@ -2426,6 +2530,73 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 
 func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]any, tchan chan int) {
 	var seDlg SIPExerDialog = SIPExerDialog{}
+	ret := SIPExerInitUDPDialog(dstSockAddr, &seDlg)
+	if ret != SIPExerRetOK {
+		tchan <- ret
+		return
+	}
+	defer seDlg.ConnUDP.Conn.Close()
+	ret = SIPExerDialogLoop(tplstr, tplfields, &seDlg)
+	tchan <- ret
+}
+
+func SIPExerDialogResetForRequest(seDlg *SIPExerDialog) {
+	seDlg.State = SIPExerDialogInit
+	seDlg.Method = ""
+	seDlg.MethodId = 0
+	seDlg.LocalCSeq = 0
+	seDlg.FirstRequest = nil
+	seDlg.LastRequest = nil
+	seDlg.AckRequest = nil
+	seDlg.LastResponse = nil
+	seDlg.RecvBuf = nil
+	seDlg.RecvN = 0
+	seDlg.TimeoutStep = cliops.timert1
+	seDlg.TimeoutVal = seDlg.TimeoutStep
+	seDlg.Resend = true
+	seDlg.SkipAuth = false
+	seDlg.CallSelfBye = false
+}
+
+func SIPExerDialogCloseConn(seDlg *SIPExerDialog) {
+	if seDlg == nil {
+		return
+	}
+	if seDlg.ProtoId == sgsip.ProtoUDP && seDlg.ConnUDP != nil && seDlg.ConnUDP.Conn != nil {
+		seDlg.ConnUDP.Conn.Close()
+		return
+	}
+	if seDlg.ProtoId == sgsip.ProtoTCP && seDlg.ConnTCP != nil && seDlg.ConnTCP.Conn != nil {
+		seDlg.ConnTCP.Conn.Close()
+		return
+	}
+	if seDlg.ProtoId == sgsip.ProtoTLS && seDlg.ConnTLS != nil && seDlg.ConnTLS.Conn != nil {
+		seDlg.ConnTLS.Conn.Close()
+		return
+	}
+	if (seDlg.ProtoId == sgsip.ProtoWS || seDlg.ProtoId == sgsip.ProtoWSS) && seDlg.ConnWSS != nil && seDlg.ConnWSS.Conn != nil {
+		seDlg.ConnWSS.Conn.Close()
+		return
+	}
+}
+
+func SIPExerInitDialog(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, seDlg *SIPExerDialog) int {
+	if dstSockAddr.ProtoId == sgsip.ProtoUDP {
+		return SIPExerInitUDPDialog(dstSockAddr, seDlg)
+	}
+	if dstSockAddr.ProtoId == sgsip.ProtoTCP {
+		return SIPExerInitTCPDialog(dstSockAddr, seDlg)
+	}
+	if dstSockAddr.ProtoId == sgsip.ProtoTLS {
+		return SIPExerInitTLSDialog(dstSockAddr, seDlg)
+	}
+	if dstSockAddr.ProtoId == sgsip.ProtoWS || dstSockAddr.ProtoId == sgsip.ProtoWSS {
+		return SIPExerInitWSXDialog(dstSockAddr, wsurlp, seDlg)
+	}
+	return SIPExerErrProtocolUnsuported
+}
+
+func SIPExerInitUDPDialog(dstSockAddr sgsip.SGSIPSocketAddress, seDlg *SIPExerDialog) int {
 	var err error
 
 	seDlg.Proto = "udp"
@@ -2449,15 +2620,13 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		seDlg.ConnUDP.SrcAddr, err = net.ResolveUDPAddr(strAFProto, cliops.localaddress)
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-			tchan <- SIPExerErrResolveSrcUDPAddr
-			return
+			return SIPExerErrResolveSrcUDPAddr
 		}
 	}
 	seDlg.ConnUDP.DstAddr, err = net.ResolveUDPAddr(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port)
 	if err != nil {
 		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-		tchan <- SIPExerErrResolveDstUDPAddr
-		return
+		return SIPExerErrResolveDstUDPAddr
 	}
 	if cliops.connectudp {
 		seDlg.ConnUDP.Conn, err = net.DialUDP(strAFProto, seDlg.ConnUDP.SrcAddr, seDlg.ConnUDP.DstAddr)
@@ -2466,10 +2635,8 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	}
 	if err != nil {
 		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-		tchan <- SIPExerErrUDPSocket
-		return
+		return SIPExerErrUDPSocket
 	}
-	defer seDlg.ConnUDP.Conn.Close()
 
 	// get local address
 	lAddr := seDlg.ConnUDP.Conn.LocalAddr().String()
@@ -2480,8 +2647,8 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		conn1, err = net.DialUDP(strAFProto, nil, seDlg.ConnUDP.DstAddr)
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error: %v (proto: %v - local: %v - remote: %v)\n", err, strAFProto, lAddr, seDlg.ConnUDP.DstAddr)
-			tchan <- SIPExerErrUDPDial
-			return
+			seDlg.ConnUDP.Conn.Close()
+			return SIPExerErrUDPDial
 		}
 		lAddr1 := conn1.LocalAddr().String()
 		lIdx0 := strings.LastIndex(lAddr, ":")
@@ -2493,16 +2660,11 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	seDlg.LocalAddr = lAddr
 	seDlg.TargetAddr = seDlg.ConnUDP.DstAddr.String()
 	seDlg.RecvAddr = seDlg.TargetAddr
-	seDlg.Resend = true
-	seDlg.TimeoutStep = cliops.timert1
-	seDlg.TimeoutVal = seDlg.TimeoutStep
-
-	ret := SIPExerDialogLoop(tplstr, tplfields, &seDlg)
-	tchan <- ret
+	SIPExerDialogResetForRequest(seDlg)
+	return SIPExerRetOK
 }
 
-func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]any, tchan chan int) {
-	var seDlg SIPExerDialog = SIPExerDialog{}
+func SIPExerInitTCPDialog(dstSockAddr sgsip.SGSIPSocketAddress, seDlg *SIPExerDialog) int {
 	var err error
 
 	seDlg.Proto = "tcp"
@@ -2526,15 +2688,13 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		seDlg.ConnTCP.SrcAddr, err = net.ResolveTCPAddr(strAFProto, cliops.localaddress)
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-			tchan <- SIPExerErrResolveSrcTCPAddr
-			return
+			return SIPExerErrResolveSrcTCPAddr
 		}
 	}
 	seDlg.ConnTCP.DstAddr, err = net.ResolveTCPAddr(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port)
 	if err != nil {
 		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-		tchan <- SIPExerErrResolveDstTCPAddr
-		return
+		return SIPExerErrResolveDstTCPAddr
 	}
 
 	if cliops.timeoutconnect > 0 {
@@ -2552,24 +2712,19 @@ func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	}
 	if err != nil {
 		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-		tchan <- SIPExerErrTCPDial
-		return
+		return SIPExerErrTCPDial
 	}
-
-	defer seDlg.ConnTCP.Conn.Close()
 
 	seDlg.LocalAddr = seDlg.ConnTCP.Conn.LocalAddr().String()
 	seDlg.TargetAddr = seDlg.ConnTCP.Conn.RemoteAddr().String()
 	seDlg.RecvAddr = seDlg.TargetAddr
+	SIPExerDialogResetForRequest(seDlg)
 	seDlg.TimeoutStep = cliops.timeout
 	seDlg.TimeoutVal = seDlg.TimeoutStep
-
-	ret := SIPExerDialogLoop(tplstr, tplfields, &seDlg)
-	tchan <- ret
+	return SIPExerRetOK
 }
 
-func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]any, tchan chan int) {
-	var seDlg SIPExerDialog = SIPExerDialog{}
+func SIPExerInitTLSDialog(dstSockAddr sgsip.SGSIPSocketAddress, seDlg *SIPExerDialog) int {
 	var err error
 
 	seDlg.Proto = "tls"
@@ -2595,8 +2750,7 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		tlscert, err = tls.LoadX509KeyPair(cliops.tlscertificate, cliops.tlskey)
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-			tchan <- SIPExerErrTLSReadCertificates
-			return
+			return SIPExerErrTLSReadCertificates
 		}
 		tlc = tls.Config{Certificates: []tls.Certificate{tlscert}, InsecureSkipVerify: false}
 	} else {
@@ -2619,10 +2773,8 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	}
 	if err != nil {
 		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-		tchan <- SIPExerErrTLSDial
-		return
+		return SIPExerErrTLSDial
 	}
-	defer seDlg.ConnTLS.Conn.Close()
 
 	if cliops.verbosity >= SIPExerLogDebug {
 		SIPExerPrintln(SIPExerLogDebug, "client: ", seDlg.ConnTLS.Conn.LocalAddr(), "connected to: ", seDlg.ConnTLS.Conn.RemoteAddr())
@@ -2638,15 +2790,13 @@ func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 	seDlg.LocalAddr = seDlg.ConnTLS.Conn.LocalAddr().String()
 	seDlg.TargetAddr = seDlg.ConnTLS.Conn.RemoteAddr().String()
 	seDlg.RecvAddr = seDlg.TargetAddr
+	SIPExerDialogResetForRequest(seDlg)
 	seDlg.TimeoutStep = cliops.timeout
 	seDlg.TimeoutVal = seDlg.TimeoutStep
-
-	ret := SIPExerDialogLoop(tplstr, tplfields, &seDlg)
-	tchan <- ret
+	return SIPExerRetOK
 }
 
-func SIPExerSendWSX(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, tplfields map[string]any, tchan chan int) {
-	var seDlg SIPExerDialog = SIPExerDialog{}
+func SIPExerInitWSXDialog(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, seDlg *SIPExerDialog) int {
 	var err error
 	var wsorgp *url.URL = nil
 
@@ -2657,15 +2807,13 @@ func SIPExerSendWSX(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 
 	if wsurlp == nil {
 		SIPExerPrintf(SIPExerLogError, "nil ws url\n")
-		tchan <- SIPExerErrWSDial
-		return
+		return SIPExerErrWSDial
 	}
 
 	wsorgp, err = url.Parse(cliops.wsorigin)
 	if err != nil {
 		SIPExerPrintf(SIPExerLogError, "error parsing origin url: %v\n", err)
-		tchan <- SIPExerErrWSOrigin
-		return
+		return SIPExerErrWSOrigin
 	}
 
 	var tlc *tls.Config = nil
@@ -2678,8 +2826,7 @@ func SIPExerSendWSX(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 			tlscert, err = tls.LoadX509KeyPair(cliops.tlscertificate, cliops.tlskey)
 			if err != nil {
 				SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-				tchan <- SIPExerErrTLSReadCertificates
-				return
+				return SIPExerErrTLSReadCertificates
 			}
 			tlcv.Certificates = []tls.Certificate{tlscert}
 		}
@@ -2693,8 +2840,6 @@ func SIPExerSendWSX(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 	if cliops.timeoutconnect > 0 {
 		netDialer.Timeout = time.Millisecond * time.Duration(cliops.timeoutconnect)
 	}
-	// open ws connection
-	// ws, err := websocket.Dial(wsurl, "", wsorigin)
 	seDlg.ConnWSS.Conn, err = websocket.DialConfig(&websocket.Config{
 		Location:  wsurlp,
 		Origin:    wsorgp,
@@ -2706,10 +2851,8 @@ func SIPExerSendWSX(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 	})
 	if err != nil {
 		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
-		tchan <- SIPExerErrWSDial
-		return
+		return SIPExerErrWSDial
 	}
-	defer seDlg.ConnWSS.Conn.Close()
 
 	laddr := seDlg.ConnWSS.Conn.LocalAddr().String()
 	if strings.HasPrefix(laddr, "https://") {
@@ -2725,10 +2868,45 @@ func SIPExerSendWSX(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 	seDlg.LocalAddr = laddr
 	seDlg.TargetAddr = seDlg.ConnWSS.Conn.RemoteAddr().String()
 	seDlg.RecvAddr = seDlg.TargetAddr
+	SIPExerDialogResetForRequest(seDlg)
 	seDlg.TimeoutStep = cliops.timeout
 	seDlg.TimeoutVal = seDlg.TimeoutStep
+	return SIPExerRetOK
+}
 
-	ret := SIPExerDialogLoop(tplstr, tplfields, &seDlg)
+func SIPExerSendTCP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]any, tchan chan int) {
+	var seDlg SIPExerDialog = SIPExerDialog{}
+	ret := SIPExerInitTCPDialog(dstSockAddr, &seDlg)
+	if ret != SIPExerRetOK {
+		tchan <- ret
+		return
+	}
+	defer SIPExerDialogCloseConn(&seDlg)
+	ret = SIPExerDialogLoop(tplstr, tplfields, &seDlg)
+	tchan <- ret
+}
+
+func SIPExerSendTLS(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfields map[string]any, tchan chan int) {
+	var seDlg SIPExerDialog = SIPExerDialog{}
+	ret := SIPExerInitTLSDialog(dstSockAddr, &seDlg)
+	if ret != SIPExerRetOK {
+		tchan <- ret
+		return
+	}
+	defer SIPExerDialogCloseConn(&seDlg)
+	ret = SIPExerDialogLoop(tplstr, tplfields, &seDlg)
+	tchan <- ret
+}
+
+func SIPExerSendWSX(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, tplfields map[string]any, tchan chan int) {
+	var seDlg SIPExerDialog = SIPExerDialog{}
+	ret := SIPExerInitWSXDialog(dstSockAddr, wsurlp, &seDlg)
+	if ret != SIPExerRetOK {
+		tchan <- ret
+		return
+	}
+	defer SIPExerDialogCloseConn(&seDlg)
+	ret = SIPExerDialogLoop(tplstr, tplfields, &seDlg)
 	tchan <- ret
 }
 
