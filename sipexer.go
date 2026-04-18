@@ -229,6 +229,7 @@ func (m paramFieldsType) Set(value string) error {
 }
 
 var paramFields = make(paramFieldsType)
+var paramFieldsU2 = make(paramFieldsType)
 
 type paramFieldsUnsetType map[string]bool
 
@@ -249,6 +250,7 @@ func (m paramFieldsUnsetType) Set(value string) error {
 }
 
 var paramFieldsUnset = make(paramFieldsUnsetType)
+var paramFieldsUnsetU2 = make(paramFieldsUnsetType)
 
 type headerFieldsType [][2]string
 
@@ -366,6 +368,20 @@ type CLIOptions struct {
 	akaopc           string
 	akaamf           string
 	callself         bool
+	callusers        bool
+	u2fuser          string
+	u2localaddress   string
+	u2template       string
+	u2templatebody   string
+	u2fields         string
+	u2authuser       string
+	u2authapassword  string
+	u2ha1            bool
+	u2akakey         string
+	u2akaop          string
+	u2akaopc         string
+	u2akaamf         string
+	u2akauser        string
 	ringtime         int
 	callduration     int
 	version          bool
@@ -446,6 +462,20 @@ var cliops = CLIOptions{
 	akaopc:           "",
 	akaamf:           "",
 	callself:         false,
+	callusers:        false,
+	u2fuser:          "",
+	u2localaddress:   "",
+	u2template:       "",
+	u2templatebody:   "",
+	u2fields:         "",
+	u2authuser:       "",
+	u2authapassword:  "",
+	u2ha1:            false,
+	u2akakey:         "",
+	u2akaop:          "",
+	u2akaopc:         "",
+	u2akaamf:         "",
+	u2akauser:        "",
 	ringtime:         2000,
 	callduration:     10000,
 }
@@ -577,6 +607,18 @@ func init() {
 	flag.StringVar(&cliops.akaop, "aka-op", cliops.akaop, "aka authentication operator key - op")
 	flag.StringVar(&cliops.akaopc, "aka-opc", cliops.akaopc, "aka authentication operator derived key - opc")
 	flag.StringVar(&cliops.akaamf, "aka-amf", cliops.akaamf, "aka authentication management field - amf")
+	flag.StringVar(&cliops.u2fuser, "ua2-fuser", cliops.u2fuser, "second user From header URI username")
+	flag.StringVar(&cliops.u2localaddress, "ua2-local-address", cliops.u2localaddress, "second user local address (`ip:port` or `:port`)")
+	flag.StringVar(&cliops.u2template, "ua2-template-file", cliops.u2template, "second user path to template file")
+	flag.StringVar(&cliops.u2templatebody, "ua2-template-body-file", cliops.u2templatebody, "second user path to template file for body")
+	flag.StringVar(&cliops.u2fields, "ua2-fields-file", cliops.u2fields, "second user path to json fields file")
+	flag.StringVar(&cliops.u2authuser, "ua2-auth-user", cliops.u2authuser, "second user authentication user")
+	flag.StringVar(&cliops.u2authapassword, "ua2-auth-password", cliops.u2authapassword, "second user authentication password")
+	flag.StringVar(&cliops.u2akauser, "ua2-aka-user", cliops.u2akauser, "second user aka authentication user name")
+	flag.StringVar(&cliops.u2akakey, "ua2-aka-key", cliops.u2akakey, "second user aka authentication user key - k")
+	flag.StringVar(&cliops.u2akaop, "ua2-aka-op", cliops.u2akaop, "second user aka authentication operator key - op")
+	flag.StringVar(&cliops.u2akaopc, "ua2-aka-opc", cliops.u2akaopc, "second user aka authentication operator derived key - opc")
+	flag.StringVar(&cliops.u2akaamf, "ua2-aka-amf", cliops.u2akaamf, "second user aka authentication management field - amf")
 
 	flag.BoolVar(&cliops.ack, "ack", cliops.ack, "set method to ACK")
 	flag.BoolVar(&cliops.cancel, "cancel", cliops.cancel, "set method to CANCEL")
@@ -587,6 +629,7 @@ func init() {
 	flag.BoolVar(&cliops.connectudp, "connect-udp", cliops.connectudp, "attempt first a connect for UDP (dial ICMP connect)")
 	flag.BoolVar(&cliops.callself, "call-self", cliops.callself, "perform REGISTER then self-call scenario")
 	flag.BoolVar(&cliops.callself, "cs", cliops.callself, "perform REGISTER then self-call scenario")
+	flag.BoolVar(&cliops.callusers, "call-user", cliops.callusers, "perform call scenario between two users")
 	flag.BoolVar(&cliops.contactbuild, "cb", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.contactbuild, "contact-build", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.dnssrvprint, "dns-srv-print", cliops.dnssrvprint, "print DNS SRV records")
@@ -595,6 +638,7 @@ func init() {
 	flag.BoolVar(&cliops.flagdefaults, "flag-defaults", cliops.flagdefaults, "print flag (cli param) default values")
 	flag.BoolVar(&cliops.flagdefaults, "fvd", cliops.flagdefaults, "print flag (cli param) default values")
 	flag.BoolVar(&cliops.ha1, "ha1", cliops.ha1, "authentication password is in HA1 format")
+	flag.BoolVar(&cliops.u2ha1, "ua2-ha1", cliops.u2ha1, "second user authentication password is in HA1 format")
 	flag.BoolVar(&cliops.info, "info", cliops.info, "set method to INFO")
 	flag.BoolVar(&cliops.invite, "i", cliops.invite, "set method to INVITE")
 	flag.BoolVar(&cliops.invite, "invite", cliops.invite, "set method to INVITE")
@@ -652,6 +696,8 @@ func init() {
 	flag.Var(&paramFields, "fv", "field value in format 'name:value' (can be provided many times)")
 	flag.Var(&paramFieldsUnset, "field-unset", "field name to unset value (can be provided many times)")
 	flag.Var(&paramFieldsUnset, "fvu", "field name to unset value (can be provided many times)")
+	flag.Var(&paramFieldsU2, "ua2-field-val", "second user field value in format 'name:value' (can be provided many times)")
+	flag.Var(&paramFieldsUnsetU2, "ua2-field-unset", "second user field name to unset value (can be provided many times)")
 
 	flag.BoolVar(&cliops.helpcommands, "help-commands", cliops.helpcommands, "print help with command examples")
 	flag.BoolVar(&cliops.helpcommands, "hc", cliops.helpcommands, "print help with command examples")
@@ -688,6 +734,10 @@ func main() {
 		fmt.Println(templateDefaultInviteBody)
 		SIPExerExit(SIPExerRetDone)
 	}
+	if cliops.callself && cliops.callusers {
+		SIPExerPrintf(SIPExerLogError, "call-self and call-user cannot be enabled at the same time\n")
+		SIPExerExit(SIPExerRetErr)
+	}
 	if cliops.flagdefaults {
 		flag.PrintDefaults()
 		SIPExerExit(SIPExerRetDone)
@@ -720,28 +770,10 @@ func main() {
 		SIPExerExit(SIPExerRetDone)
 	}
 
-	var tplstr = ""
-	if len(cliops.template) > 0 {
-		tpldata, err1 := os.ReadFile(cliops.template)
-		if err1 != nil {
-			SIPExerPrintf(SIPExerLogError, "error: %v\n", err1)
-			SIPExerExit(SIPExerErrTemplateRead)
-		}
-		tplstr = string(tpldata)
-	} else if len(templateDefaultText) > 0 {
-		tplstr = templateDefaultText
-	} else {
-		SIPExerPrintf(SIPExerLogError, "missing data template file ('-tf' or '--template' parameter must be provided)\n")
-		SIPExerExit(SIPExerErrTemplateData)
-	}
-
-	if len(cliops.templatebody) > 0 {
-		tpldata, err1 := os.ReadFile(cliops.templatebody)
-		if err1 != nil {
-			SIPExerPrintf(SIPExerLogError, "error: %v\n", err1)
-			SIPExerExit(SIPExerErrTemplateRead)
-		}
-		templateBody = string(tpldata)
+	tplstr, terr := SIPExerLoadTemplates()
+	if terr != nil {
+		SIPExerPrintf(SIPExerLogError, "error: %v\n", terr)
+		SIPExerExit(SIPExerErrTemplateRead)
 	}
 
 	if cliops.runcount > 1 && len(cliops.localaddress) > 0 {
@@ -867,7 +899,9 @@ func main() {
 			SIPExerPrintf(SIPExerLogError, "transport protocol not supported yet for target %s\n", dstAddr)
 			SIPExerExit(SIPExerErrProtocolUnsuported)
 		}
-		if cliops.callself {
+		if cliops.callusers {
+			tret = SIPExerRunCallUsers(dstSockAddr, wsurlp, tplstr, tplfields)
+		} else if cliops.callself {
 			tret = SIPExerRunCallSelf(dstSockAddr, wsurlp, tplstr, tplfields)
 		} else {
 			tret = SIPExerRunSend(dstSockAddr, wsurlp, tplstr, tplfields)
@@ -938,6 +972,77 @@ func SIPExerCloneTplFields(src map[string]any) map[string]any {
 	return dst
 }
 
+type SIPExerRuntimeState struct {
+	cli              CLIOptions
+	paramFields      paramFieldsType
+	paramFieldsUnset paramFieldsUnsetType
+	iVarMap          iVarMapType
+	templateBodyVal  string
+}
+
+func SIPExerRuntimeCapture() SIPExerRuntimeState {
+	pf := make(paramFieldsType, len(paramFields))
+	for k, v := range paramFields {
+		pf[k] = v
+	}
+	pfu := make(paramFieldsUnsetType, len(paramFieldsUnset))
+	for k, v := range paramFieldsUnset {
+		pfu[k] = v
+	}
+	iv := make(iVarMapType, len(iVarMap))
+	for k, v := range iVarMap {
+		iv[k] = v
+	}
+	return SIPExerRuntimeState{
+		cli:              cliops,
+		paramFields:      pf,
+		paramFieldsUnset: pfu,
+		iVarMap:          iv,
+		templateBodyVal:  templateBody,
+	}
+}
+
+func SIPExerRuntimeApply(st SIPExerRuntimeState) {
+	cliops = st.cli
+	paramFields = make(paramFieldsType, len(st.paramFields))
+	for k, v := range st.paramFields {
+		paramFields[k] = v
+	}
+	paramFieldsUnset = make(paramFieldsUnsetType, len(st.paramFieldsUnset))
+	for k, v := range st.paramFieldsUnset {
+		paramFieldsUnset[k] = v
+	}
+	iVarMap = make(iVarMapType, len(st.iVarMap))
+	for k, v := range st.iVarMap {
+		iVarMap[k] = v
+	}
+	templateBody = st.templateBodyVal
+}
+
+func SIPExerLoadTemplates() (string, error) {
+	tplstr := ""
+	if len(cliops.template) > 0 {
+		tpldata, err := os.ReadFile(cliops.template)
+		if err != nil {
+			return "", err
+		}
+		tplstr = string(tpldata)
+	} else if len(templateDefaultText) > 0 {
+		tplstr = templateDefaultText
+	} else {
+		return "", fmt.Errorf("missing data template file")
+	}
+	templateBody = ""
+	if len(cliops.templatebody) > 0 {
+		tpldata, err := os.ReadFile(cliops.templatebody)
+		if err != nil {
+			return "", err
+		}
+		templateBody = string(tpldata)
+	}
+	return tplstr, nil
+}
+
 func SIPExerRunCallSelf(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, baseTplFields map[string]any) int {
 	fuser := fmt.Sprint(baseTplFields["fuser"])
 	if len(strings.TrimSpace(fuser)) == 0 {
@@ -988,6 +1093,245 @@ func SIPExerRunCallSelf(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, t
 	cliops.method = "INVITE"
 	SIPExerPrintf(SIPExerLogInfo, "self-call stage: INVITE self user '%s'\n", fuser)
 	return SIPExerRunSend(dstSockAddr, wsurlp, tplstr, invFields)
+}
+
+func SIPExerRunCallUsersCalleeUDP(localAddr string, u2fuser string, ringtime int, done chan int, ready chan bool) {
+	retErr := SIPExerRetErr
+	defer func() {
+		done <- retErr
+	}()
+	udpa, err := net.ResolveUDPAddr("udp", localAddr)
+	if err != nil {
+		SIPExerPrintf(SIPExerLogError, "call-users callee resolve local addr error: %v\n", err)
+		return
+	}
+	conn, err := net.ListenUDP("udp", udpa)
+	if err != nil {
+		SIPExerPrintf(SIPExerLogError, "call-users callee socket error: %v\n", err)
+		return
+	}
+	defer conn.Close()
+	ready <- true
+
+	state := "wait-invite"
+	buf := make([]byte, cliops.buffersize)
+	for {
+		_ = conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
+		n, raddr, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			SIPExerPrintf(SIPExerLogError, "call-users callee read error: %v\n", err)
+			return
+		}
+		msg := sgsip.SGSIPMessage{}
+		if sgsip.SGSIPParseMessage(string(buf[:n]), &msg) != sgsip.SGSIPRetOK {
+			continue
+		}
+		if msg.FLine.MType != sgsip.FLineRequest {
+			continue
+		}
+		if msg.FLine.MethodId == sgsip.SIPMethodINVITE && state == "wait-invite" {
+			for _, item := range []struct {
+				code   string
+				reason string
+			}{
+				{code: "100", reason: "Trying"},
+				{code: "180", reason: "Ringing"},
+			} {
+				rsp := ""
+				if sgsip.SGSIPMessageToResponseString(&msg, item.code, item.reason, &rsp) == sgsip.SGSIPRetOK {
+					_, _ = conn.WriteToUDP([]byte(rsp), raddr)
+				}
+			}
+			if ringtime > 0 {
+				time.Sleep(time.Millisecond * time.Duration(ringtime))
+			}
+			rsp := ""
+			if sgsip.SGSIPMessageToResponseString(&msg, "200", "OK", &rsp) == sgsip.SGSIPRetOK {
+				rmsg := sgsip.SGSIPMessage{}
+				if sgsip.SGSIPParseMessage(rsp, &rmsg) == sgsip.SGSIPRetOK {
+					uuri := sgsip.SGSIPURI{}
+					sa := sgsip.SGSIPSocketAddress{}
+					if sgsip.SGSIPParseSocketAddress(localAddr, &sa) != sgsip.SGSIPRetOK {
+						sa = sgsip.SGSIPSocketAddress{Proto: "udp", ProtoId: sgsip.ProtoUDP, Addr: "127.0.0.1", Port: "5060", PortNo: 5060}
+					}
+					if len(sa.Proto) == 0 {
+						sa.Proto = "udp"
+						sa.ProtoId = sgsip.ProtoUDP
+					}
+					if len(strings.TrimSpace(sa.Addr)) == 0 {
+						sa.Addr = "127.0.0.1"
+					}
+					sgsip.SGSocketAddressToSIPURI(&sa, u2fuser, 0, &uuri)
+					sgsip.SGSIPMessageHeaderSet(&rmsg, "Contact", "<"+uuri.Val+">")
+					_ = sgsip.SGSIPMessageToString(&rmsg, &rsp)
+				}
+				_, _ = conn.WriteToUDP([]byte(rsp), raddr)
+			}
+			state = "wait-ack"
+			continue
+		}
+		if msg.FLine.MethodId == sgsip.SIPMethodACK && state == "wait-ack" {
+			state = "wait-bye"
+			continue
+		}
+		if msg.FLine.MethodId == sgsip.SIPMethodBYE && state == "wait-bye" {
+			rsp := ""
+			if sgsip.SGSIPMessageToResponseString(&msg, "200", "OK", &rsp) == sgsip.SGSIPRetOK {
+				_, _ = conn.WriteToUDP([]byte(rsp), raddr)
+			}
+			retErr = SIPExerRetOK
+			return
+		}
+	}
+}
+
+func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, baseTplFields map[string]any) int {
+	if len(strings.TrimSpace(cliops.u2fuser)) == 0 {
+		SIPExerPrintf(SIPExerLogError, "call-users mode requires --ua2-fuser\n")
+		return SIPExerRetErr
+	}
+	if len(strings.TrimSpace(cliops.u2localaddress)) == 0 {
+		SIPExerPrintf(SIPExerLogError, "call-users mode requires --ua2-local-address\n")
+		return SIPExerRetErr
+	}
+	if len(strings.TrimSpace(cliops.fuser)) == 0 {
+		SIPExerPrintf(SIPExerLogError, "call-users mode requires first user --fuser\n")
+		return SIPExerRetErr
+	}
+	if len(strings.TrimSpace(cliops.localaddress)) == 0 {
+		SIPExerPrintf(SIPExerLogError, "call-users mode requires first user --laddr\n")
+		return SIPExerRetErr
+	}
+	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
+		SIPExerPrintf(SIPExerLogError, "call-users mode currently supports UDP target only\n")
+		return SIPExerErrProtocolUnsuported
+	}
+
+	primary := SIPExerRuntimeCapture()
+	u2 := SIPExerRuntimeCapture()
+	u2.cli.fuser = cliops.u2fuser
+	u2.cli.localaddress = cliops.u2localaddress
+	if len(cliops.u2template) > 0 {
+		u2.cli.template = cliops.u2template
+	}
+	if len(cliops.u2templatebody) > 0 {
+		u2.cli.templatebody = cliops.u2templatebody
+	}
+	if len(cliops.u2fields) > 0 {
+		u2.cli.fields = cliops.u2fields
+	}
+	if len(cliops.u2authuser) > 0 {
+		u2.cli.authuser = cliops.u2authuser
+	}
+	if len(cliops.u2authapassword) > 0 {
+		u2.cli.authapassword = cliops.u2authapassword
+	}
+	u2.cli.ha1 = cliops.u2ha1
+	if len(cliops.u2akauser) > 0 {
+		u2.cli.akauser = cliops.u2akauser
+	}
+	if len(cliops.u2akakey) > 0 {
+		u2.cli.akakey = cliops.u2akakey
+	}
+	if len(cliops.u2akaop) > 0 {
+		u2.cli.akaop = cliops.u2akaop
+	}
+	if len(cliops.u2akaopc) > 0 {
+		u2.cli.akaopc = cliops.u2akaopc
+	}
+	if len(cliops.u2akaamf) > 0 {
+		u2.cli.akaamf = cliops.u2akaamf
+	}
+	u2.paramFields = make(paramFieldsType, len(primary.paramFields)+len(paramFieldsU2))
+	for k, v := range primary.paramFields {
+		u2.paramFields[k] = v
+	}
+	for k, v := range paramFieldsU2 {
+		u2.paramFields[k] = v
+	}
+	u2.paramFieldsUnset = make(paramFieldsUnsetType, len(primary.paramFieldsUnset)+len(paramFieldsUnsetU2))
+	for k, v := range primary.paramFieldsUnset {
+		u2.paramFieldsUnset[k] = v
+	}
+	for k, v := range paramFieldsUnsetU2 {
+		u2.paramFieldsUnset[k] = v
+	}
+
+	SIPExerRuntimeApply(u2)
+	u2Tpl, terr := SIPExerLoadTemplates()
+	if terr != nil {
+		SIPExerRuntimeApply(primary)
+		SIPExerPrintf(SIPExerLogError, "u2 template loading failed: %v\n", terr)
+		return SIPExerErrTemplateRead
+	}
+	u2Fields := make(map[string]any)
+	SIPExerPrepareTemplateFields(u2Fields)
+	var u2DstURI sgsip.SGSIPURI
+	sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.ruser, 0, &u2DstURI)
+	if _, ok := u2Fields["ruri"]; !ok {
+		u2Fields["ruri"] = u2DstURI.Val
+	}
+	u2Fields["method"] = "REGISTER"
+	u2.cli.register = true
+	u2.cli.invite = false
+	u2.cli.method = "REGISTER"
+	SIPExerRuntimeApply(u2)
+	ret := SIPExerRunSend(dstSockAddr, wsurlp, u2Tpl, u2Fields)
+	SIPExerRuntimeApply(primary)
+	if ret < 200 || ret >= 300 {
+		return ret
+	}
+
+	doneU2 := make(chan int, 1)
+	readyU2 := make(chan bool, 1)
+	go SIPExerRunCallUsersCalleeUDP(cliops.u2localaddress, cliops.u2fuser, cliops.ringtime, doneU2, readyU2)
+	<-readyU2
+
+	svRegister := cliops.register
+	svInvite := cliops.invite
+	svMethod := cliops.method
+	svSessionWait := cliops.sessionwait
+	defer func() {
+		cliops.register = svRegister
+		cliops.invite = svInvite
+		cliops.method = svMethod
+		cliops.sessionwait = svSessionWait
+	}()
+
+	regFields := SIPExerCloneTplFields(baseTplFields)
+	regFields["method"] = "REGISTER"
+	cliops.register = true
+	cliops.invite = false
+	cliops.method = "REGISTER"
+	ret = SIPExerRunSend(dstSockAddr, wsurlp, tplstr, regFields)
+	if ret < 200 || ret >= 300 {
+		return ret
+	}
+
+	invFields := SIPExerCloneTplFields(baseTplFields)
+	invFields["method"] = "INVITE"
+	invFields["tuser"] = cliops.u2fuser
+	var dstURI sgsip.SGSIPURI
+	sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.u2fuser, 0, &dstURI)
+	invFields["ruri"] = dstURI.Val
+	cliops.register = false
+	cliops.invite = true
+	cliops.method = "INVITE"
+	cliops.sessionwait = cliops.callduration
+	ret = SIPExerRunSend(dstSockAddr, wsurlp, tplstr, invFields)
+	if ret < 200 || ret >= 300 {
+		return ret
+	}
+	select {
+	case r := <-doneU2:
+		if r != SIPExerRetOK {
+			return SIPExerRetErr
+		}
+	case <-time.After(time.Millisecond * time.Duration(cliops.timeout+cliops.ringtime+cliops.callduration+5000)):
+		SIPExerPrintf(SIPExerLogError, "timeout waiting for second user call flow\n")
+		return SIPExerRetErr
+	}
+	return SIPExerRetOK
 }
 
 func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
@@ -1912,25 +2256,27 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					continue
 				}
 				if seDlg.LastResponse.FLine.MethodId == sgsip.SIPMethodACK {
-					if cliops.callduration > 0 {
-						time.Sleep(time.Millisecond * time.Duration(cliops.callduration))
-					}
-					if sgsip.SGSIPACKToByeString(seDlg.LastResponse, &smsg) != sgsip.SGSIPRetOK {
-						SIPExerPrintf(SIPExerLogError, "failed to build sip bye message\n")
-						return SIPExerErrSIPMessageToString
-					}
-					wmsg = []byte(smsg)
-					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
-					SIPExerMessagePrint("\n\n", smsg, "\n")
-					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
-					if seDlg.ProtoId == sgsip.ProtoUDP {
-						seDlg.TimeoutStep = cliops.timert1
-						seDlg.TimeoutVal = seDlg.TimeoutStep
-						seDlg.Resend = true
-					}
-					ret = SIPExerSendBytes(seDlg, wmsg)
-					if ret < 0 {
-						return ret
+					if cliops.callself {
+						if cliops.callduration > 0 {
+							time.Sleep(time.Millisecond * time.Duration(cliops.callduration))
+						}
+						if sgsip.SGSIPACKToByeString(seDlg.LastResponse, &smsg) != sgsip.SGSIPRetOK {
+							SIPExerPrintf(SIPExerLogError, "failed to build sip bye message\n")
+							return SIPExerErrSIPMessageToString
+						}
+						wmsg = []byte(smsg)
+						SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
+						SIPExerMessagePrint("\n\n", smsg, "\n")
+						SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+						if seDlg.ProtoId == sgsip.ProtoUDP {
+							seDlg.TimeoutStep = cliops.timert1
+							seDlg.TimeoutVal = seDlg.TimeoutStep
+							seDlg.Resend = true
+						}
+						ret = SIPExerSendBytes(seDlg, wmsg)
+						if ret < 0 {
+							return ret
+						}
 					}
 					seDlg.State = SIPExerDialogConfirmed
 					seDlg.RecvBuf = make([]byte, cliops.buffersize)
