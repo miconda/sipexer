@@ -372,3 +372,60 @@ func TestMessageToResponseString(t *testing.T) {
 		t.Fatalf("expected call-id and cseq in response: %q", out)
 	}
 }
+
+func TestMessageToResponseStringInviteRecordRoute(t *testing.T) {
+	reqWithRR := mustParseMessage(t, "INVITE sip:bob@example.com SIP/2.0\r\nVia: SIP/2.0/UDP host;branch=z9hG4bKSG.req\r\nFrom: <sip:alice@example.com>;tag=f1\r\nTo: <sip:bob@example.com>\r\nCall-ID: c1\r\nCSeq: 10 INVITE\r\nRecord-Route: <sip:rr1.example.com;lr>\r\nRecord-Route: <sip:rr2.example.com;lr>\r\nContent-Length: 0\r\n\r\n")
+	reqOptionsWithRR := mustParseMessage(t, "OPTIONS sip:bob@example.com SIP/2.0\r\nVia: SIP/2.0/UDP host;branch=z9hG4bKSG.req\r\nFrom: <sip:alice@example.com>;tag=f1\r\nTo: <sip:bob@example.com>\r\nCall-ID: c2\r\nCSeq: 11 OPTIONS\r\nRecord-Route: <sip:rr.example.com;lr>\r\nContent-Length: 0\r\n\r\n")
+
+	tests := []struct {
+		name         string
+		req          SGSIPMessage
+		scode        string
+		wantContains []string
+		wantAbsent   []string
+	}{
+		{
+			name:         "invite-180-includes-record-route",
+			req:          reqWithRR,
+			scode:        "180",
+			wantContains: []string{"Record-Route: <sip:rr1.example.com;lr>\r\n", "Record-Route: <sip:rr2.example.com;lr>\r\n"},
+		},
+		{
+			name:         "invite-200-includes-record-route",
+			req:          reqWithRR,
+			scode:        "200",
+			wantContains: []string{"Record-Route: <sip:rr1.example.com;lr>\r\n", "Record-Route: <sip:rr2.example.com;lr>\r\n"},
+		},
+		{
+			name:       "invite-100-does-not-include-record-route",
+			req:        reqWithRR,
+			scode:      "100",
+			wantAbsent: []string{"Record-Route: <sip:rr1.example.com;lr>\r\n", "Record-Route: <sip:rr2.example.com;lr>\r\n"},
+		},
+		{
+			name:       "non-invite-200-does-not-include-record-route",
+			req:        reqOptionsWithRR,
+			scode:      "200",
+			wantAbsent: []string{"Record-Route: <sip:rr.example.com;lr>\r\n"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out := ""
+			if ret := SGSIPMessageToResponseString(&tc.req, tc.scode, "Test", &out); ret != SGSIPRetOK {
+				t.Fatalf("message->response failed: %d", ret)
+			}
+			for _, expected := range tc.wantContains {
+				if !strings.Contains(out, expected) {
+					t.Fatalf("expected response to include %q; output: %q", expected, out)
+				}
+			}
+			for _, unexpected := range tc.wantAbsent {
+				if strings.Contains(out, unexpected) {
+					t.Fatalf("expected response to not include %q; output: %q", unexpected, out)
+				}
+			}
+		})
+	}
+}
