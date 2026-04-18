@@ -225,6 +225,15 @@ Run a self-call flow (REGISTER, self-INVITE, `100/180/200`, wait ACK, then BYE):
 sipexer --call-self --ring-time 2000 --call-duration 10000 -fuser alice -cb -sd -su udp:server.com:5060
 ```
 
+Run a two-user call flow (user1 from regular flags, user2 from `--ua2-*` flags):
+
+```shell
+sipexer --call-user --ring-time 2000 --call-duration 10000 \
+  --fuser alice --laddr 127.0.0.1:5062 \
+  --ua2-fuser bob --ua2-local-address 127.0.0.1:5064 \
+  -cb -sd -su udp:server.com:5060
+```
+
 To remove the default value for implicit fields (e.g., `useragent`), the `-no-val` value can
 be provided (which is default `no`), like:
 
