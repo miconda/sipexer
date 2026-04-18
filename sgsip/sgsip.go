@@ -1209,6 +1209,7 @@ func SGSIPACKToByeString(ackReq *SGSIPMessage, outputStr *string) int {
 
 func SGSIPMessageToResponseString(sipReq *SGSIPMessage, scode string, sreason string, outputStr *string) int {
 	var sb strings.Builder
+	codeInt, _ := strconv.Atoi(strings.TrimSpace(scode))
 	if len(sipReq.FLine.Val) == 0 || len(sipReq.Headers) == 0 {
 		return SGSIPRetErrMessageNotSet
 	}
@@ -1235,6 +1236,10 @@ func SGSIPMessageToResponseString(sipReq *SGSIPMessage, scode string, sreason st
 	}
 	for _, h := range sipReq.Headers {
 		switch h.HType {
+		case HeaderTypeRecordRoute:
+			if sipReq.FLine.MethodId == SIPMethodINVITE && codeInt >= 180 && codeInt <= 299 {
+				sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+			}
 		case HeaderTypeCallID, HeaderTypeCSeq:
 			sb.WriteString(h.Name + ": " + h.Body + "\r\n")
 		}
