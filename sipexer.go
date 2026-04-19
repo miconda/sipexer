@@ -2187,6 +2187,21 @@ func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 	return SIPExerRetOK
 }
 
+func SIPExerFindRequestStartInBuffer(rawBuf string, reqMethod string) int {
+	reqSep := "\r\n" + reqMethod + " "
+	idxReq := strings.Index(rawBuf, "\r\n"+reqSep)
+	if idxReq < 0 {
+		idxReq = strings.Index(rawBuf, reqSep+"sip:")
+		if idxReq < 0 {
+			idxReq = strings.Index(rawBuf, reqSep+"sips:")
+			if idxReq < 0 {
+				idxReq = strings.Index(rawBuf, reqSep+"tel:")
+			}
+		}
+	}
+	return idxReq
+}
+
 func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDialog) int {
 	var smsg string = ""
 	var sack string = ""
@@ -2413,9 +2428,10 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 						seDlg.Resend = false
 						seDlg.State = SIPExerDialogEarly
 					}
+
 					// Reliable transports may deliver multiple SIP requests in one read (e.g. ACK + BYE).
 					rawBuf := string(seDlg.RecvBuf[:seDlg.RecvN])
-					idxBYE := strings.Index(rawBuf, "\r\n\r\nBYE ")
+					idxBYE := SIPExerFindRequestStartInBuffer(rawBuf, "BYE")
 					if idxBYE >= 0 {
 						bmsg := rawBuf[idxBYE+4:]
 						byeReq := sgsip.SGSIPMessage{}
