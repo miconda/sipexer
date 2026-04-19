@@ -2302,7 +2302,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 
 		if seDlg.RecvN > 0 {
 			// absorb 1xx responses or deal with 401/407 auth challenges
-			SIPExerPrintf(SIPExerLogInfo, "response-received: from=%s bytes=%d data=[[---", seDlg.RecvAddr, seDlg.RecvN)
+			SIPExerPrintf(SIPExerLogInfo, "message-received: from=%s bytes=%d data=[[---", seDlg.RecvAddr, seDlg.RecvN)
 			SIPExerMessagePrint("\n\n", string(seDlg.RecvBuf), "\n")
 			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 			seDlg.LastResponse = new(sgsip.SGSIPMessage)
