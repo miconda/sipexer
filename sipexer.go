@@ -973,6 +973,21 @@ func SIPExerCloneTplFields(src map[string]any) map[string]any {
 	return dst
 }
 
+func SIPExerEnsureViaAlias(tplfields map[string]any) {
+	vparams := strings.TrimSpace(fmt.Sprint(tplfields["viaparams"]))
+	if len(vparams) == 0 || vparams == "<nil>" {
+		tplfields["viaparams"] = "alias"
+		return
+	}
+	parts := strings.Split(vparams, ";")
+	for _, p := range parts {
+		if strings.EqualFold(strings.TrimSpace(p), "alias") {
+			return
+		}
+	}
+	tplfields["viaparams"] = vparams + ";alias"
+}
+
 type SIPExerRuntimeState struct {
 	cli              CLIOptions
 	paramFields      paramFieldsType
@@ -1088,6 +1103,9 @@ func SIPExerRunCallSelf(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, t
 
 	regFields := SIPExerCloneTplFields(baseTplFields)
 	regFields["method"] = "REGISTER"
+	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
+		SIPExerEnsureViaAlias(regFields)
+	}
 	cliops.register = true
 	cliops.invite = false
 	cliops.method = "REGISTER"
@@ -1105,6 +1123,9 @@ func SIPExerRunCallSelf(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, t
 
 	invFields := SIPExerCloneTplFields(baseTplFields)
 	invFields["method"] = "INVITE"
+	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
+		SIPExerEnsureViaAlias(invFields)
+	}
 	invFields["tuser"] = fuser
 	var selfURI sgsip.SGSIPURI
 	sgsip.SGSocketAddressToSIPURI(&dstSockAddr, fuser, 0, &selfURI)
@@ -2212,7 +2233,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 		}
 		ret = SIPExerDialogReadBytes(seDlg)
 		if ret < 0 {
-			if cliops.callself && !seDlg.CallSelfBye && seDlg.AckRequest != nil && seDlg.State >= SIPExerDialogAnswered {
+			if cliops.callself && !seDlg.CallSelfBye && seDlg.AckRequest != nil {
 				if cliops.callduration > 0 {
 					time.Sleep(time.Millisecond * time.Duration(cliops.callduration))
 				}
@@ -2232,11 +2253,16 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					seDlg.Resend = false
 					seDlg.State = SIPExerDialogEarly
 				}
+				SIPExerSetWriteTimeout(seDlg)
 				ret = SIPExerSendBytes(seDlg, wmsg)
 				if ret < 0 {
 					return ret
 				}
 				seDlg.CallSelfBye = true
+				if seDlg.ProtoId != sgsip.ProtoUDP {
+					seDlg.Resend = false
+					seDlg.State = SIPExerDialogEarly
+				}
 				seDlg.RecvBuf = make([]byte, cliops.buffersize)
 				continue
 			}
@@ -2297,9 +2323,37 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 						SIPExerPrintf(SIPExerLogError, "failed to build 200 response\n")
 						return SIPExerErrSIPMessageToString
 					}
-					if cliops.callself {
-						invRpl := sgsip.SGSIPMessage{}
-						if sgsip.SGSIPParseMessage(smsg, &invRpl) == sgsip.SGSIPRetOK {
+					invRpl := sgsip.SGSIPMessage{}
+					if sgsip.SGSIPParseMessage(smsg, &invRpl) == sgsip.SGSIPRetOK {
+						if cliops.callself {
+							uuri := sgsip.SGSIPURI{}
+							sa := sgsip.SGSIPSocketAddress{}
+							if sgsip.SGSIPParseSocketAddress(seDlg.LocalAddr, &sa) != sgsip.SGSIPRetOK {
+								sa = sgsip.SGSIPSocketAddress{
+									Proto:   seDlg.Proto,
+									ProtoId: seDlg.ProtoId,
+									Addr:    "127.0.0.1",
+									Port:    "5060",
+									PortNo:  5060,
+								}
+							}
+							// LocalAddr parsing defaults to UDP when no explicit proto prefix is present.
+							// For call-self 200 OK Contact we must force the active dialog transport.
+							sa.Proto = seDlg.Proto
+							sa.ProtoId = seDlg.ProtoId
+							if len(strings.TrimSpace(sa.Addr)) == 0 {
+								sa.Addr = "127.0.0.1"
+							}
+							if len(strings.TrimSpace(sa.Port)) == 0 {
+								sa.Port = "5060"
+								sa.PortNo = 5060
+							}
+							sgsip.SGSocketAddressToSIPURI(&sa, fmt.Sprint(tplfields["fuser"]), 1, &uuri)
+							sgsip.SGSIPMessageHeaderSet(&invRpl, "Contact", "<"+uuri.Val+">")
+							if sgsip.SGSIPMessageToString(&invRpl, &smsg) != sgsip.SGSIPRetOK {
+								SIPExerPrintf(SIPExerLogError, "failed to rebuild 200 response\n")
+								return SIPExerErrSIPMessageToString
+							}
 							sackLocal := ""
 							if sgsip.SGSIPInviteToACKString(seDlg.LastResponse, &invRpl, &sackLocal) == sgsip.SGSIPRetOK {
 								ackReq := sgsip.SGSIPMessage{}
@@ -2316,7 +2370,13 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					if ret < 0 {
 						return ret
 					}
-					seDlg.State = SIPExerDialogAnswered
+					if seDlg.ProtoId == sgsip.ProtoUDP {
+						seDlg.State = SIPExerDialogAnswered
+					} else {
+						// keep listening without re-sending the original INVITE on reliable transports
+						seDlg.Resend = false
+						seDlg.State = SIPExerDialogEarly
+					}
 					seDlg.RecvBuf = make([]byte, cliops.buffersize)
 					continue
 				}
@@ -2337,7 +2397,11 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 							seDlg.TimeoutStep = cliops.timert1
 							seDlg.TimeoutVal = seDlg.TimeoutStep
 							seDlg.Resend = true
+						} else {
+							seDlg.Resend = false
+							seDlg.State = SIPExerDialogEarly
 						}
+						SIPExerSetWriteTimeout(seDlg)
 						ret = SIPExerSendBytes(seDlg, wmsg)
 						if ret < 0 {
 							return ret
@@ -2345,6 +2409,35 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 						seDlg.CallSelfBye = true
 					}
 					seDlg.State = SIPExerDialogConfirmed
+					if seDlg.ProtoId != sgsip.ProtoUDP {
+						seDlg.Resend = false
+						seDlg.State = SIPExerDialogEarly
+					}
+					// Reliable transports may deliver multiple SIP requests in one read (e.g. ACK + BYE).
+					rawBuf := string(seDlg.RecvBuf[:seDlg.RecvN])
+					idxBYE := strings.Index(rawBuf, "\r\n\r\nBYE ")
+					if idxBYE >= 0 {
+						bmsg := rawBuf[idxBYE+4:]
+						byeReq := sgsip.SGSIPMessage{}
+						if sgsip.SGSIPParseMessage(bmsg, &byeReq) == sgsip.SGSIPRetOK &&
+							byeReq.FLine.MType == sgsip.FLineRequest &&
+							byeReq.FLine.MethodId == sgsip.SIPMethodBYE {
+							if sgsip.SGSIPMessageToResponseString(&byeReq, "200", "OK", &smsg) != sgsip.SGSIPRetOK {
+								SIPExerPrintf(SIPExerLogError, "failed to build 200 response to bundled BYE\n")
+								return SIPExerErrSIPMessageToString
+							}
+							SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
+							SIPExerMessagePrint("\n\n", smsg, "\n")
+							SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+							SIPExerSetWriteTimeout(seDlg)
+							ret = SIPExerSendBytes(seDlg, []byte(smsg))
+							if ret < 0 {
+								return ret
+							}
+							seDlg.State = SIPExerDialogTerminated
+							return SIPExerRetOK
+						}
+					}
 					seDlg.RecvBuf = make([]byte, cliops.buffersize)
 					continue
 				}
@@ -2393,7 +2486,8 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					seDlg.State = SIPExerDialogTerminated
 				}
 			}
-			if seDlg.LastResponse.CSeq.MethodId == sgsip.SIPMethodINVITE {
+			if seDlg.LastResponse.FLine.MType == sgsip.FLineResponse &&
+				seDlg.LastResponse.CSeq.MethodId == sgsip.SIPMethodINVITE {
 				SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
 				SIPExerMessagePrint("\n\n", sack, "\n")
 				SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
@@ -2430,7 +2524,11 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 						seDlg.TimeoutStep = cliops.timert1
 						seDlg.TimeoutVal = seDlg.TimeoutStep
 						seDlg.Resend = true
+					} else {
+						seDlg.Resend = false
+						seDlg.State = SIPExerDialogEarly
 					}
+					SIPExerSetWriteTimeout(seDlg)
 					ret1 = SIPExerSendBytes(seDlg, wmsg)
 					if ret1 < 0 {
 						return ret
