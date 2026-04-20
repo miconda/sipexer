@@ -222,7 +222,8 @@ sipexer -invite -vl 3 -co -com -fuser alice -tuser bob -cb -ap "4a4a4a4a4a..." -
 Run a self-call flow (REGISTER, self-INVITE, `100/180/200`, wait ACK, then BYE):
 
 ```shell
-sipexer --call-self --ring-time 2000 --call-duration 10000 -fuser alice -cb -sd -su udp:server.com:5060
+sipexer --call-self --ring-time 2000 --call-duration 10000 -fuser alice  -ex 60 \
+  -cb -sd -su udp:server.com:5060
 ```
 
 Run a two-user call flow (user1 from regular flags, user2 from `--ua2-*` flags):
