@@ -235,6 +235,14 @@ sipexer --call-user --ring-time 2000 --call-duration 10000 \
   -cb -sd -su udp:server.com:5060
 ```
 
+Send `SUBSCRIBE`, then keep the session open for `--sessionwait` to receive
+`NOTIFY` and auto-reply `200 OK`:
+
+```shell
+sipexer --subscribe-session --sessionwait 15000 -ex 60 -xh "Event:presence" \
+  --fuser alice -cb -sd -su tcp:server.com:5060
+```
+
 To remove the default value for implicit fields (e.g., `useragent`), the `-no-val` value can
 be provided (which is default `no`), like:
 
