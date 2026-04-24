@@ -165,6 +165,18 @@ func TestPrepareTemplateFieldsMethodPrecedence(t *testing.T) {
 	})
 }
 
+func TestPrepareTemplateFieldsMethodSubscribeSession(t *testing.T) {
+	withCleanState(t, func() {
+		cliops.subscribesession = true
+		cliops.method = "options"
+		tplfields := make(map[string]any)
+		SIPExerPrepareTemplateFields(tplfields)
+		if got := tplfields["method"]; got != "SUBSCRIBE" {
+			t.Fatalf("expected subscribe-session to force SUBSCRIBE, got: %#v", got)
+		}
+	})
+}
+
 func TestPrepareTemplateFieldsMethodFromFieldValUpdatesCLI(t *testing.T) {
 	withCleanState(t, func() {
 		paramFields["method"] = "OPTIONS"
@@ -466,5 +478,18 @@ func TestTargetProtoSupported(t *testing.T) {
 	}
 	if SIPExerTargetProtoSupported(sgsip.ProtoSCTP) {
 		t.Fatalf("expected SCTP to be unsupported")
+	}
+}
+
+func TestSplitSIPMessages(t *testing.T) {
+	msg1 := "NOTIFY sip:alice@example.com SIP/2.0\r\nVia: SIP/2.0/TCP host;branch=z9hG4bK1\r\nFrom: <sip:bob@example.com>;tag=a\r\nTo: <sip:alice@example.com>;tag=b\r\nCall-ID: c1\r\nCSeq: 1 NOTIFY\r\nContent-Length: 0\r\n\r\n"
+	msg2 := "NOTIFY sip:alice@example.com SIP/2.0\r\nVia: SIP/2.0/TCP host;branch=z9hG4bK2\r\nFrom: <sip:bob@example.com>;tag=a\r\nTo: <sip:alice@example.com>;tag=b\r\nCall-ID: c1\r\nCSeq: 2 NOTIFY\r\nContent-Length: 0\r\n\r\n"
+
+	got := SIPExerSplitSIPMessages(msg1 + msg2)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 SIP messages from bundled buffer, got: %d", len(got))
+	}
+	if got[0] != msg1 || got[1] != msg2 {
+		t.Fatalf("unexpected split result")
 	}
 }
