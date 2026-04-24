@@ -302,6 +302,7 @@ type CLIOptions struct {
 	invite           bool
 	info             bool
 	subscribe        bool
+	subscribesession bool
 	publish          bool
 	notify           bool
 	cancel           bool
@@ -437,6 +438,7 @@ var cliops = CLIOptions{
 	invite:           false,
 	info:             false,
 	subscribe:        false,
+	subscribesession: false,
 	publish:          false,
 	notify:           false,
 	cancel:           false,
@@ -665,6 +667,7 @@ func init() {
 	flag.BoolVar(&cliops.setuser, "set-user", cliops.setuser, "set R-URI user to To-URI user for destination proxy address")
 	flag.BoolVar(&cliops.setuser, "su", cliops.setuser, "set R-URI user to To-URI user for destination proxy address")
 	flag.BoolVar(&cliops.subscribe, "subscribe", cliops.subscribe, "set method to SUBSCRIBE")
+	flag.BoolVar(&cliops.subscribesession, "subscribe-session", cliops.subscribesession, "set method to SUBSCRIBE and wait for NOTIFY requests for sessionwait interval")
 	flag.BoolVar(&cliops.templatedefaults, "template-defaults", cliops.templatedefaults, "print default (internal) template data")
 	flag.BoolVar(&cliops.templatedefaults, "tpd", cliops.templatedefaults, "print default (internal) template data")
 	flag.BoolVar(&cliops.templaterun, "template-run", cliops.templaterun, "run template execution and print the result")
@@ -1621,6 +1624,8 @@ func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
 		tplfields["method"] = "INVITE"
 	} else if cliops.info {
 		tplfields["method"] = "INFO"
+	} else if cliops.subscribesession {
+		tplfields["method"] = "SUBSCRIBE"
 	} else if cliops.subscribe {
 		tplfields["method"] = "SUBSCRIBE"
 	} else if cliops.publish {
@@ -1647,6 +1652,8 @@ func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
 		cliops.invite = true
 	} else if !cliops.register && tplMethod == "REGISTER" {
 		cliops.register = true
+	} else if !cliops.subscribe && tplMethod == "SUBSCRIBE" {
+		cliops.subscribe = true
 	}
 
 	if len(cliops.expires) > 0 {
@@ -2117,38 +2124,83 @@ func SIPExerSessionWaitAndRead(seDlg *SIPExerDialog) int {
 			SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", seDlg.RecvAddr, seDlg.RecvN)
 			SIPExerMessagePrint("\n\n", string(seDlg.RecvBuf), "\n")
 			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
-			if len(seDlg.RecvBuf) > 16 {
-				sipRcv := sgsip.SGSIPMessage{}
-				if sgsip.SGSIPParseMessage(string(seDlg.RecvBuf), &sipRcv) != sgsip.SGSIPRetOK {
-					SIPExerPrintf(SIPExerLogError, "failed to parse sip message\n%+v\n\n", string(seDlg.RecvBuf))
-					return SIPExerErrSIPMessageFormat
-				}
-				if sipRcv.FLine.MType == sgsip.FLineRequest {
-					if sipRcv.FLine.MethodId == sgsip.SIPMethodINVITE {
-						if sgsip.SGSIPMessageToResponseString(&sipRcv, "480", "Temporarily Unavailable", &smsg) != sgsip.SGSIPRetOK {
-							SIPExerPrintf(SIPExerLogError, "failed to build sip response\n")
-							return SIPExerErrSIPMessageToString
-						}
-					} else {
-						if sgsip.SGSIPMessageToResponseString(&sipRcv, "200", "OK Now", &smsg) != sgsip.SGSIPRetOK {
-							SIPExerPrintf(SIPExerLogError, "failed to build sip response\n")
-							return SIPExerErrSIPMessageToString
-						}
+			rawBuf := string(seDlg.RecvBuf[:seDlg.RecvN])
+			if len(rawBuf) > 16 {
+				for _, sipRaw := range SIPExerSplitSIPMessages(rawBuf) {
+					sipRcv := sgsip.SGSIPMessage{}
+					if sgsip.SGSIPParseMessage(sipRaw, &sipRcv) != sgsip.SGSIPRetOK {
+						SIPExerPrintf(SIPExerLogError, "failed to parse sip message\n%+v\n\n", sipRaw)
+						return SIPExerErrSIPMessageFormat
 					}
-					if sipRcv.FLine.MethodId == sgsip.SIPMethodBYE && seDlg.State < SIPExerDialogTerminated {
-						seDlg.State = SIPExerDialogTerminated
+					if sipRcv.FLine.MType == sgsip.FLineRequest {
+						if sipRcv.FLine.MethodId == sgsip.SIPMethodINVITE {
+							if sgsip.SGSIPMessageToResponseString(&sipRcv, "480", "Temporarily Unavailable", &smsg) != sgsip.SGSIPRetOK {
+								SIPExerPrintf(SIPExerLogError, "failed to build sip response\n")
+								return SIPExerErrSIPMessageToString
+							}
+						} else {
+							if sgsip.SGSIPMessageToResponseString(&sipRcv, "200", "OK", &smsg) != sgsip.SGSIPRetOK {
+								SIPExerPrintf(SIPExerLogError, "failed to build sip response\n")
+								return SIPExerErrSIPMessageToString
+							}
+						}
+						if sipRcv.FLine.MethodId == sgsip.SIPMethodBYE && seDlg.State < SIPExerDialogTerminated {
+							seDlg.State = SIPExerDialogTerminated
+						}
+						SIPExerSetWriteTimeoutValue(seDlg, 1000)
+						SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
+						SIPExerMessagePrint("\n\n", smsg, "\n")
+						SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+						SIPExerSendBytes(seDlg, []byte(smsg))
 					}
-					SIPExerSetWriteTimeoutValue(seDlg, 1000)
-					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
-					SIPExerMessagePrint("\n\n", smsg, "\n")
-					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
-					SIPExerSendBytes(seDlg, []byte(smsg))
 				}
 			}
 		}
 		tWait = int(tStart.UnixMilli() + int64(cliops.sessionwait) - tNow.UnixMilli())
 	}
 	return SIPExerRetOK
+}
+
+func SIPExerParseContentLength(header string) int {
+	for _, line := range strings.Split(header, "\r\n") {
+		l := strings.TrimSpace(line)
+		if len(l) >= 15 && strings.EqualFold(l[0:15], "Content-Length:") {
+			cl, err := strconv.Atoi(strings.TrimSpace(l[15:]))
+			if err == nil && cl >= 0 {
+				return cl
+			}
+		}
+	}
+	return 0
+}
+
+func SIPExerSplitSIPMessages(rawBuf string) []string {
+	msgs := make([]string, 0, 4)
+	data := rawBuf
+	for {
+		data = strings.TrimLeft(data, "\r\n")
+		if len(data) == 0 {
+			break
+		}
+		eoh := strings.Index(data, "\r\n\r\n")
+		if eoh < 0 {
+			msgs = append(msgs, data)
+			break
+		}
+		hlen := eoh + 4
+		clen := SIPExerParseContentLength(data[0:eoh])
+		mLen := hlen + clen
+		if mLen > len(data) {
+			msgs = append(msgs, data)
+			break
+		}
+		msgs = append(msgs, data[0:mLen])
+		data = data[mLen:]
+	}
+	if len(msgs) == 0 && len(rawBuf) > 0 {
+		msgs = append(msgs, rawBuf)
+	}
+	return msgs
 }
 
 func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
@@ -2568,7 +2620,8 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					continue
 				}
 			}
-			if cliops.sessionwait > 0 && ret >= 200 && ret < 300 && (cliops.invite || cliops.register) {
+			if cliops.sessionwait > 0 && ret >= 200 && ret < 300 &&
+				(cliops.invite || cliops.register || cliops.subscribesession) {
 				SIPExerSessionWaitAndRead(seDlg)
 				smsg = ""
 				cliops.sessionwait = 0
@@ -2580,7 +2633,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 						SIPExerPrintf(SIPExerLogError, "failed to build sip unregister message\n")
 						return SIPExerErrSIPMessageToString
 					}
-				} else {
+				} else if cliops.invite {
 					if seDlg.State == SIPExerDialogTerminated {
 						// dialog terminated
 						SIPExerPrintf(SIPExerLogInfo, "dialog terminated\n")
@@ -2590,6 +2643,9 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 						SIPExerPrintf(SIPExerLogError, "failed to build sip bye message\n")
 						return SIPExerErrSIPMessageToString
 					}
+				} else if cliops.subscribesession {
+					// subscribe-session mode ends after waiting for NOTIFY handling
+					return ret
 				}
 				if len(smsg) > 0 {
 					// send the new message
