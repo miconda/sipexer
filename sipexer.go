@@ -2242,16 +2242,21 @@ func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 func SIPExerFindRequestStartInBuffer(rawBuf string, reqMethod string) int {
 	reqSep := "\r\n" + reqMethod + " "
 	idxReq := strings.Index(rawBuf, "\r\n"+reqSep)
+	if idxReq >= 0 {
+		return idxReq + 4
+	}
+	idxReq = strings.Index(rawBuf, reqSep+"sip:")
 	if idxReq < 0 {
-		idxReq = strings.Index(rawBuf, reqSep+"sip:")
+		idxReq = strings.Index(rawBuf, reqSep+"sips:")
 		if idxReq < 0 {
-			idxReq = strings.Index(rawBuf, reqSep+"sips:")
+			idxReq = strings.Index(rawBuf, reqSep+"tel:")
 			if idxReq < 0 {
-				idxReq = strings.Index(rawBuf, reqSep+"tel:")
+				return idxReq
 			}
 		}
 	}
-	return idxReq
+
+	return idxReq + 2
 }
 
 func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDialog) int {
