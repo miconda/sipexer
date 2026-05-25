@@ -233,6 +233,12 @@ sipexer --call-self --ring-time 2000 --call-duration 10000 -fuser alice  -ex 60 
   -cb -sd -su udp:server.com:5060
 ```
 
+Register the From user first, then send an `INVITE` on the same session:
+
+```shell
+sipexer --register-first --invite -fuser alice -tuser bob -cb -sd -su tcp:server.com:5060
+```
+
 Run a two-user call flow (user1 from regular flags, user2 from `--ua2-*` flags):
 
 ```shell
