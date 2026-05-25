@@ -372,6 +372,7 @@ type CLIOptions struct {
 	akaamf           string
 	callself         bool
 	callusers        bool
+	registerfirst    bool
 	u2fuser          string
 	u2localaddress   string
 	u2template       string
@@ -468,6 +469,7 @@ var cliops = CLIOptions{
 	akaamf:           "",
 	callself:         false,
 	callusers:        false,
+	registerfirst:    false,
 	u2fuser:          "",
 	u2localaddress:   "",
 	u2template:       "",
@@ -665,6 +667,7 @@ func init() {
 	flag.BoolVar(&cliops.raw, "raw", cliops.registerparty, "sent raw template content (no evaluation)")
 	flag.BoolVar(&cliops.register, "r", cliops.register, "set method to REGISTER")
 	flag.BoolVar(&cliops.register, "register", cliops.register, "set method to REGISTER")
+	flag.BoolVar(&cliops.registerfirst, "register-first", cliops.registerfirst, "register the From user before sending the first request")
 	flag.BoolVar(&cliops.registerparty, "register-party", cliops.registerparty, "register a third party To user")
 	flag.BoolVar(&cliops.setdomains, "sd", cliops.setdomains, "set From/To domains based on R-URI")
 	flag.BoolVar(&cliops.setdomains, "set-domains", cliops.setdomains, "set From/To domains based on R-URI")
@@ -911,6 +914,8 @@ func main() {
 			tret = SIPExerRunCallUsers(dstSockAddr, wsurlp, tplstr, tplfields)
 		} else if cliops.callself {
 			tret = SIPExerRunCallSelf(dstSockAddr, wsurlp, tplstr, tplfields)
+		} else if cliops.registerfirst {
+			tret = SIPExerRunRegisterFirst(dstSockAddr, wsurlp, tplstr, tplfields)
 		} else {
 			tret = SIPExerRunSend(dstSockAddr, wsurlp, tplstr, tplfields)
 		}
@@ -970,6 +975,84 @@ func SIPExerRunSend(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplst
 	tret := <-tchan
 	close(tchan)
 	return tret
+}
+
+func SIPExerRunRegisterFirst(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, baseTplFields map[string]any) int {
+	fuser, _ := baseTplFields["fuser"].(string)
+	if len(strings.TrimSpace(fuser)) == 0 {
+		SIPExerPrintf(SIPExerLogError, "register-first mode requires 'fuser' to be set\n")
+		return SIPExerErrTemplateData
+	}
+
+	reqMethod := strings.ToUpper(strings.TrimSpace(fmt.Sprint(baseTplFields["method"])))
+	if len(reqMethod) == 0 {
+		reqMethod = strings.ToUpper(strings.TrimSpace(cliops.method))
+	}
+	if len(reqMethod) == 0 {
+		SIPExerPrintf(SIPExerLogError, "register-first mode requires a non-REGISTER request method\n")
+		return SIPExerRetErr
+	}
+	if reqMethod == "REGISTER" {
+		return SIPExerRunSend(dstSockAddr, wsurlp, tplstr, baseTplFields)
+	}
+
+	svRegister := cliops.register
+	svMethod := cliops.method
+	svSessionWait := cliops.sessionwait
+	defer func() {
+		cliops.register = svRegister
+		cliops.method = svMethod
+		cliops.sessionwait = svSessionWait
+	}()
+
+	var seDlg *SIPExerDialog
+	if dstSockAddr.ProtoId == sgsip.ProtoUDP ||
+		dstSockAddr.ProtoId == sgsip.ProtoTCP ||
+		dstSockAddr.ProtoId == sgsip.ProtoTLS ||
+		dstSockAddr.ProtoId == sgsip.ProtoWS ||
+		dstSockAddr.ProtoId == sgsip.ProtoWSS {
+		seDlg = &SIPExerDialog{}
+		ret := SIPExerInitDialog(dstSockAddr, wsurlp, seDlg)
+		if ret != SIPExerRetOK {
+			return ret
+		}
+		defer SIPExerDialogCloseConn(seDlg)
+	}
+
+	regFields := SIPExerCloneTplFields(baseTplFields)
+	regFields["method"] = "REGISTER"
+	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
+		SIPExerEnsureViaAlias(regFields)
+	}
+	cliops.register = true
+	cliops.method = "REGISTER"
+	cliops.sessionwait = 0
+	SIPExerPrintf(SIPExerLogInfo, "register-first stage: REGISTER\n")
+	ret := SIPExerRetErr
+	if seDlg != nil {
+		SIPExerDialogResetForRequest(seDlg)
+		ret = SIPExerDialogLoop(tplstr, regFields, seDlg)
+	} else {
+		ret = SIPExerRunSend(dstSockAddr, wsurlp, tplstr, regFields)
+	}
+	if ret < 200 || ret >= 300 {
+		return ret
+	}
+
+	reqFields := SIPExerCloneTplFields(baseTplFields)
+	reqFields["method"] = reqMethod
+	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
+		SIPExerEnsureViaAlias(reqFields)
+	}
+	cliops.register = false
+	cliops.method = reqMethod
+	cliops.sessionwait = svSessionWait
+	SIPExerPrintf(SIPExerLogInfo, "register-first stage: %s\n", reqMethod)
+	if seDlg != nil {
+		SIPExerDialogResetForRequest(seDlg)
+		return SIPExerDialogLoop(tplstr, reqFields, seDlg)
+	}
+	return SIPExerRunSend(dstSockAddr, wsurlp, tplstr, reqFields)
 }
 
 func SIPExerCloneTplFields(src map[string]any) map[string]any {
@@ -1133,7 +1216,7 @@ func SIPExerLoadTemplates() (string, error) {
 }
 
 func SIPExerRunCallSelf(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, baseTplFields map[string]any) int {
-	fuser := fmt.Sprint(baseTplFields["fuser"])
+	fuser, _ := baseTplFields["fuser"].(string)
 	if len(strings.TrimSpace(fuser)) == 0 {
 		SIPExerPrintf(SIPExerLogError, "self-call mode requires 'fuser' to be set\n")
 		return SIPExerErrTemplateData
