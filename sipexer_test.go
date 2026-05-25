@@ -177,6 +177,18 @@ func TestPrepareTemplateFieldsMethodSubscribeSession(t *testing.T) {
 	})
 }
 
+func TestPrepareTemplateFieldsMethodRegisterFirstPreservesRequestMethod(t *testing.T) {
+	withCleanState(t, func() {
+		cliops.registerfirst = true
+		cliops.message = true
+		tplfields := make(map[string]any)
+		SIPExerPrepareTemplateFields(tplfields)
+		if got := tplfields["method"]; got != "MESSAGE" {
+			t.Fatalf("expected register-first to preserve requested method, got: %#v", got)
+		}
+	})
+}
+
 func TestPrepareTemplateFieldsMethodFromFieldValUpdatesCLI(t *testing.T) {
 	withCleanState(t, func() {
 		paramFields["method"] = "OPTIONS"
@@ -492,6 +504,15 @@ func TestSplitSIPMessages(t *testing.T) {
 	if got[0] != msg1 || got[1] != msg2 {
 		t.Fatalf("unexpected split result")
 	}
+}
+
+func TestRunRegisterFirstRequiresFUser(t *testing.T) {
+	withCleanState(t, func() {
+		ret := SIPExerRunRegisterFirst(sgsip.SGSIPSocketAddress{}, nil, "", map[string]any{"method": "INVITE"})
+		if ret != SIPExerErrTemplateData {
+			t.Fatalf("expected template data error when fuser is missing, got: %d", ret)
+		}
+	})
 }
 
 func TestSelectDigestAuthParamsUsesFirstHeader(t *testing.T) {
