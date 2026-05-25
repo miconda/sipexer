@@ -27,10 +27,12 @@ Project URL:
 
 `sipexer` is a cli tool that facilitates sending SIP requests to servers. It uses a flexible template
 system to allow defining many parts of the SIP request via command line parameters. It has support
-for UDP, TCP, TLS and WebSocket transport protocols, being suitable to test modern WebRTC SIP servers.
+for UDP, TCP, TLS and WebSocket (WS and WSS) transport protocols, being suitable to test modern
+WebRTC SIP servers.
 
 `sipexer` is not a SIP cli softphone, but a tool for crafting SIP requests mainly for the purpose
-of testing SIP signaling routing or monitoring servers.
+of testing SIP signaling routing or monitoring servers. It can also simulate some common scenarios,
+like: registration and call itself, call between two users or subscribe session.
 
 It is written in Go, aiming to be usable from Linux, MacOS or Windows.
 
@@ -62,6 +64,11 @@ Among features:
   * color output mode for easier troubleshooting
   * support for many transport layers: IPv4 and IPv6, UDP, TCP, TLS and WebSocket (for WebRTC)
   * send SIP requests of any type (e.g., INFO, SUBSCRIBE, NOTIFY, ...)
+  * simulate call to itself, by registering first, then calling its own AoR, answering
+  and hanging up
+  * simulate call between two users, registering both, then calling from first user
+  to the second one, answering and hanging up
+  * simulate subscribe session: send SUBSCRIBE and wait for NOTIFY requests
 
 ## Installation
 
