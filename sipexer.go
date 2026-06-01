@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	mathrand "math/rand"
 	"net"
@@ -204,6 +205,7 @@ type SIPExerDialog struct {
 	ConnWSS      *SIPExerConnWSS
 	RecvBuf      []byte
 	RecvN        int
+	RecvRest     string
 	TimeoutStep  int
 	TimeoutVal   int
 	Resend       bool
@@ -2232,23 +2234,11 @@ func SIPExerDialogReadBytes(seDlg *SIPExerDialog) int {
 			seDlg.RecvAddr = rcvAddr.String()
 		}
 	} else if seDlg.ProtoId == sgsip.ProtoTCP {
-		seDlg.RecvN, err = seDlg.ConnTCP.Conn.Read(seDlg.RecvBuf)
-		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
-			return SIPExerErrTCPRead
-		}
+		return SIPExerDialogReadStreamConn(seDlg, seDlg.ConnTCP.Conn, SIPExerErrTCPRead)
 	} else if seDlg.ProtoId == sgsip.ProtoTLS {
-		seDlg.RecvN, err = seDlg.ConnTLS.Conn.Read(seDlg.RecvBuf)
-		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
-			return SIPExerErrTLSRead
-		}
+		return SIPExerDialogReadStreamConn(seDlg, seDlg.ConnTLS.Conn, SIPExerErrTLSRead)
 	} else if seDlg.ProtoId == sgsip.ProtoWSS || seDlg.ProtoId == sgsip.ProtoWS {
-		seDlg.RecvN, err = seDlg.ConnWSS.Conn.Read(seDlg.RecvBuf)
-		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, seDlg.RecvN, err)
-			return SIPExerErrWSRead
-		}
+		return SIPExerDialogReadStreamConn(seDlg, seDlg.ConnWSS.Conn, SIPExerErrWSRead)
 	}
 	return SIPExerRetOK
 }
@@ -2272,7 +2262,7 @@ func SIPExerSessionWaitAndRead(seDlg *SIPExerDialog) int {
 		}
 		if ret == SIPExerRetOK && seDlg.RecvN > 0 {
 			SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", seDlg.RecvAddr, seDlg.RecvN)
-			SIPExerMessagePrint("\n\n", string(seDlg.RecvBuf), "\n")
+			SIPExerMessagePrint("\n\n", string(seDlg.RecvBuf[:seDlg.RecvN]), "\n")
 			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 			rawBuf := string(seDlg.RecvBuf[:seDlg.RecvN])
 			if len(rawBuf) > 16 {
@@ -2328,29 +2318,69 @@ func SIPExerSplitSIPMessages(rawBuf string) []string {
 	msgs := make([]string, 0, 4)
 	data := rawBuf
 	for {
-		data = strings.TrimLeft(data, "\r\n")
-		if len(data) == 0 {
+		msg, rest, ok := SIPExerExtractNextSIPMessage(data)
+		if !ok {
+			data = strings.TrimLeft(data, "\r\n")
+			if len(data) > 0 {
+				msgs = append(msgs, data)
+			}
 			break
 		}
-		eoh := strings.Index(data, "\r\n\r\n")
-		if eoh < 0 {
-			msgs = append(msgs, data)
-			break
-		}
-		hlen := eoh + 4
-		clen := SIPExerParseContentLength(data[0:eoh])
-		mLen := hlen + clen
-		if mLen > len(data) {
-			msgs = append(msgs, data)
-			break
-		}
-		msgs = append(msgs, data[0:mLen])
-		data = data[mLen:]
+		msgs = append(msgs, msg)
+		data = rest
 	}
 	if len(msgs) == 0 && len(rawBuf) > 0 {
 		msgs = append(msgs, rawBuf)
 	}
 	return msgs
+}
+
+func SIPExerExtractNextSIPMessage(rawBuf string) (string, string, bool) {
+	data := strings.TrimLeft(rawBuf, "\r\n")
+	if len(data) == 0 {
+		return "", "", false
+	}
+	eoh := strings.Index(data, "\r\n\r\n")
+	if eoh < 0 {
+		return "", data, false
+	}
+	hlen := eoh + 4
+	clen := SIPExerParseContentLength(data[0:eoh])
+	mLen := hlen + clen
+	if mLen > len(data) {
+		return "", data, false
+	}
+	return data[0:mLen], data[mLen:], true
+}
+
+func SIPExerDialogReadStreamConn(seDlg *SIPExerDialog, conn io.Reader, protoErr int) int {
+	if len(seDlg.RecvRest) > 0 {
+		if msg, rest, ok := SIPExerExtractNextSIPMessage(seDlg.RecvRest); ok {
+			seDlg.RecvRest = rest
+			seDlg.RecvBuf = []byte(msg)
+			seDlg.RecvN = len(msg)
+			return SIPExerRetOK
+		}
+	}
+
+	for {
+		readBuf := make([]byte, cliops.buffersize)
+		n, err := conn.Read(readBuf)
+		if err != nil {
+			SIPExerPrintf(SIPExerLogError, "not receiving after %dms (bytes %d - %v)\n", cliops.timeout, n, err)
+			return protoErr
+		}
+		if n <= 0 {
+			continue
+		}
+		seDlg.RecvRest += string(readBuf[:n])
+		if msg, rest, ok := SIPExerExtractNextSIPMessage(seDlg.RecvRest); ok {
+			seDlg.RecvRest = rest
+			seDlg.RecvBuf = []byte(msg)
+			seDlg.RecvN = len(msg)
+			return SIPExerRetOK
+		}
+	}
 }
 
 func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
@@ -2510,10 +2540,10 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 		if seDlg.RecvN > 0 {
 			// absorb 1xx responses or deal with 401/407 auth challenges
 			SIPExerPrintf(SIPExerLogInfo, "message-received: from=%s bytes=%d data=[[---", seDlg.RecvAddr, seDlg.RecvN)
-			SIPExerMessagePrint("\n\n", string(seDlg.RecvBuf), "\n")
+			SIPExerMessagePrint("\n\n", string(seDlg.RecvBuf[:seDlg.RecvN]), "\n")
 			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 			seDlg.LastResponse = new(sgsip.SGSIPMessage)
-			ret = SIPExerProcessResponse(seDlg.FirstRequest, seDlg.RecvBuf, seDlg.LastResponse, &seDlg.SkipAuth, &smsg, &sack)
+			ret = SIPExerProcessResponse(seDlg.FirstRequest, seDlg.RecvBuf[:seDlg.RecvN], seDlg.LastResponse, &seDlg.SkipAuth, &smsg, &sack)
 			if ret < 0 {
 				return ret
 			}
@@ -2848,7 +2878,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 	}
 
 	SIPExerPrintf(SIPExerLogInfo, "packet-received: from=%s bytes=%d data=[[---", seDlg.RecvAddr, seDlg.RecvN)
-	SIPExerMessagePrint("\n\n", string(seDlg.RecvBuf), "\n")
+	SIPExerMessagePrint("\n\n", string(seDlg.RecvBuf[:seDlg.RecvN]), "\n")
 	SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 	return SIPExerRetOK
 }
@@ -2876,6 +2906,7 @@ func SIPExerDialogResetForRequest(seDlg *SIPExerDialog) {
 	seDlg.LastResponse = nil
 	seDlg.RecvBuf = nil
 	seDlg.RecvN = 0
+	seDlg.RecvRest = ""
 	seDlg.TimeoutStep = cliops.timert1
 	seDlg.TimeoutVal = seDlg.TimeoutStep
 	seDlg.Resend = true
