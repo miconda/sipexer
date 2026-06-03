@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -46,6 +47,20 @@ func withCleanState(t *testing.T, fn func()) {
 	iVarMap = make(iVarMapType)
 
 	fn()
+}
+
+type chunkReader struct {
+	chunks []string
+	idx    int
+}
+
+func (r *chunkReader) Read(p []byte) (int, error) {
+	if r.idx >= len(r.chunks) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.chunks[r.idx])
+	r.idx++
+	return n, nil
 }
 
 func TestParamFieldsTypeSet(t *testing.T) {
@@ -504,6 +519,38 @@ func TestSplitSIPMessages(t *testing.T) {
 	if got[0] != msg1 || got[1] != msg2 {
 		t.Fatalf("unexpected split result")
 	}
+}
+
+func TestDialogReadStreamConnHandlesChunked183WithBody(t *testing.T) {
+	withCleanState(t, func() {
+		body := "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=call\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\nm=audio 49170 RTP/AVP 0\r\n"
+		msg183 := "SIP/2.0 183 Session Progress\r\nVia: SIP/2.0/TLS host;branch=z9hG4bK1\r\nFrom: <sip:a@example.com>;tag=1\r\nTo: <sip:b@example.com>;tag=2\r\nCall-ID: c1\r\nCSeq: 1 INVITE\r\nContent-Type: application/sdp\r\nContent-Length: " + strconv.Itoa(len(body)) + "\r\n\r\n" + body
+		msg100 := "SIP/2.0 100 Trying\r\nVia: SIP/2.0/TLS host;branch=z9hG4bK1\r\nFrom: <sip:a@example.com>;tag=1\r\nTo: <sip:b@example.com>\r\nCall-ID: c1\r\nCSeq: 1 INVITE\r\nContent-Length: 0\r\n\r\n"
+		reader := &chunkReader{
+			chunks: []string{
+				msg183[:120],
+				msg183[120:] + msg100,
+			},
+		}
+		seDlg := &SIPExerDialog{}
+
+		if ret := SIPExerDialogReadStreamConn(seDlg, reader, SIPExerErrTLSRead); ret != SIPExerRetOK {
+			t.Fatalf("expected first read ok, got: %d", ret)
+		}
+		if got := string(seDlg.RecvBuf[:seDlg.RecvN]); got != msg183 {
+			t.Fatalf("expected first complete message to be 183, got: %q", got)
+		}
+		if seDlg.RecvRest == "" {
+			t.Fatalf("expected second SIP message to remain buffered")
+		}
+
+		if ret := SIPExerDialogReadStreamConn(seDlg, reader, SIPExerErrTLSRead); ret != SIPExerRetOK {
+			t.Fatalf("expected second buffered read ok, got: %d", ret)
+		}
+		if got := string(seDlg.RecvBuf[:seDlg.RecvN]); got != msg100 {
+			t.Fatalf("expected second complete message to be 100, got: %q", got)
+		}
+	})
 }
 
 func TestRunRegisterFirstRequiresFUser(t *testing.T) {
