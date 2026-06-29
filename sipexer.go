@@ -2778,7 +2778,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 				continue
 			}
 			if ret/100 == 2 {
-				if seDlg.State == SIPExerDialogEarly {
+				if seDlg.State == SIPExerDialogEarly || seDlg.State == SIPExerDialogStarted {
 					seDlg.State = SIPExerDialogAnswered
 				}
 			}
