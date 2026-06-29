@@ -69,6 +69,7 @@ Among features:
   * simulate call between two users, registering both, then calling from first user
   to the second one, answering and hanging up
   * simulate subscribe session: send SUBSCRIBE and wait for NOTIFY requests
+  * optionally re-resolve an FQDN target via DNS before each in-dialog request (UDP only)
 
 ## Installation
 
