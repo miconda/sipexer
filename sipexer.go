@@ -211,6 +211,9 @@ type SIPExerDialog struct {
 	Resend       bool
 	SkipAuth     bool
 	CallSelfBye  bool
+
+	TargetHostPort string
+	TargetAFProto  string
 }
 
 type paramFieldsType map[string]string
@@ -366,6 +369,7 @@ type CLIOptions struct {
 	runcount         int
 	helpcommands     bool
 	dnssrvprint      bool
+	indialogdns      bool
 	lateoffer        bool
 	akauser          string
 	akakey           string
@@ -461,6 +465,7 @@ var cliops = CLIOptions{
 	sessionwait:      0,
 	runcount:         1,
 	dnssrvprint:      false,
+	indialogdns:      false,
 	lateoffer:        false,
 	helpcommands:     false,
 	version:          false,
@@ -644,6 +649,8 @@ func init() {
 	flag.BoolVar(&cliops.contactbuild, "cb", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.contactbuild, "contact-build", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.dnssrvprint, "dns-srv-print", cliops.dnssrvprint, "print DNS SRV records")
+	flag.BoolVar(&cliops.indialogdns, "in-dialog-dns", cliops.indialogdns, "re-resolve FQDN target via DNS before each in-dialog request (UDP only)")
+	flag.BoolVar(&cliops.indialogdns, "idd", cliops.indialogdns, "re-resolve FQDN target via DNS before each in-dialog request (UDP only)")
 	flag.BoolVar(&cliops.fieldseval, "fe", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.fieldseval, "fields-eval", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.flagdefaults, "flag-defaults", cliops.flagdefaults, "print flag (cli param) default values")
@@ -2383,8 +2390,49 @@ func SIPExerDialogReadStreamConn(seDlg *SIPExerDialog, conn io.Reader, protoErr 
 	}
 }
 
+func SIPExerResolveDialogTarget(seDlg *SIPExerDialog) int {
+	if len(seDlg.TargetHostPort) == 0 {
+		return SIPExerRetOK
+	}
+	host, _, err := net.SplitHostPort(seDlg.TargetHostPort)
+	if err != nil {
+		host = seDlg.TargetHostPort
+	}
+	if net.ParseIP(host) != nil {
+		// IP literal target - DNS re-resolution would be a no-op
+		SIPExerPrintf(SIPExerLogDebug, "in-dialog-dns: target %s is an IP literal, skipping DNS re-resolution\n", seDlg.TargetHostPort)
+		return SIPExerRetOK
+	}
+	if seDlg.ProtoId != sgsip.ProtoUDP || cliops.connectudp {
+		SIPExerPrintf(SIPExerLogInfo, "in-dialog-dns: re-resolution applies only to connectionless UDP, not applied for %s target %s (connection pinned to %s)\n",
+			seDlg.Proto, seDlg.TargetHostPort, seDlg.TargetAddr)
+		return SIPExerRetOK
+	}
+	dstAddr, err := net.ResolveUDPAddr(seDlg.TargetAFProto, seDlg.TargetHostPort)
+	if err != nil {
+		SIPExerPrintf(SIPExerLogError, "in-dialog-dns: failed to resolve %s - %v\n", seDlg.TargetHostPort, err)
+		return SIPExerErrResolveDstUDPAddr
+	}
+	newTarget := dstAddr.String()
+	if newTarget != seDlg.TargetAddr {
+		SIPExerPrintf(SIPExerLogInfo, "in-dialog-dns: target %s re-resolved %s -> %s\n",
+			seDlg.TargetHostPort, seDlg.TargetAddr, newTarget)
+	} else {
+		SIPExerPrintf(SIPExerLogDebug, "in-dialog-dns: target %s re-resolved to %s (unchanged)\n",
+			seDlg.TargetHostPort, newTarget)
+	}
+	seDlg.ConnUDP.DstAddr = dstAddr
+	seDlg.TargetAddr = newTarget
+	return SIPExerRetOK
+}
+
 func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 	var err error
+	// re-resolve DNS only once the dialog is established (2xx received)
+	if cliops.indialogdns &&
+		(seDlg.State == SIPExerDialogAnswered || seDlg.State == SIPExerDialogConfirmed) {
+		SIPExerResolveDialogTarget(seDlg)
+	}
 	if seDlg.ProtoId == sgsip.ProtoUDP {
 		if cliops.connectudp {
 			_, err = seDlg.ConnUDP.Conn.Write(bmsg)
@@ -3015,6 +3063,8 @@ func SIPExerInitUDPDialog(dstSockAddr sgsip.SGSIPSocketAddress, seDlg *SIPExerDi
 
 	seDlg.LocalAddr = lAddr
 	seDlg.TargetAddr = seDlg.ConnUDP.DstAddr.String()
+	seDlg.TargetHostPort = dstSockAddr.Addr + ":" + dstSockAddr.Port
+	seDlg.TargetAFProto = strAFProto
 	seDlg.RecvAddr = seDlg.TargetAddr
 	SIPExerDialogResetForRequest(seDlg)
 	return SIPExerRetOK
