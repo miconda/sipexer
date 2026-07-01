@@ -971,6 +971,12 @@ func SIPExerTargetProtoSupported(protoId int) bool {
 }
 
 func SIPExerRunSend(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, tplfields map[string]any) int {
+	// restore sessionwait needed for a subsequent run-count (-rc) iteration
+	svSessionWait := cliops.sessionwait
+	defer func() {
+		cliops.sessionwait = svSessionWait
+	}()
+
 	tchan := make(chan int, 1)
 	if dstSockAddr.ProtoId == sgsip.ProtoTCP {
 		go SIPExerSendTCP(dstSockAddr, tplstr, tplfields, tchan)
