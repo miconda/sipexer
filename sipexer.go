@@ -2563,6 +2563,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 						SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
 						SIPExerMessagePrint("\n\n", smsg, "\n")
 						SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+						SIPExerSetWriteTimeout(seDlg)
 						ret = SIPExerSendBytes(seDlg, []byte(smsg))
 						if ret < 0 {
 							return ret
@@ -2618,6 +2619,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
 					SIPExerMessagePrint("\n\n", smsg, "\n")
 					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+					SIPExerSetWriteTimeout(seDlg)
 					ret = SIPExerSendBytes(seDlg, []byte(smsg))
 					if ret < 0 {
 						return ret
@@ -2702,6 +2704,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
 					SIPExerMessagePrint("\n\n", smsg, "\n")
 					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+					SIPExerSetWriteTimeout(seDlg)
 					ret = SIPExerSendBytes(seDlg, []byte(smsg))
 					if ret < 0 {
 						return ret
@@ -2710,6 +2713,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					return SIPExerRetOK
 				}
 				if sgsip.SGSIPMessageToResponseString(seDlg.LastResponse, "200", "OK", &smsg) == sgsip.SGSIPRetOK {
+					SIPExerSetWriteTimeout(seDlg)
 					ret = SIPExerSendBytes(seDlg, []byte(smsg))
 					if ret < 0 {
 						return ret
@@ -2752,6 +2756,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 						return SIPExerErrSIPMessageFormat
 					}
 				}
+				SIPExerSetWriteTimeout(seDlg)
 				ret1 := SIPExerSendBytes(seDlg, []byte(sack))
 				if ret1 < 0 {
 					return ret
