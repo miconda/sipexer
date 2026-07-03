@@ -824,136 +824,136 @@ func main() {
 
 // SIPExerRunScenario builds fresh data for fresh scenario
 func SIPExerRunScenario(tplstr string) int {
-		var err error
-		var ok bool
-		var tret int
+	var err error
+	var ok bool
+	var tret int
 
-		tplfields := make(map[string]any)
+	tplfields := make(map[string]any)
 
-		SIPExerPrepareTemplateFields(tplfields)
+	SIPExerPrepareTemplateFields(tplfields)
 
-		var wsurlp *url.URL = nil
-		dstAddr := "udp:127.0.0.1:5060"
-		if len(flag.Args()) > 0 {
-			if len(flag.Args()) == 1 {
-				dstAddr = flag.Arg(0)
-				if strings.HasPrefix(dstAddr, "wss:") &&
-					!strings.HasPrefix(dstAddr, "wss://") {
-					dstAddr = strings.TrimPrefix(dstAddr, "wss:")
-					dstAddr = "wss://" + dstAddr
-				} else if strings.HasPrefix(dstAddr, "ws:") &&
-					!strings.HasPrefix(dstAddr, "ws://") {
-					dstAddr = strings.TrimPrefix(dstAddr, "ws:")
-					dstAddr = "ws://" + dstAddr
-				}
-				if strings.HasPrefix(dstAddr, "wss://") ||
-					strings.HasPrefix(dstAddr, "ws://") {
-					wsurlp, err = url.Parse(dstAddr)
-					if err != nil {
-						SIPExerPrintf(SIPExerLogError, "invalid websocket target: %v\n", dstAddr)
-						SIPExerExit(SIPExerErrWSURLFormat)
-					}
-					if strings.HasPrefix(dstAddr, "wss://") {
-						dstAddr = "wss:" + wsurlp.Host
-					} else {
-						dstAddr = "ws:" + wsurlp.Host
-					}
-				}
-			} else if len(flag.Args()) == 2 {
-				dstAddr = "udp:" + flag.Arg(0) + ":" + flag.Arg(1)
-			} else if len(flag.Args()) == 3 {
-				dstAddr = flag.Arg(0) + ":" + flag.Arg(1) + ":" + flag.Arg(2)
-			} else {
-				SIPExerPrintf(SIPExerLogError, "invalid number of arguments : %d [%v]\n",
-					len(flag.Args()), flag.Args())
-				SIPExerExit(SIPExerErrArgumentsNumber)
+	var wsurlp *url.URL = nil
+	dstAddr := "udp:127.0.0.1:5060"
+	if len(flag.Args()) > 0 {
+		if len(flag.Args()) == 1 {
+			dstAddr = flag.Arg(0)
+			if strings.HasPrefix(dstAddr, "wss:") &&
+				!strings.HasPrefix(dstAddr, "wss://") {
+				dstAddr = strings.TrimPrefix(dstAddr, "wss:")
+				dstAddr = "wss://" + dstAddr
+			} else if strings.HasPrefix(dstAddr, "ws:") &&
+				!strings.HasPrefix(dstAddr, "ws://") {
+				dstAddr = strings.TrimPrefix(dstAddr, "ws:")
+				dstAddr = "ws://" + dstAddr
 			}
-		}
-		var dstSockAddr = sgsip.SGSIPSocketAddress{}
-		var dstURI = sgsip.SGSIPURI{}
-		if sgsip.SGSIPParseSocketAddress(dstAddr, &dstSockAddr) != sgsip.SGSIPRetOK {
-			if sgsip.SGSIPParseURI(dstAddr, &dstURI) != sgsip.SGSIPRetOK {
-				SIPExerPrintf(SIPExerLogError, "invalid destination address: %s\n", dstAddr)
-				SIPExerExit(SIPExerErrDestinationFormat)
-			} else {
-				SIPExerPrintf(SIPExerLogDebug, "parsed SIP URI argument (%+v)\n", dstURI)
-				sgsip.SGSIPURIToSocketAddress(&dstURI, &dstSockAddr)
-			}
-		} else {
-			SIPExerPrintf(SIPExerLogDebug, "parsed socket address argument (%+v)\n", dstSockAddr)
-			if cliops.setuser {
-				_, ok = tplfields["tuser"]
-				if ok {
-					sgsip.SGSocketAddressToSIPURI(&dstSockAddr, fmt.Sprint(tplfields["tuser"]), 0, &dstURI)
+			if strings.HasPrefix(dstAddr, "wss://") ||
+				strings.HasPrefix(dstAddr, "ws://") {
+				wsurlp, err = url.Parse(dstAddr)
+				if err != nil {
+					SIPExerPrintf(SIPExerLogError, "invalid websocket target: %v\n", dstAddr)
+					SIPExerExit(SIPExerErrWSURLFormat)
+				}
+				if strings.HasPrefix(dstAddr, "wss://") {
+					dstAddr = "wss:" + wsurlp.Host
 				} else {
-					sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.ruser, 0, &dstURI)
+					dstAddr = "ws:" + wsurlp.Host
 				}
+			}
+		} else if len(flag.Args()) == 2 {
+			dstAddr = "udp:" + flag.Arg(0) + ":" + flag.Arg(1)
+		} else if len(flag.Args()) == 3 {
+			dstAddr = flag.Arg(0) + ":" + flag.Arg(1) + ":" + flag.Arg(2)
+		} else {
+			SIPExerPrintf(SIPExerLogError, "invalid number of arguments : %d [%v]\n",
+				len(flag.Args()), flag.Args())
+			SIPExerExit(SIPExerErrArgumentsNumber)
+		}
+	}
+	var dstSockAddr = sgsip.SGSIPSocketAddress{}
+	var dstURI = sgsip.SGSIPURI{}
+	if sgsip.SGSIPParseSocketAddress(dstAddr, &dstSockAddr) != sgsip.SGSIPRetOK {
+		if sgsip.SGSIPParseURI(dstAddr, &dstURI) != sgsip.SGSIPRetOK {
+			SIPExerPrintf(SIPExerLogError, "invalid destination address: %s\n", dstAddr)
+			SIPExerExit(SIPExerErrDestinationFormat)
+		} else {
+			SIPExerPrintf(SIPExerLogDebug, "parsed SIP URI argument (%+v)\n", dstURI)
+			sgsip.SGSIPURIToSocketAddress(&dstURI, &dstSockAddr)
+		}
+	} else {
+		SIPExerPrintf(SIPExerLogDebug, "parsed socket address argument (%+v)\n", dstSockAddr)
+		if cliops.setuser {
+			_, ok = tplfields["tuser"]
+			if ok {
+				sgsip.SGSocketAddressToSIPURI(&dstSockAddr, fmt.Sprint(tplfields["tuser"]), 0, &dstURI)
 			} else {
 				sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.ruser, 0, &dstURI)
 			}
-		}
-		if len(cliops.ruri) > 0 {
-			tplfields["ruri"] = cliops.ruri
 		} else {
-			_, ok = tplfields["ruri"]
-			if !ok {
-				tplfields["ruri"] = dstURI.Val
-			}
+			sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.ruser, 0, &dstURI)
 		}
-		if cliops.setdomains {
-			var rURI = sgsip.SGSIPURI{}
-			if sgsip.SGSIPParseURI(fmt.Sprint(tplfields["ruri"]), &rURI) != sgsip.SGSIPRetOK {
-				SIPExerPrintf(SIPExerLogError, "invalid ruri: %v\n", tplfields["ruri"])
-				SIPExerExit(SIPExerErrURIFormat)
-			}
-			tplfields["fdomain"] = rURI.Addr
-			tplfields["tdomain"] = rURI.Addr
+	}
+	if len(cliops.ruri) > 0 {
+		tplfields["ruri"] = cliops.ruri
+	} else {
+		_, ok = tplfields["ruri"]
+		if !ok {
+			tplfields["ruri"] = dstURI.Val
 		}
+	}
+	if cliops.setdomains {
+		var rURI = sgsip.SGSIPURI{}
+		if sgsip.SGSIPParseURI(fmt.Sprint(tplfields["ruri"]), &rURI) != sgsip.SGSIPRetOK {
+			SIPExerPrintf(SIPExerLogError, "invalid ruri: %v\n", tplfields["ruri"])
+			SIPExerExit(SIPExerErrURIFormat)
+		}
+		tplfields["fdomain"] = rURI.Addr
+		tplfields["tdomain"] = rURI.Addr
+	}
 
-		if cliops.templaterun {
-			lTAddr := ""
-			if len(cliops.localaddress) > 0 {
-				lTAddr = cliops.localaddress
-			} else {
-				lTAddr = "127.0.0.1:55060"
-			}
-			var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
-			var smsg string = ""
-			tret = SIPExerPrepareMessage(tplstr, tplfields, dstSockAddr.Proto, lTAddr, dstSockAddr.Addr+":"+dstSockAddr.Port, &msgVal)
-			if tret != 0 {
-				SIPExerExit(tret)
-			}
-			smsg = msgVal.Data
-			msgVal = sgsip.SGSIPMessage{}
-			if sgsip.SGSIPParseMessage(smsg, &msgVal) != sgsip.SGSIPRetOK {
-				SIPExerPrintf(SIPExerLogError, "failed to parse sip message\n%+v\n\n", smsg)
-				SIPExerExit(SIPExerErrSIPMessageFormat)
-			}
-			if cliops.verbosity > 0 {
-				fmt.Printf("%+v\n\n", smsg)
-				fmt.Printf("%+v\n\n", msgVal)
-			}
-
-			if cliops.runcount > 1 {
-				return SIPExerRetDone
-			}
-			SIPExerExit(SIPExerRetDone)
-		}
-
-		if !SIPExerTargetProtoSupported(dstSockAddr.ProtoId) {
-			SIPExerPrintf(SIPExerLogError, "transport protocol not supported yet for target %s\n", dstAddr)
-			SIPExerExit(SIPExerErrProtocolUnsuported)
-		}
-		if cliops.callusers {
-			tret = SIPExerRunCallUsers(dstSockAddr, wsurlp, tplstr, tplfields)
-		} else if cliops.callself {
-			tret = SIPExerRunCallSelf(dstSockAddr, wsurlp, tplstr, tplfields)
-		} else if cliops.registerfirst {
-			tret = SIPExerRunRegisterFirst(dstSockAddr, wsurlp, tplstr, tplfields)
+	if cliops.templaterun {
+		lTAddr := ""
+		if len(cliops.localaddress) > 0 {
+			lTAddr = cliops.localaddress
 		} else {
-			tret = SIPExerRunSend(dstSockAddr, wsurlp, tplstr, tplfields)
+			lTAddr = "127.0.0.1:55060"
 		}
-		return tret
+		var msgVal sgsip.SGSIPMessage = sgsip.SGSIPMessage{}
+		var smsg string = ""
+		tret = SIPExerPrepareMessage(tplstr, tplfields, dstSockAddr.Proto, lTAddr, dstSockAddr.Addr+":"+dstSockAddr.Port, &msgVal)
+		if tret != 0 {
+			SIPExerExit(tret)
+		}
+		smsg = msgVal.Data
+		msgVal = sgsip.SGSIPMessage{}
+		if sgsip.SGSIPParseMessage(smsg, &msgVal) != sgsip.SGSIPRetOK {
+			SIPExerPrintf(SIPExerLogError, "failed to parse sip message\n%+v\n\n", smsg)
+			SIPExerExit(SIPExerErrSIPMessageFormat)
+		}
+		if cliops.verbosity > 0 {
+			fmt.Printf("%+v\n\n", smsg)
+			fmt.Printf("%+v\n\n", msgVal)
+		}
+
+		if cliops.runcount > 1 {
+			return SIPExerRetDone
+		}
+		SIPExerExit(SIPExerRetDone)
+	}
+
+	if !SIPExerTargetProtoSupported(dstSockAddr.ProtoId) {
+		SIPExerPrintf(SIPExerLogError, "transport protocol not supported yet for target %s\n", dstAddr)
+		SIPExerExit(SIPExerErrProtocolUnsuported)
+	}
+	if cliops.callusers {
+		tret = SIPExerRunCallUsers(dstSockAddr, wsurlp, tplstr, tplfields)
+	} else if cliops.callself {
+		tret = SIPExerRunCallSelf(dstSockAddr, wsurlp, tplstr, tplfields)
+	} else if cliops.registerfirst {
+		tret = SIPExerRunRegisterFirst(dstSockAddr, wsurlp, tplstr, tplfields)
+	} else {
+		tret = SIPExerRunSend(dstSockAddr, wsurlp, tplstr, tplfields)
+	}
+	return tret
 }
 
 // SIPExerRunBatch implements an open-loop, SIPp-style run-batch injector
