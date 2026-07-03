@@ -3372,6 +3372,9 @@ func SIPExerRandHexString(olen int) string {
 }
 
 func SIPExerMessagePrint(prefix string, smsg string, suffix string) {
+	if cliops.verbosity < SIPExerLogInfo {
+		return
+	}
 	if !cliops.colormessage {
 		fmt.Printf("%s%s%s", prefix, smsg, suffix)
 		return
