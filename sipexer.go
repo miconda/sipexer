@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -211,6 +212,7 @@ type SIPExerDialog struct {
 	Resend       bool
 	SkipAuth     bool
 	CallSelfBye  bool
+	SessionWait  int
 
 	TargetHostPort string
 	TargetAFProto  string
@@ -367,6 +369,8 @@ type CLIOptions struct {
 	colormessage     bool
 	sessionwait      int
 	runcount         int
+	runbatch         int
+	runbatchinterval int
 	helpcommands     bool
 	dnssrvprint      bool
 	indialogdns      bool
@@ -464,6 +468,8 @@ var cliops = CLIOptions{
 	colormessage:     false,
 	sessionwait:      0,
 	runcount:         1,
+	runbatch:         0,
+	runbatchinterval: 1000,
 	dnssrvprint:      false,
 	indialogdns:      false,
 	lateoffer:        false,
@@ -694,6 +700,10 @@ func init() {
 	flag.IntVar(&cliops.af, "af", cliops.af, "enforce address family for socket (4 or 6)")
 	flag.IntVar(&cliops.runcount, "rc", cliops.runcount, "how many times to recreate and send the message")
 	flag.IntVar(&cliops.runcount, "run-count", cliops.runcount, "how many times to recreate and send the message")
+	flag.IntVar(&cliops.runbatch, "rb", cliops.runbatch, "run-batch injector: number of scenarios to spawn on each interval (basic send scenarios only)")
+	flag.IntVar(&cliops.runbatch, "run-batch", cliops.runbatch, "run-batch injector: number of scenarios to spawn on each interval (basic send scenarios only)")
+	flag.IntVar(&cliops.runbatchinterval, "rbi", cliops.runbatchinterval, "run-batch injector: milliseconds between spawning run batches")
+	flag.IntVar(&cliops.runbatchinterval, "run-batch-interval", cliops.runbatchinterval, "run-batch injector: milliseconds between spawning run batches")
 	flag.IntVar(&cliops.ringtime, "ring-time", cliops.ringtime, "ringing time in milliseconds before 200 OK in self-call mode")
 	flag.IntVar(&cliops.ringtime, "rt", cliops.ringtime, "ringing time in milliseconds before 200 OK in self-call mode")
 	flag.IntVar(&cliops.callduration, "call-duration", cliops.callduration, "call duration in milliseconds before BYE in self-call mode")
@@ -727,8 +737,6 @@ func init() {
 
 // sipexer application
 func main() {
-	var err error
-	var ok bool
 	var tret int
 
 	flag.Parse()
@@ -801,7 +809,25 @@ func main() {
 		cliops.localaddress = ""
 	}
 
+	// run-batch injector
+	if cliops.runbatch > 0 {
+		tret = SIPExerRunBatch(tplstr)
+		SIPExerExit(tret)
+	}
+
 	for r := 0; r < cliops.runcount; r++ {
+		tret = SIPExerRunScenario(tplstr)
+	}
+
+	SIPExerExit(tret)
+}
+
+// SIPExerRunScenario builds fresh data for fresh scenario
+func SIPExerRunScenario(tplstr string) int {
+		var err error
+		var ok bool
+		var tret int
+
 		tplfields := make(map[string]any)
 
 		SIPExerPrepareTemplateFields(tplfields)
@@ -909,8 +935,7 @@ func main() {
 			}
 
 			if cliops.runcount > 1 {
-				tret = SIPExerRetDone
-				continue
+				return SIPExerRetDone
 			}
 			SIPExerExit(SIPExerRetDone)
 		}
@@ -928,9 +953,66 @@ func main() {
 		} else {
 			tret = SIPExerRunSend(dstSockAddr, wsurlp, tplstr, tplfields)
 		}
+		return tret
+}
+
+// SIPExerRunBatch implements an open-loop, SIPp-style run-batch injector
+func SIPExerRunBatch(tplstr string) int {
+	if cliops.runbatch <= 0 {
+		// unreachable via the -rb>0 opt-in gate in main, kept as a defensive guard
+		SIPExerPrintf(SIPExerLogError, "run-batch injector requires -rb (>0)\n")
+		return SIPExerRetErr
+	}
+	if cliops.runbatchinterval <= 0 {
+		SIPExerPrintf(SIPExerLogError, "run-batch injector requires -rbi (>0), got %d\n", cliops.runbatchinterval)
+		return SIPExerRetErr
+	}
+	if cliops.callself || cliops.callusers || cliops.registerfirst {
+		SIPExerPrintf(SIPExerLogError, "run-batch injector (-rb/-rbi) supports basic send scenarios only, not call-self/call-user/register-first\n")
+		return SIPExerRetErr
+	}
+	if cliops.templaterun {
+		SIPExerPrintf(SIPExerLogError, "run-batch injector (-rb/-rbi) cannot be combined with template-run\n")
+		return SIPExerRetErr
 	}
 
-	SIPExerExit(tret)
+	// number of batches, rounded up; the last batch is trimmed so exactly rc scenarios run
+	nbatches := (cliops.runcount + cliops.runbatch - 1) / cliops.runbatch
+	if nbatches <= 0 {
+		SIPExerPrintf(SIPExerLogError, "run-batch injector: -rc (%d) must be > 0\n", cliops.runcount)
+		return SIPExerRetErr
+	}
+
+	warmFields := make(map[string]any)
+	SIPExerPrepareTemplateFields(warmFields)
+	if len(cliops.authuser) == 0 {
+		cliops.authuser = fmt.Sprint(warmFields["fuser"])
+	}
+
+	SIPExerPrintf(SIPExerLogInfo, "run-batch injector: %d batches of up to %d every %d ms, total %d\n",
+		nbatches, cliops.runbatch, cliops.runbatchinterval, cliops.runcount)
+
+	var wg sync.WaitGroup
+	spawned := 0
+	for b := 0; b < nbatches; b++ {
+		batch := cliops.runbatch
+		if spawned+batch > cliops.runcount {
+			batch = cliops.runcount - spawned
+		}
+		for i := 0; i < batch; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				SIPExerRunScenario(tplstr)
+			}()
+		}
+		spawned += batch
+		if b < nbatches-1 {
+			time.Sleep(time.Duration(cliops.runbatchinterval) * time.Millisecond)
+		}
+	}
+	wg.Wait()
+	return SIPExerRetOK
 }
 
 func SIPExerExit(ret int) {
@@ -971,12 +1053,6 @@ func SIPExerTargetProtoSupported(protoId int) bool {
 }
 
 func SIPExerRunSend(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, tplfields map[string]any) int {
-	// restore sessionwait needed for a subsequent run-count (-rc) iteration
-	svSessionWait := cliops.sessionwait
-	defer func() {
-		cliops.sessionwait = svSessionWait
-	}()
-
 	tchan := make(chan int, 1)
 	if dstSockAddr.ProtoId == sgsip.ProtoTCP {
 		go SIPExerSendTCP(dstSockAddr, tplstr, tplfields, tchan)
@@ -1573,7 +1649,9 @@ func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
 			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
 			SIPExerExit(SIPExerErrFieldsDefaultFormat)
 		}
-		cliops.fieldseval = true
+		if !cliops.fieldseval {
+			cliops.fieldseval = true
+		}
 	} else {
 		tplfields = templateFields["FIELDS:EMPTY"]
 	}
@@ -2259,7 +2337,7 @@ func SIPExerDialogReadBytes(seDlg *SIPExerDialog) int {
 func SIPExerSessionWaitAndRead(seDlg *SIPExerDialog) int {
 	var smsg string = ""
 	tStart := time.Now()
-	tWait := cliops.sessionwait
+	tWait := seDlg.SessionWait
 	for {
 		SIPExerPrintf(SIPExerLogInfo, "waiting for %d milliseconds\n", tWait)
 
@@ -2309,7 +2387,7 @@ func SIPExerSessionWaitAndRead(seDlg *SIPExerDialog) int {
 				}
 			}
 		}
-		tWait = int(tStart.UnixMilli() + int64(cliops.sessionwait) - tNow.UnixMilli())
+		tWait = int(tStart.UnixMilli() + int64(seDlg.SessionWait) - tNow.UnixMilli())
 	}
 	return SIPExerRetOK
 }
@@ -2502,6 +2580,9 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 	if len(cliops.authuser) == 0 {
 		cliops.authuser = fmt.Sprint(tplfields["fuser"])
 	}
+
+	// per-dialog copy of sessionwait
+	seDlg.SessionWait = cliops.sessionwait
 
 	seDlg.FirstRequest = new(sgsip.SGSIPMessage)
 	ret := SIPExerPrepareMessage(tplstr, tplfields, seDlg.Proto, seDlg.LocalAddr, seDlg.TargetAddr, seDlg.FirstRequest)
@@ -2802,7 +2883,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 				SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
 				SIPExerMessagePrint("\n\n", sack, "\n")
 				SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
-				if cliops.sessionwait > 0 && ret >= 200 && ret < 300 {
+				if seDlg.SessionWait > 0 && ret >= 200 && ret < 300 {
 					// store 200-ack in dialog structure
 					seDlg.AckRequest = new(sgsip.SGSIPMessage)
 					if sgsip.SGSIPParseMessage(sack, seDlg.AckRequest) != sgsip.SGSIPRetOK {
@@ -2864,11 +2945,11 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					continue
 				}
 			}
-			if cliops.sessionwait > 0 && ret >= 200 && ret < 300 &&
+			if seDlg.SessionWait > 0 && ret >= 200 && ret < 300 &&
 				(cliops.invite || cliops.register || cliops.subscribesession) {
 				SIPExerSessionWaitAndRead(seDlg)
 				smsg = ""
-				cliops.sessionwait = 0
+				seDlg.SessionWait = 0
 				if cliops.register {
 					sgsip.SGSIPMessageViaUpdate(seDlg.FirstRequest)
 					sgsip.SGSIPMessageCSeqUpdate(seDlg.FirstRequest, 1)
