@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -46,6 +47,8 @@ const (
 	// errors
 	SIPExerErrTemplateRead        = -1000
 	SIPExerErrTemplateData        = -1001
+	SIPExerErrAuthCSVRead         = -1010
+	SIPExerErrAuthCSVFormat       = -1011
 	SIPExerErrFieldsFileRead      = -1020
 	SIPExerErrFieldsFileFormat    = -1021
 	SIPExerErrFieldsDefaultFormat = -1022
@@ -213,6 +216,8 @@ type SIPExerDialog struct {
 	SkipAuth     bool
 	CallSelfBye  bool
 	SessionWait  int
+	AuthUser     string
+	AuthPassword string
 
 	TargetHostPort string
 	TargetAFProto  string
@@ -354,6 +359,7 @@ type CLIOptions struct {
 	wsproto          string
 	authuser         string
 	authapassword    string
+	authcsv          string
 	authalg          string
 	noval            string
 	contacturi       string
@@ -440,6 +446,7 @@ var cliops = CLIOptions{
 	wsproto:          "sip",
 	authuser:         "",
 	authapassword:    "",
+	authcsv:          "",
 	authalg:          "first",
 	noval:            "no",
 	contacturi:       "",
@@ -582,6 +589,8 @@ func init() {
 	flag.StringVar(&cliops.authalg, "auth-alg", cliops.authalg, "authenticate header selection: first | last | strong | algorithm-name")
 	flag.StringVar(&cliops.authuser, "au", cliops.authuser, "authentication user")
 	flag.StringVar(&cliops.authuser, "auth-user", cliops.authuser, "authentication user")
+	flag.StringVar(&cliops.authcsv, "acsv", cliops.authcsv, "path to a csv file with 'user,password' per line")
+	flag.StringVar(&cliops.authcsv, "auth-csv", cliops.authcsv, "path to a csv file with 'user,password' per line")
 	flag.StringVar(&cliops.body, "mb", cliops.body, "message body")
 	flag.StringVar(&cliops.body, "message-body", cliops.body, "message body")
 	flag.StringVar(&cliops.contacturi, "contact-uri", cliops.contacturi, "contact header uri")
@@ -809,6 +818,11 @@ func main() {
 		cliops.localaddress = ""
 	}
 
+	// auth csv injector
+	if tret := SIPExerLoadAuthCSV(); tret != SIPExerRetOK {
+		SIPExerExit(tret)
+	}
+
 	// run-batch injector
 	if cliops.runbatch > 0 {
 		tret = SIPExerRunBatch(tplstr)
@@ -816,14 +830,14 @@ func main() {
 	}
 
 	for r := 0; r < cliops.runcount; r++ {
-		tret = SIPExerRunScenario(tplstr)
+		tret = SIPExerRunScenario(tplstr, r)
 	}
 
 	SIPExerExit(tret)
 }
 
 // SIPExerRunScenario builds fresh data for fresh scenario
-func SIPExerRunScenario(tplstr string) int {
+func SIPExerRunScenario(tplstr string, scenarioIndex int) int {
 	var err error
 	var ok bool
 	var tret int
@@ -831,6 +845,14 @@ func SIPExerRunScenario(tplstr string) int {
 	tplfields := make(map[string]any)
 
 	SIPExerPrepareTemplateFields(tplfields)
+
+	// per-scenario credential injection from --auth-csv file
+	if len(authCredentials) > 0 {
+		ac := authCredentials[scenarioIndex%len(authCredentials)]
+		tplfields["fuser"] = ac.User
+		tplfields["authuser"] = ac.User
+		tplfields["authpassword"] = ac.Password
+	}
 
 	var wsurlp *url.URL = nil
 	dstAddr := "udp:127.0.0.1:5060"
@@ -1000,10 +1022,11 @@ func SIPExerRunBatch(tplstr string) int {
 			batch = cliops.runcount - spawned
 		}
 		for i := 0; i < batch; i++ {
+			scenario_index := spawned + i
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				SIPExerRunScenario(tplstr)
+				SIPExerRunScenario(tplstr, scenario_index)
 			}()
 		}
 		spawned += batch
@@ -1280,6 +1303,59 @@ func SIPExerRuntimeApply(st SIPExerRuntimeState) {
 		iVarMap[k] = v
 	}
 	templateBody = st.templateBodyVal
+}
+
+// SIPExerAuthCredential is one 'user,password' row loaded from --auth-csv file
+type SIPExerAuthCredential struct {
+	User     string
+	Password string
+}
+
+// authCredentials holds all rows loaded from --auth-csv file
+var authCredentials []SIPExerAuthCredential
+
+// SIPExerLoadAuthCSV loads the --auth-csv file into authCredentials
+func SIPExerLoadAuthCSV() int {
+	if len(cliops.authcsv) == 0 {
+		return SIPExerRetOK
+	}
+	f, err := os.Open(cliops.authcsv)
+	if err != nil {
+		SIPExerPrintf(SIPExerLogError, "failed to open auth csv file %s: %v\n", cliops.authcsv, err)
+		return SIPExerErrAuthCSVRead
+	}
+	defer f.Close()
+
+	r := csv.NewReader(f)
+	r.Comment = '#'
+	r.TrimLeadingSpace = true
+	r.FieldsPerRecord = -1
+	records, err := r.ReadAll()
+	if err != nil {
+		SIPExerPrintf(SIPExerLogError, "failed to parse auth csv file %s: %v\n", cliops.authcsv, err)
+		return SIPExerErrAuthCSVFormat
+	}
+	for i, rec := range records {
+		if len(rec) < 2 {
+			SIPExerPrintf(SIPExerLogError, "auth csv %s line %d: expected 'user,password', got %d field(s)\n",
+				cliops.authcsv, i+1, len(rec))
+			return SIPExerErrAuthCSVFormat
+		}
+		user := strings.TrimSpace(rec[0])
+		if len(user) == 0 {
+			continue
+		}
+		authCredentials = append(authCredentials, SIPExerAuthCredential{
+			User:     user,
+			Password: rec[1],
+		})
+	}
+	if len(authCredentials) == 0 {
+		SIPExerPrintf(SIPExerLogError, "auth csv file %s has no usable 'user,password' rows\n", cliops.authcsv)
+		return SIPExerErrAuthCSVFormat
+	}
+	SIPExerPrintf(SIPExerLogInfo, "loaded %d credential(s) from auth csv %s\n", len(authCredentials), cliops.authcsv)
+	return SIPExerRetOK
 }
 
 func SIPExerLoadTemplates() (string, error) {
@@ -2136,7 +2212,7 @@ func SIPExerPrepareMessage(tplstr string, tplfields map[string]any, rProto strin
 	return SIPExerRetOK
 }
 
-func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgsip.SGSIPMessage, skipauth *bool, smsg *string, sack *string) int {
+func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgsip.SGSIPMessage, skipauth *bool, smsg *string, sack *string, authUser string, authPassword string) int {
 	if sgsip.SGSIPParseMessage(string(rmsg), sipRes) != sgsip.SGSIPRetOK {
 		SIPExerPrintf(SIPExerLogError, "failed to parse sip response\n%+v\n\n", string(rmsg))
 		return SIPExerErrSIPMessageFormat
@@ -2164,7 +2240,7 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 		if *skipauth {
 			return sipRes.FLine.Code
 		}
-		if len(cliops.authapassword) == 0 && len(cliops.akakey) == 0 {
+		if len(authPassword) == 0 && len(cliops.akakey) == 0 {
 			return sipRes.FLine.Code
 		}
 		hparams := map[string]string(nil)
@@ -2226,7 +2302,7 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 			}
 		} else {
 			var err error
-			authResponse, err = sgsip.SGAuthBuildResponseBody(cliops.authuser, cliops.authapassword, cliops.ha1, hparams)
+			authResponse, err = sgsip.SGAuthBuildResponseBody(authUser, authPassword, cliops.ha1, hparams)
 			if err != nil {
 				SIPExerPrintf(SIPExerLogError, "failed to build auth response header (%v)\n", err)
 				return SIPExerErrHeaderAuthFailure
@@ -2577,8 +2653,21 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 	var err error
 	var wmsg []byte
 
-	if len(cliops.authuser) == 0 {
-		cliops.authuser = fmt.Sprint(tplfields["fuser"])
+	// if no --auth-csv, fall back to the global -au/-ap values.
+	seDlg.AuthUser = cliops.authuser
+	seDlg.AuthPassword = cliops.authapassword
+	if v, ok := tplfields["authuser"]; ok {
+		if s := fmt.Sprint(v); len(s) > 0 {
+			seDlg.AuthUser = s
+		}
+	}
+	if v, ok := tplfields["authpassword"]; ok {
+		if s := fmt.Sprint(v); len(s) > 0 {
+			seDlg.AuthPassword = s
+		}
+	}
+	if len(seDlg.AuthUser) == 0 {
+		seDlg.AuthUser = fmt.Sprint(tplfields["fuser"])
 	}
 
 	// per-dialog copy of sessionwait
@@ -2678,7 +2767,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 			SIPExerMessagePrint("\n\n", string(seDlg.RecvBuf[:seDlg.RecvN]), "\n")
 			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 			seDlg.LastResponse = new(sgsip.SGSIPMessage)
-			ret = SIPExerProcessResponse(seDlg.FirstRequest, seDlg.RecvBuf[:seDlg.RecvN], seDlg.LastResponse, &seDlg.SkipAuth, &smsg, &sack)
+			ret = SIPExerProcessResponse(seDlg.FirstRequest, seDlg.RecvBuf[:seDlg.RecvN], seDlg.LastResponse, &seDlg.SkipAuth, &smsg, &sack, seDlg.AuthUser, seDlg.AuthPassword)
 			if ret < 0 {
 				return ret
 			}
@@ -2993,7 +3082,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					if seDlg.SkipAuth {
 						return ret
 					}
-					if len(cliops.authapassword) == 0 && len(cliops.akakey) == 0 {
+					if len(seDlg.AuthPassword) == 0 && len(cliops.akakey) == 0 {
 						return ret
 					}
 					// authentication - send the new message
