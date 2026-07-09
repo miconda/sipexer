@@ -2947,10 +2947,8 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 				continue
 			}
 			if ret/100 == 1 {
-				// 1xx response - read again, but do not re-send UDP request
-				if seDlg.ProtoId == sgsip.ProtoUDP {
-					seDlg.Resend = false
-				}
+				// 1xx response - read again, but do not re-send request
+				seDlg.Resend = false
 				if seDlg.State == SIPExerDialogStarted {
 					seDlg.State = SIPExerDialogEarly
 				}
@@ -3138,7 +3136,7 @@ func SIPExerDialogResetForRequest(seDlg *SIPExerDialog) {
 	seDlg.RecvRest = ""
 	seDlg.TimeoutStep = cliops.timert1
 	seDlg.TimeoutVal = seDlg.TimeoutStep
-	seDlg.Resend = true
+	seDlg.Resend = (seDlg.ProtoId == sgsip.ProtoUDP)
 	seDlg.SkipAuth = false
 	seDlg.CallSelfBye = false
 }
