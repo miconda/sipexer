@@ -553,6 +553,21 @@ func TestDialogReadStreamConnHandlesChunked183WithBody(t *testing.T) {
 	})
 }
 
+func TestDialogResetForRequestReliableTransportDisablesResend(t *testing.T) {
+	withCleanState(t, func() {
+		seDlg := &SIPExerDialog{ProtoId: sgsip.ProtoTLS}
+		SIPExerDialogResetForRequest(seDlg)
+		if seDlg.Resend {
+			t.Fatalf("expected reliable transport to start with Resend disabled")
+		}
+		seDlg = &SIPExerDialog{ProtoId: sgsip.ProtoUDP}
+		SIPExerDialogResetForRequest(seDlg)
+		if !seDlg.Resend {
+			t.Fatalf("expected UDP to keep Resend enabled")
+		}
+	})
+}
+
 func TestRunRegisterFirstRequiresFUser(t *testing.T) {
 	withCleanState(t, func() {
 		ret := SIPExerRunRegisterFirst(sgsip.SGSIPSocketAddress{}, nil, "", map[string]any{"method": "INVITE"})
