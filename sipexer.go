@@ -863,28 +863,6 @@ func SIPExerRunScenario(tplstr string, scenarioIndex int) int {
 	} else if len(flag.Args()) > 0 {
 		if len(flag.Args()) == 1 {
 			dstAddr = flag.Arg(0)
-			if strings.HasPrefix(dstAddr, "wss:") &&
-				!strings.HasPrefix(dstAddr, "wss://") {
-				dstAddr = strings.TrimPrefix(dstAddr, "wss:")
-				dstAddr = "wss://" + dstAddr
-			} else if strings.HasPrefix(dstAddr, "ws:") &&
-				!strings.HasPrefix(dstAddr, "ws://") {
-				dstAddr = strings.TrimPrefix(dstAddr, "ws:")
-				dstAddr = "ws://" + dstAddr
-			}
-			if strings.HasPrefix(dstAddr, "wss://") ||
-				strings.HasPrefix(dstAddr, "ws://") {
-				wsurlp, err = url.Parse(dstAddr)
-				if err != nil {
-					SIPExerPrintf(SIPExerLogError, "invalid websocket target: %v\n", dstAddr)
-					SIPExerExit(SIPExerErrWSURLFormat)
-				}
-				if strings.HasPrefix(dstAddr, "wss://") {
-					dstAddr = "wss:" + wsurlp.Host
-				} else {
-					dstAddr = "ws:" + wsurlp.Host
-				}
-			}
 		} else if len(flag.Args()) == 2 {
 			dstAddr = "udp:" + flag.Arg(0) + ":" + flag.Arg(1)
 		} else if len(flag.Args()) == 3 {
@@ -895,6 +873,25 @@ func SIPExerRunScenario(tplstr string, scenarioIndex int) int {
 			SIPExerExit(SIPExerErrArgumentsNumber)
 		}
 	}
+
+	// normalize ws/wss target
+	if strings.HasPrefix(dstAddr, "wss:") && !strings.HasPrefix(dstAddr, "wss://") {
+		dstAddr = "wss://" + strings.TrimPrefix(dstAddr, "wss:")
+	} else if strings.HasPrefix(dstAddr, "ws:") && !strings.HasPrefix(dstAddr, "ws://") {
+		dstAddr = "ws://" + strings.TrimPrefix(dstAddr, "ws:")
+	}
+	if strings.HasPrefix(dstAddr, "wss://") || strings.HasPrefix(dstAddr, "ws://") {
+		if wsurlp, err = url.Parse(dstAddr); err != nil {
+			SIPExerPrintf(SIPExerLogError, "invalid websocket target: %v\n", dstAddr)
+			SIPExerExit(SIPExerErrWSURLFormat)
+		}
+		if strings.HasPrefix(dstAddr, "wss://") {
+			dstAddr = "wss:" + wsurlp.Host
+		} else {
+			dstAddr = "ws:" + wsurlp.Host
+		}
+	}
+
 	var dstSockAddr = sgsip.SGSIPSocketAddress{}
 	var dstURI = sgsip.SGSIPURI{}
 	if sgsip.SGSIPParseSocketAddress(dstAddr, &dstSockAddr) != sgsip.SGSIPRetOK {
