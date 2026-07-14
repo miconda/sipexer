@@ -589,8 +589,8 @@ func init() {
 	flag.StringVar(&cliops.authalg, "auth-alg", cliops.authalg, "authenticate header selection: first | last | strong | algorithm-name")
 	flag.StringVar(&cliops.authuser, "au", cliops.authuser, "authentication user")
 	flag.StringVar(&cliops.authuser, "auth-user", cliops.authuser, "authentication user")
-	flag.StringVar(&cliops.authcsv, "acsv", cliops.authcsv, "path to a csv file with 'user,password' per line")
-	flag.StringVar(&cliops.authcsv, "auth-csv", cliops.authcsv, "path to a csv file with 'user,password' per line")
+	flag.StringVar(&cliops.authcsv, "acsv", cliops.authcsv, "path to a csv file with 'user,password[,target]'")
+	flag.StringVar(&cliops.authcsv, "auth-csv", cliops.authcsv, "path to a csv file with 'user,password[,target]'")
 	flag.StringVar(&cliops.body, "mb", cliops.body, "message body")
 	flag.StringVar(&cliops.body, "message-body", cliops.body, "message body")
 	flag.StringVar(&cliops.contacturi, "contact-uri", cliops.contacturi, "contact header uri")
@@ -841,6 +841,7 @@ func SIPExerRunScenario(tplstr string, scenarioIndex int) int {
 	var err error
 	var ok bool
 	var tret int
+	var target string
 
 	tplfields := make(map[string]any)
 
@@ -852,11 +853,14 @@ func SIPExerRunScenario(tplstr string, scenarioIndex int) int {
 		tplfields["fuser"] = ac.User
 		tplfields["authuser"] = ac.User
 		tplfields["authpassword"] = ac.Password
+		target = ac.Target
 	}
 
 	var wsurlp *url.URL = nil
 	dstAddr := "udp:127.0.0.1:5060"
-	if len(flag.Args()) > 0 {
+	if len(target) > 0 {
+		dstAddr = target
+	} else if len(flag.Args()) > 0 {
 		if len(flag.Args()) == 1 {
 			dstAddr = flag.Arg(0)
 			if strings.HasPrefix(dstAddr, "wss:") &&
@@ -1305,10 +1309,11 @@ func SIPExerRuntimeApply(st SIPExerRuntimeState) {
 	templateBody = st.templateBodyVal
 }
 
-// SIPExerAuthCredential is one 'user,password' row loaded from --auth-csv file
+// SIPExerAuthCredential is one 'user,password[,target]' row loaded from --auth-csv file
 type SIPExerAuthCredential struct {
 	User     string
 	Password string
+	Target   string
 }
 
 // authCredentials holds all rows loaded from --auth-csv file
@@ -1337,7 +1342,7 @@ func SIPExerLoadAuthCSV() int {
 	}
 	for i, rec := range records {
 		if len(rec) < 2 {
-			SIPExerPrintf(SIPExerLogError, "auth csv %s line %d: expected 'user,password', got %d field(s)\n",
+			SIPExerPrintf(SIPExerLogError, "auth csv %s line %d: expected 'user,password[,target]', got %d field(s)\n",
 				cliops.authcsv, i+1, len(rec))
 			return SIPExerErrAuthCSVFormat
 		}
@@ -1345,9 +1350,17 @@ func SIPExerLoadAuthCSV() int {
 		if len(user) == 0 {
 			continue
 		}
+
+		// csv row target is optional
+		var target string
+		if len(rec) >= 3 {
+			target = strings.TrimSpace(rec[2])
+		}
+
 		authCredentials = append(authCredentials, SIPExerAuthCredential{
 			User:     user,
 			Password: rec[1],
+			Target:   target,
 		})
 	}
 	if len(authCredentials) == 0 {
