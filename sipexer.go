@@ -2438,8 +2438,8 @@ func SIPExerSessionWaitAndRead(seDlg *SIPExerDialog) int {
 				for _, sipRaw := range SIPExerSplitSIPMessages(rawBuf) {
 					sipRcv := sgsip.SGSIPMessage{}
 					if sgsip.SGSIPParseMessage(sipRaw, &sipRcv) != sgsip.SGSIPRetOK {
-						SIPExerPrintf(SIPExerLogError, "failed to parse sip message\n%+v\n\n", sipRaw)
-						return SIPExerErrSIPMessageFormat
+						SIPExerPrintf(SIPExerLogError, "skip failed to parse sip message\n%+v\n\n", sipRaw)
+						continue
 					}
 					if sipRcv.FLine.MType == sgsip.FLineRequest {
 						if sipRcv.FLine.MethodId == sgsip.SIPMethodINVITE {
