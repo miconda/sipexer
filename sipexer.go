@@ -2434,7 +2434,7 @@ func SIPExerSessionWaitAndRead(seDlg *SIPExerDialog) int {
 		seDlg.RecvBuf = make([]byte, cliops.buffersize)
 		ret = SIPExerDialogReadBytes(seDlg)
 		tNow := time.Now()
-		if tNow.UnixMilli()-tStart.UnixMilli() >= int64(tWait) {
+		if tNow.UnixMilli()-tStart.UnixMilli() >= int64(seDlg.SessionWait) {
 			break
 		}
 		if ret == SIPExerRetOK && seDlg.RecvN > 0 {
