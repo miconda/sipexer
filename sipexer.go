@@ -2380,6 +2380,8 @@ func SIPExerSetReadTimeoutValue(seDlg *SIPExerDialog, tVal int) int {
 		if err != nil {
 			return SIPExerErrWSSetReadTimeout
 		}
+		// reset write time needed for protocol's PING/PONG
+		SIPExerSetWriteTimeoutValue(seDlg, tVal+cliops.timeoutwrite)
 	}
 	return SIPExerRetOK
 }
