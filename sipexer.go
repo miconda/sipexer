@@ -640,6 +640,7 @@ func init() {
 	flag.StringVar(&cliops.akaamf, "aka-amf", cliops.akaamf, "aka authentication management field - amf")
 	flag.StringVar(&cliops.u2fuser, "ua2-fuser", cliops.u2fuser, "second user From header URI username")
 	flag.StringVar(&cliops.u2localaddress, "ua2-local-address", cliops.u2localaddress, "second user local address (`ip:port` or `:port`)")
+	flag.StringVar(&cliops.u2localaddress, "ua2-laddr", cliops.u2localaddress, "second user local address (`ip:port` or `:port`)")
 	flag.StringVar(&cliops.u2template, "ua2-template-file", cliops.u2template, "second user path to template file")
 	flag.StringVar(&cliops.u2templatebody, "ua2-template-body-file", cliops.u2templatebody, "second user path to template file for body")
 	flag.StringVar(&cliops.u2fields, "ua2-fields-file", cliops.u2fields, "second user path to json fields file")
