@@ -1136,6 +1136,9 @@ func SIPExerRunRegisterFirst(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.U
 
 	regFields := SIPExerCloneTplFields(baseTplFields)
 	regFields["method"] = "REGISTER"
+	var registrarURI sgsip.SGSIPURI
+	sgsip.SGSocketAddressToSIPURI(&dstSockAddr, "", 0, &registrarURI)
+	regFields["ruri"] = registrarURI.Val
 	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
 		SIPExerEnsureViaAlias(regFields)
 	}
@@ -1436,6 +1439,9 @@ func SIPExerRunCallSelf(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, t
 
 	regFields := SIPExerCloneTplFields(baseTplFields)
 	regFields["method"] = "REGISTER"
+	var registrarURI sgsip.SGSIPURI
+	sgsip.SGSocketAddressToSIPURI(&dstSockAddr, "", 0, &registrarURI)
+	regFields["ruri"] = registrarURI.Val
 	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
 		SIPExerEnsureViaAlias(regFields)
 	}
