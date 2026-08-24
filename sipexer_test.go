@@ -219,6 +219,29 @@ func TestCallSelfRegisterUsesRegistrarURIWithoutUser(t *testing.T) {
 	})
 }
 
+func TestCallUserRegistersUseRegistrarURIWithoutUser(t *testing.T) {
+	withCleanState(t, func() {
+		dstSockAddr := sgsip.SGSIPSocketAddress{Proto: "udp", ProtoId: sgsip.ProtoUDP, Addr: "127.0.0.1", Port: "5060", PortNo: 5060}
+		var registrarURI sgsip.SGSIPURI
+		sgsip.SGSocketAddressToSIPURI(&dstSockAddr, "", 0, &registrarURI)
+		if registrarURI.Val != "sip:127.0.0.1:5060" {
+			t.Fatalf("expected udp registrar URI without user, got: %q", registrarURI.Val)
+		}
+		primaryReg := SIPExerCloneTplFields(map[string]any{"fuser": "alice", "tuser": "bob"})
+		primaryReg["method"] = "REGISTER"
+		primaryReg["ruri"] = registrarURI.Val
+		if got := primaryReg["ruri"]; got != "sip:127.0.0.1:5060" {
+			t.Fatalf("expected primary register URI without user, got: %#v", got)
+		}
+		u2Reg := SIPExerCloneTplFields(map[string]any{"fuser": "bob", "tuser": "alice"})
+		u2Reg["method"] = "REGISTER"
+		u2Reg["ruri"] = registrarURI.Val
+		if got := u2Reg["ruri"]; got != "sip:127.0.0.1:5060" {
+			t.Fatalf("expected secondary register URI without user, got: %#v", got)
+		}
+	})
+}
+
 func TestPrepareTemplateFieldsMethodFromFieldValUpdatesCLI(t *testing.T) {
 	withCleanState(t, func() {
 		paramFields["method"] = "OPTIONS"
