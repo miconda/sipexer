@@ -204,6 +204,21 @@ func TestPrepareTemplateFieldsMethodRegisterFirstPreservesRequestMethod(t *testi
 	})
 }
 
+func TestCallSelfRegisterUsesRegistrarURIWithoutUser(t *testing.T) {
+	withCleanState(t, func() {
+		dstSockAddr := sgsip.SGSIPSocketAddress{Proto: "tcp", ProtoId: sgsip.ProtoTCP, Addr: "127.0.0.1", Port: "5060", PortNo: 5060}
+		baseTplFields := map[string]any{"fuser": "alice", "tuser": "bob"}
+		regFields := SIPExerCloneTplFields(baseTplFields)
+		regFields["method"] = "REGISTER"
+		var registrarURI sgsip.SGSIPURI
+		sgsip.SGSocketAddressToSIPURI(&dstSockAddr, "", 0, &registrarURI)
+		regFields["ruri"] = registrarURI.Val
+		if got := regFields["ruri"]; got != "sip:127.0.0.1:5060;transport=tcp" {
+			t.Fatalf("expected registrar URI without user, got: %#v", got)
+		}
+	})
+}
+
 func TestPrepareTemplateFieldsMethodFromFieldValUpdatesCLI(t *testing.T) {
 	withCleanState(t, func() {
 		paramFields["method"] = "OPTIONS"
