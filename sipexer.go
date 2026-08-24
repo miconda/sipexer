@@ -390,6 +390,7 @@ type CLIOptions struct {
 	callusers        bool
 	registerfirst    bool
 	u2fuser          string
+	u2fdomain        string
 	u2localaddress   string
 	u2template       string
 	u2templatebody   string
@@ -491,6 +492,7 @@ var cliops = CLIOptions{
 	callusers:        false,
 	registerfirst:    false,
 	u2fuser:          "",
+	u2fdomain:        "",
 	u2localaddress:   "",
 	u2template:       "",
 	u2templatebody:   "",
@@ -639,6 +641,7 @@ func init() {
 	flag.StringVar(&cliops.akaopc, "aka-opc", cliops.akaopc, "aka authentication operator derived key - opc")
 	flag.StringVar(&cliops.akaamf, "aka-amf", cliops.akaamf, "aka authentication management field - amf")
 	flag.StringVar(&cliops.u2fuser, "ua2-fuser", cliops.u2fuser, "second user From header URI username")
+	flag.StringVar(&cliops.u2fdomain, "ua2-fdomain", cliops.u2fdomain, "second user From header URI domain")
 	flag.StringVar(&cliops.u2localaddress, "ua2-local-address", cliops.u2localaddress, "second user local address (`ip:port` or `:port`)")
 	flag.StringVar(&cliops.u2localaddress, "ua2-laddr", cliops.u2localaddress, "second user local address (`ip:port` or `:port`)")
 	flag.StringVar(&cliops.u2template, "ua2-template-file", cliops.u2template, "second user path to template file")
@@ -1596,6 +1599,9 @@ func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, 
 	primary := SIPExerRuntimeCapture()
 	u2 := SIPExerRuntimeCapture()
 	u2.cli.fuser = cliops.u2fuser
+	if len(cliops.u2fdomain) > 0 {
+		u2.cli.fdomain = cliops.u2fdomain
+	}
 	u2.cli.localaddress = cliops.u2localaddress
 	if len(cliops.u2template) > 0 {
 		u2.cli.template = cliops.u2template
