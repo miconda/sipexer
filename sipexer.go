@@ -1651,11 +1651,9 @@ func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, 
 	}
 	u2Fields := make(map[string]any)
 	SIPExerPrepareTemplateFields(u2Fields)
-	var u2DstURI sgsip.SGSIPURI
-	sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.ruser, 0, &u2DstURI)
-	if _, ok := u2Fields["ruri"]; !ok {
-		u2Fields["ruri"] = u2DstURI.Val
-	}
+	var registrarURI sgsip.SGSIPURI
+	sgsip.SGSocketAddressToSIPURI(&dstSockAddr, "", 0, &registrarURI)
+	u2Fields["ruri"] = registrarURI.Val
 	u2Fields["method"] = "REGISTER"
 	u2.cli.register = true
 	u2.cli.invite = false
@@ -1685,6 +1683,7 @@ func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, 
 
 	regFields := SIPExerCloneTplFields(baseTplFields)
 	regFields["method"] = "REGISTER"
+	regFields["ruri"] = registrarURI.Val
 	cliops.register = true
 	cliops.invite = false
 	cliops.method = "REGISTER"
