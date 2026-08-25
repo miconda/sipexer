@@ -1701,6 +1701,7 @@ func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, 
 
 	invFields := SIPExerCloneTplFields(baseTplFields)
 	invFields["method"] = "INVITE"
+	invFields["callid"] = uuid.New().String()
 	invFields["tuser"] = cliops.u2fuser
 	var dstURI sgsip.SGSIPURI
 	sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.u2fuser, 0, &dstURI)
