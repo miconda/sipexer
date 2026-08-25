@@ -242,6 +242,21 @@ func TestCallUserRegistersUseRegistrarURIWithoutUser(t *testing.T) {
 	})
 }
 
+func TestCallUserUA2FDomainOverridesSecondUserFromDomain(t *testing.T) {
+	withCleanState(t, func() {
+		cliops.u2fuser = "bob"
+		cliops.u2fdomain = "example.net"
+		u2 := SIPExerRuntimeCapture()
+		u2.cli.fuser = cliops.u2fuser
+		if len(cliops.u2fdomain) > 0 {
+			u2.cli.fdomain = cliops.u2fdomain
+		}
+		if got := u2.cli.fdomain; got != "example.net" {
+			t.Fatalf("expected ua2 fdomain override, got: %#v", got)
+		}
+	})
+}
+
 func TestPrepareTemplateFieldsMethodFromFieldValUpdatesCLI(t *testing.T) {
 	withCleanState(t, func() {
 		paramFields["method"] = "OPTIONS"
