@@ -1466,6 +1466,7 @@ func SIPExerRunCallSelf(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, t
 
 	invFields := SIPExerCloneTplFields(baseTplFields)
 	invFields["method"] = "INVITE"
+	invFields["callid"] = uuid.New().String()
 	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
 		SIPExerEnsureViaAlias(invFields)
 	}
