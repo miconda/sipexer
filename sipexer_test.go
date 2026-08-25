@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"io"
+	mathrand "math/rand"
 	"regexp"
 	"strconv"
 	"strings"
@@ -270,6 +271,22 @@ func TestCallUserInviteGetsFreshCallID(t *testing.T) {
 		}
 		if len(got) != 36 {
 			t.Fatalf("expected UUID call-id format, got: %q", got)
+		}
+	})
+}
+
+func TestCallUserInviteGetsFreshCSeq(t *testing.T) {
+	withCleanState(t, func() {
+		baseTplFields := map[string]any{"cseqnum": "12345", "fuser": "alice"}
+		invFields := SIPExerCloneTplFields(baseTplFields)
+		invFields["method"] = "INVITE"
+		invFields["cseqnum"] = strconv.Itoa(1 + mathrand.Intn(999999))
+		got, _ := invFields["cseqnum"].(string)
+		if got == "12345" {
+			t.Fatalf("expected INVITE to use a fresh cseq")
+		}
+		if _, err := strconv.Atoi(got); err != nil {
+			t.Fatalf("expected numeric cseq, got %q", got)
 		}
 	})
 }
