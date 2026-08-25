@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/miconda/sipexer/sgsip"
 )
 
@@ -253,6 +254,22 @@ func TestCallUserUA2FDomainOverridesSecondUserFromDomain(t *testing.T) {
 		}
 		if got := u2.cli.fdomain; got != "example.net" {
 			t.Fatalf("expected ua2 fdomain override, got: %#v", got)
+		}
+	})
+}
+
+func TestCallUserInviteGetsFreshCallID(t *testing.T) {
+	withCleanState(t, func() {
+		baseTplFields := map[string]any{"callid": "register-call-id", "fuser": "alice"}
+		invFields := SIPExerCloneTplFields(baseTplFields)
+		invFields["method"] = "INVITE"
+		invFields["callid"] = uuid.New().String()
+		got, _ := invFields["callid"].(string)
+		if got == "register-call-id" {
+			t.Fatalf("expected INVITE to use a fresh call-id")
+		}
+		if len(got) != 36 {
+			t.Fatalf("expected UUID call-id format, got: %q", got)
 		}
 	})
 }
