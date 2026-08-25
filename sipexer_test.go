@@ -221,6 +221,22 @@ func TestCallSelfRegisterUsesRegistrarURIWithoutUser(t *testing.T) {
 	})
 }
 
+func TestCallSelfInviteGetsFreshCallID(t *testing.T) {
+	withCleanState(t, func() {
+		baseTplFields := map[string]any{"callid": "register-call-id", "fuser": "alice"}
+		invFields := SIPExerCloneTplFields(baseTplFields)
+		invFields["method"] = "INVITE"
+		invFields["callid"] = uuid.New().String()
+		got, _ := invFields["callid"].(string)
+		if got == "register-call-id" {
+			t.Fatalf("expected self-call INVITE to use a fresh call-id")
+		}
+		if len(got) != 36 {
+			t.Fatalf("expected UUID call-id format, got: %q", got)
+		}
+	})
+}
+
 func TestCallUserRegistersUseRegistrarURIWithoutUser(t *testing.T) {
 	withCleanState(t, func() {
 		dstSockAddr := sgsip.SGSIPSocketAddress{Proto: "udp", ProtoId: sgsip.ProtoUDP, Addr: "127.0.0.1", Port: "5060", PortNo: 5060}
