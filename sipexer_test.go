@@ -4,10 +4,12 @@ import (
 	"encoding/base64"
 	"io"
 	mathrand "math/rand"
+	"net"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/miconda/sipexer/sgsip"
@@ -625,6 +627,120 @@ func TestTargetProtoSupported(t *testing.T) {
 	if SIPExerTargetProtoSupported(sgsip.ProtoSCTP) {
 		t.Fatalf("expected SCTP to be unsupported")
 	}
+}
+
+func TestBuildCallUsersResponseContactUsesDialogTransport(t *testing.T) {
+	invite := sgsip.SGSIPMessage{}
+	rawInvite := "INVITE sip:bob@example.com SIP/2.0\r\nVia: SIP/2.0/TCP proxy.example.com;branch=z9hG4bK1\r\nFrom: <sip:alice@example.com>;tag=a\r\nTo: <sip:bob@example.com>\r\nCall-ID: call-user-1\r\nCSeq: 1 INVITE\r\nContent-Length: 0\r\n\r\n"
+	if sgsip.SGSIPParseMessage(rawInvite, &invite) != sgsip.SGSIPRetOK {
+		t.Fatal("failed to parse test INVITE")
+	}
+
+	for _, tc := range []struct {
+		proto   string
+		protoID int
+	}{
+		{proto: "udp", protoID: sgsip.ProtoUDP},
+		{proto: "tcp", protoID: sgsip.ProtoTCP},
+		{proto: "tls", protoID: sgsip.ProtoTLS},
+		{proto: "ws", protoID: sgsip.ProtoWS},
+		{proto: "wss", protoID: sgsip.ProtoWSS},
+	} {
+		t.Run(tc.proto, func(t *testing.T) {
+			seDlg := &SIPExerDialog{Proto: tc.proto, ProtoId: tc.protoID, LocalAddr: "127.0.0.1:5064"}
+			rsp, ret := SIPExerBuildCallUsersResponse(seDlg, &invite, "bob", "200", "OK", true)
+			if ret != SIPExerRetOK {
+				t.Fatalf("expected response build success, got: %d", ret)
+			}
+			want := "Contact: <sip:bob@127.0.0.1:5064;transport=" + tc.proto + ">"
+			if !strings.Contains(rsp, want) {
+				t.Fatalf("expected %q in response, got: %q", want, rsp)
+			}
+		})
+	}
+}
+
+func TestRunCallUsersCalleeTCPFlow(t *testing.T) {
+	withCleanState(t, func() {
+		cliops.timeout = 2000
+		cliops.timeoutwrite = 2000
+
+		listenAddr, err := net.ResolveTCPAddr("tcp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		listener, err := net.ListenTCP("tcp4", listenAddr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer listener.Close()
+
+		clientConn, err := net.DialTCP("tcp4", nil, listener.Addr().(*net.TCPAddr))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer clientConn.Close()
+		serverConn, err := listener.AcceptTCP()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer serverConn.Close()
+
+		seDlg := &SIPExerDialog{
+			Proto:      "tcp",
+			ProtoId:    sgsip.ProtoTCP,
+			LocalAddr:  clientConn.LocalAddr().String(),
+			TargetAddr: clientConn.RemoteAddr().String(),
+			ConnTCP:    &SIPExerConnTCP{Conn: clientConn},
+		}
+		done := make(chan int, 1)
+		go SIPExerRunCallUsersCallee(seDlg, "bob", 0, 0, done)
+
+		invite := "INVITE sip:bob@127.0.0.1 SIP/2.0\r\nVia: SIP/2.0/TCP proxy.example.com;branch=z9hG4bK1\r\nFrom: <sip:alice@example.com>;tag=a\r\nTo: <sip:bob@example.com>\r\nCall-ID: call-user-tcp\r\nCSeq: 1 INVITE\r\nRecord-Route: <sip:proxy.example.com;transport=tcp;lr>\r\nContent-Length: 0\r\n\r\n"
+		if _, err = serverConn.Write([]byte(invite)); err != nil {
+			t.Fatal(err)
+		}
+
+		readerDlg := &SIPExerDialog{}
+		for _, wantCode := range []int{100, 180, 200} {
+			if err = serverConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			if ret := SIPExerDialogReadStreamConn(readerDlg, serverConn, SIPExerErrTCPRead); ret != SIPExerRetOK {
+				t.Fatalf("failed reading %d response: %d", wantCode, ret)
+			}
+			rawRsp := string(readerDlg.RecvBuf[:readerDlg.RecvN])
+			rsp := sgsip.SGSIPMessage{}
+			if sgsip.SGSIPParseMessage(rawRsp, &rsp) != sgsip.SGSIPRetOK || rsp.FLine.Code != wantCode {
+				t.Fatalf("expected %d response, got: %q", wantCode, rawRsp)
+			}
+			if wantCode == 200 && !strings.Contains(rawRsp, "transport=tcp") {
+				t.Fatalf("expected TCP Contact in 200 response, got: %q", rawRsp)
+			}
+		}
+
+		ack := "ACK sip:bob@127.0.0.1 SIP/2.0\r\nVia: SIP/2.0/TCP proxy.example.com;branch=z9hG4bK2\r\nFrom: <sip:alice@example.com>;tag=a\r\nTo: <sip:bob@example.com>;tag=b\r\nCall-ID: call-user-tcp\r\nCSeq: 1 ACK\r\nContent-Length: 0\r\n\r\n"
+		bye := "BYE sip:bob@127.0.0.1 SIP/2.0\r\nVia: SIP/2.0/TCP proxy.example.com;branch=z9hG4bK3\r\nFrom: <sip:alice@example.com>;tag=a\r\nTo: <sip:bob@example.com>;tag=b\r\nCall-ID: call-user-tcp\r\nCSeq: 2 BYE\r\nContent-Length: 0\r\n\r\n"
+		if _, err = serverConn.Write([]byte(ack + bye)); err != nil {
+			t.Fatal(err)
+		}
+		if ret := SIPExerDialogReadStreamConn(readerDlg, serverConn, SIPExerErrTCPRead); ret != SIPExerRetOK {
+			t.Fatalf("failed reading BYE response: %d", ret)
+		}
+		byeRsp := sgsip.SGSIPMessage{}
+		if sgsip.SGSIPParseMessage(string(readerDlg.RecvBuf[:readerDlg.RecvN]), &byeRsp) != sgsip.SGSIPRetOK || byeRsp.FLine.Code != 200 || byeRsp.CSeq.MethodId != sgsip.SIPMethodBYE {
+			t.Fatalf("expected 200 response to BYE, got: %q", string(readerDlg.RecvBuf[:readerDlg.RecvN]))
+		}
+
+		select {
+		case ret := <-done:
+			if ret != SIPExerRetOK {
+				t.Fatalf("expected successful callee flow, got: %d", ret)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("timeout waiting for TCP callee flow")
+		}
+	})
 }
 
 func TestSplitSIPMessages(t *testing.T) {
