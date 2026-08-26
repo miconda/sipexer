@@ -1486,39 +1486,72 @@ func SIPExerRunCallSelf(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, t
 	return SIPExerRunSend(dstSockAddr, wsurlp, tplstr, invFields)
 }
 
-func SIPExerRunCallUsersCalleeUDP(localAddr string, u2fuser string, ringtime int, done chan int, ready chan bool) {
+func SIPExerBuildCallUsersResponse(seDlg *SIPExerDialog, sipReq *sgsip.SGSIPMessage, u2fuser string, code string, reason string, contact bool) (string, int) {
+	rsp := ""
+	if sgsip.SGSIPMessageToResponseString(sipReq, code, reason, &rsp) != sgsip.SGSIPRetOK {
+		return "", SIPExerErrSIPMessageToString
+	}
+	if !contact {
+		return rsp, SIPExerRetOK
+	}
+
+	rmsg := sgsip.SGSIPMessage{}
+	if sgsip.SGSIPParseMessage(rsp, &rmsg) != sgsip.SGSIPRetOK {
+		return "", SIPExerErrSIPMessageFormat
+	}
+	uuri := sgsip.SGSIPURI{}
+	sa := sgsip.SGSIPSocketAddress{}
+	if sgsip.SGSIPParseSocketAddress(seDlg.LocalAddr, &sa) != sgsip.SGSIPRetOK {
+		sa.Addr = "127.0.0.1"
+		sa.Port = "5060"
+		sa.PortNo = 5060
+	}
+	sa.Proto = seDlg.Proto
+	sa.ProtoId = seDlg.ProtoId
+	sgsip.SGSocketAddressToSIPURI(&sa, u2fuser, 1, &uuri)
+	sgsip.SGSIPMessageHeaderSet(&rmsg, "Contact", "<"+uuri.Val+">")
+	if sgsip.SGSIPMessageToString(&rmsg, &rsp) != sgsip.SGSIPRetOK {
+		return "", SIPExerErrSIPMessageToString
+	}
+	return rsp, SIPExerRetOK
+}
+
+func SIPExerRunCallUsersCallee(seDlg *SIPExerDialog, u2fuser string, ringtime int, callduration int, done chan int) {
 	retErr := SIPExerRetErr
 	defer func() {
 		done <- retErr
 	}()
-	udpa, err := net.ResolveUDPAddr("udp", localAddr)
-	if err != nil {
-		SIPExerPrintf(SIPExerLogError, "call-users callee resolve local addr error: %v\n", err)
-		return
-	}
-	conn, err := net.ListenUDP("udp", udpa)
-	if err != nil {
-		SIPExerPrintf(SIPExerLogError, "call-users callee socket error: %v\n", err)
-		return
-	}
-	defer conn.Close()
-	ready <- true
 
 	state := "wait-invite"
-	buf := make([]byte, cliops.buffersize)
 	for {
-		_ = conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(cliops.timeout)))
-		n, raddr, err := conn.ReadFromUDP(buf)
-		if err != nil {
-			SIPExerPrintf(SIPExerLogError, "call-users callee read error: %v\n", err)
+		readTimeout := cliops.timeout
+		if state == "wait-bye" {
+			readTimeout += callduration
+		}
+		if SIPExerSetReadTimeoutValue(seDlg, readTimeout) != SIPExerRetOK {
+			SIPExerPrintf(SIPExerLogError, "call-users callee failed to set read timeout\n")
+			return
+		}
+		seDlg.RecvBuf = make([]byte, cliops.buffersize)
+		seDlg.RecvN = 0
+		if ret := SIPExerDialogReadBytes(seDlg); ret != SIPExerRetOK {
+			SIPExerPrintf(SIPExerLogError, "call-users callee read error: %d\n", ret)
 			return
 		}
 		msg := sgsip.SGSIPMessage{}
-		if sgsip.SGSIPParseMessage(string(buf[:n]), &msg) != sgsip.SGSIPRetOK {
+		if sgsip.SGSIPParseMessage(string(seDlg.RecvBuf[:seDlg.RecvN]), &msg) != sgsip.SGSIPRetOK {
 			continue
 		}
 		if msg.FLine.MType != sgsip.FLineRequest {
 			continue
+		}
+		sendResponse := func(code string, reason string, contact bool) bool {
+			rsp, ret := SIPExerBuildCallUsersResponse(seDlg, &msg, u2fuser, code, reason, contact)
+			if ret != SIPExerRetOK {
+				return false
+			}
+			SIPExerSetWriteTimeout(seDlg)
+			return SIPExerSendBytes(seDlg, []byte(rsp)) == SIPExerRetOK
 		}
 		if msg.FLine.MethodId == sgsip.SIPMethodINVITE && state == "wait-invite" {
 			for _, item := range []struct {
@@ -1528,35 +1561,15 @@ func SIPExerRunCallUsersCalleeUDP(localAddr string, u2fuser string, ringtime int
 				{code: "100", reason: "Trying"},
 				{code: "180", reason: "Ringing"},
 			} {
-				rsp := ""
-				if sgsip.SGSIPMessageToResponseString(&msg, item.code, item.reason, &rsp) == sgsip.SGSIPRetOK {
-					_, _ = conn.WriteToUDP([]byte(rsp), raddr)
+				if !sendResponse(item.code, item.reason, false) {
+					return
 				}
 			}
 			if ringtime > 0 {
 				time.Sleep(time.Millisecond * time.Duration(ringtime))
 			}
-			rsp := ""
-			if sgsip.SGSIPMessageToResponseString(&msg, "200", "OK", &rsp) == sgsip.SGSIPRetOK {
-				rmsg := sgsip.SGSIPMessage{}
-				if sgsip.SGSIPParseMessage(rsp, &rmsg) == sgsip.SGSIPRetOK {
-					uuri := sgsip.SGSIPURI{}
-					sa := sgsip.SGSIPSocketAddress{}
-					if sgsip.SGSIPParseSocketAddress(localAddr, &sa) != sgsip.SGSIPRetOK {
-						sa = sgsip.SGSIPSocketAddress{Proto: "udp", ProtoId: sgsip.ProtoUDP, Addr: "127.0.0.1", Port: "5060", PortNo: 5060}
-					}
-					if len(sa.Proto) == 0 {
-						sa.Proto = "udp"
-						sa.ProtoId = sgsip.ProtoUDP
-					}
-					if len(strings.TrimSpace(sa.Addr)) == 0 {
-						sa.Addr = "127.0.0.1"
-					}
-					sgsip.SGSocketAddressToSIPURI(&sa, u2fuser, 0, &uuri)
-					sgsip.SGSIPMessageHeaderSet(&rmsg, "Contact", "<"+uuri.Val+">")
-					_ = sgsip.SGSIPMessageToString(&rmsg, &rsp)
-				}
-				_, _ = conn.WriteToUDP([]byte(rsp), raddr)
+			if !sendResponse("200", "OK", true) {
+				return
 			}
 			state = "wait-ack"
 			continue
@@ -1566,9 +1579,8 @@ func SIPExerRunCallUsersCalleeUDP(localAddr string, u2fuser string, ringtime int
 			continue
 		}
 		if msg.FLine.MethodId == sgsip.SIPMethodBYE && state == "wait-bye" {
-			rsp := ""
-			if sgsip.SGSIPMessageToResponseString(&msg, "200", "OK", &rsp) == sgsip.SGSIPRetOK {
-				_, _ = conn.WriteToUDP([]byte(rsp), raddr)
+			if !sendResponse("200", "OK", false) {
+				return
 			}
 			retErr = SIPExerRetOK
 			return
@@ -1593,8 +1605,8 @@ func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, 
 		SIPExerPrintf(SIPExerLogError, "call-users mode requires first user --laddr\n")
 		return SIPExerRetErr
 	}
-	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
-		SIPExerPrintf(SIPExerLogError, "call-users mode currently supports UDP target only\n")
+	if !SIPExerTargetProtoSupported(dstSockAddr.ProtoId) {
+		SIPExerPrintf(SIPExerLogError, "call-users mode does not support target protocol %s\n", dstSockAddr.Proto)
 		return SIPExerErrProtocolUnsuported
 	}
 
@@ -1664,20 +1676,36 @@ func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, 
 	sgsip.SGSocketAddressToSIPURI(&dstSockAddr, "", 0, &registrarURI)
 	u2Fields["ruri"] = registrarURI.Val
 	u2Fields["method"] = "REGISTER"
+	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
+		SIPExerEnsureViaAlias(u2Fields)
+	}
 	u2.cli.register = true
 	u2.cli.invite = false
 	u2.cli.method = "REGISTER"
 	SIPExerRuntimeApply(u2)
-	ret := SIPExerRunSend(dstSockAddr, wsurlp, u2Tpl, u2Fields)
+	u2Dlg := &SIPExerDialog{}
+	ret := SIPExerInitDialog(dstSockAddr, wsurlp, u2Dlg)
+	if ret != SIPExerRetOK {
+		SIPExerRuntimeApply(primary)
+		return ret
+	}
+	defer SIPExerDialogCloseConn(u2Dlg)
+	SIPExerDialogResetForRequest(u2Dlg)
+	ret = SIPExerDialogLoop(u2Tpl, u2Fields, u2Dlg)
 	SIPExerRuntimeApply(primary)
 	if ret < 200 || ret >= 300 {
 		return ret
 	}
 
 	doneU2 := make(chan int, 1)
-	readyU2 := make(chan bool, 1)
-	go SIPExerRunCallUsersCalleeUDP(cliops.u2localaddress, cliops.u2fuser, cliops.ringtime, doneU2, readyU2)
-	<-readyU2
+	go SIPExerRunCallUsersCallee(u2Dlg, cliops.u2fuser, cliops.ringtime, cliops.callduration, doneU2)
+
+	primaryDlg := &SIPExerDialog{}
+	ret = SIPExerInitDialog(dstSockAddr, wsurlp, primaryDlg)
+	if ret != SIPExerRetOK {
+		return ret
+	}
+	defer SIPExerDialogCloseConn(primaryDlg)
 
 	svRegister := cliops.register
 	svInvite := cliops.invite
@@ -1693,10 +1721,14 @@ func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, 
 	regFields := SIPExerCloneTplFields(baseTplFields)
 	regFields["method"] = "REGISTER"
 	regFields["ruri"] = registrarURI.Val
+	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
+		SIPExerEnsureViaAlias(regFields)
+	}
 	cliops.register = true
 	cliops.invite = false
 	cliops.method = "REGISTER"
-	ret = SIPExerRunSend(dstSockAddr, wsurlp, tplstr, regFields)
+	SIPExerDialogResetForRequest(primaryDlg)
+	ret = SIPExerDialogLoop(tplstr, regFields, primaryDlg)
 	if ret < 200 || ret >= 300 {
 		return ret
 	}
@@ -1705,6 +1737,9 @@ func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, 
 	invFields["method"] = "INVITE"
 	invFields["callid"] = uuid.New().String()
 	invFields["cseqnum"] = strconv.Itoa(1 + mathrand.Intn(999999))
+	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
+		SIPExerEnsureViaAlias(invFields)
+	}
 	invFields["tuser"] = cliops.u2fuser
 	var dstURI sgsip.SGSIPURI
 	sgsip.SGSocketAddressToSIPURI(&dstSockAddr, cliops.u2fuser, 0, &dstURI)
@@ -1713,7 +1748,8 @@ func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, 
 	cliops.invite = true
 	cliops.method = "INVITE"
 	cliops.sessionwait = cliops.callduration
-	ret = SIPExerRunSend(dstSockAddr, wsurlp, tplstr, invFields)
+	SIPExerDialogResetForRequest(primaryDlg)
+	ret = SIPExerDialogLoop(tplstr, invFields, primaryDlg)
 	if ret < 200 || ret >= 300 {
 		return ret
 	}
@@ -3375,15 +3411,19 @@ func SIPExerInitTLSDialog(dstSockAddr sgsip.SGSIPSocketAddress, seDlg *SIPExerDi
 		tlc.InsecureSkipVerify = true
 	}
 
-	if cliops.timeoutconnect > 0 {
-		netDialer := net.Dialer{
-			Timeout: time.Millisecond * time.Duration(cliops.timeoutconnect),
+	netDialer := net.Dialer{}
+	if len(cliops.localaddress) > 0 {
+		netDialer.LocalAddr, err = net.ResolveTCPAddr(strAFProto, cliops.localaddress)
+		if err != nil {
+			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+			return SIPExerErrResolveSrcTCPAddr
 		}
-		seDlg.ConnTLS.Conn, err = tls.DialWithDialer(&netDialer, strAFProto,
-			dstSockAddr.Addr+":"+dstSockAddr.Port, &tlc)
-	} else {
-		seDlg.ConnTLS.Conn, err = tls.Dial(strAFProto, dstSockAddr.Addr+":"+dstSockAddr.Port, &tlc)
 	}
+	if cliops.timeoutconnect > 0 {
+		netDialer.Timeout = time.Millisecond * time.Duration(cliops.timeoutconnect)
+	}
+	seDlg.ConnTLS.Conn, err = tls.DialWithDialer(&netDialer, strAFProto,
+		dstSockAddr.Addr+":"+dstSockAddr.Port, &tlc)
 	if err != nil {
 		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
 		return SIPExerErrTLSDial
@@ -3450,6 +3490,19 @@ func SIPExerInitWSXDialog(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL,
 	}
 
 	netDialer := net.Dialer{}
+	if len(cliops.localaddress) > 0 {
+		strAFProto := "tcp"
+		if dstSockAddr.AType == sgsip.AFIPv4 {
+			strAFProto = "tcp4"
+		} else if dstSockAddr.AType == sgsip.AFIPv6 {
+			strAFProto = "tcp6"
+		}
+		netDialer.LocalAddr, err = net.ResolveTCPAddr(strAFProto, cliops.localaddress)
+		if err != nil {
+			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+			return SIPExerErrResolveSrcTCPAddr
+		}
+	}
 	if cliops.timeoutconnect > 0 {
 		netDialer.Timeout = time.Millisecond * time.Duration(cliops.timeoutconnect)
 	}
