@@ -237,6 +237,22 @@ func TestCallSelfInviteGetsFreshCallID(t *testing.T) {
 	})
 }
 
+func TestCallSelfInviteGetsFreshCSeq(t *testing.T) {
+	withCleanState(t, func() {
+		baseTplFields := map[string]any{"cseqnum": "12345", "fuser": "alice"}
+		invFields := SIPExerCloneTplFields(baseTplFields)
+		invFields["method"] = "INVITE"
+		invFields["cseqnum"] = strconv.Itoa(1 + mathrand.Intn(999999))
+		got, _ := invFields["cseqnum"].(string)
+		if got == "12345" {
+			t.Fatalf("expected self-call INVITE to use a fresh cseq")
+		}
+		if _, err := strconv.Atoi(got); err != nil {
+			t.Fatalf("expected numeric cseq, got %q", got)
+		}
+	})
+}
+
 func TestCallUserRegistersUseRegistrarURIWithoutUser(t *testing.T) {
 	withCleanState(t, func() {
 		dstSockAddr := sgsip.SGSIPSocketAddress{Proto: "udp", ProtoId: sgsip.ProtoUDP, Addr: "127.0.0.1", Port: "5060", PortNo: 5060}
