@@ -240,13 +240,20 @@ Register the From user first, then send an `INVITE` on the same session:
 sipexer --register-first --invite -fuser alice -tuser bob -cb -sd -su tcp:server.com:5060
 ```
 
-Run a two-user call flow (user1 from regular flags, user2 from `--ua2-*` flags):
+Run a two-user call flow over UDP, TCP, TLS, WS, or WSS (user1 from regular
+flags, user2 from `--ua2-*` flags). Each user keeps a separate local socket and
+reuses its registration connection for the call:
 
 ```shell
 sipexer --call-user --ring-time 2000 --call-duration 10000 \
   --fuser alice --laddr 127.0.0.1:5062 \
-  --ua2-fuser bob --ua2-local-address 127.0.0.1:5064 \
+  --ua2-fuser bob --ua2-laddr 127.0.0.1:5064 \
   -cb -sd -su udp:server.com:5060
+
+sipexer --call-user --ring-time 2000 --call-duration 10000 \
+  --fuser alice --laddr 127.0.0.1:5062 \
+  --ua2-fuser bob --ua2-laddr 127.0.0.1:5064 \
+  -cb -sd -su tcp:server.com:5060
 ```
 
 Send `SUBSCRIBE`, then keep the session open for `--sessionwait` to receive
