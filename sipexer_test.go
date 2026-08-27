@@ -5,6 +5,7 @@ import (
 	"io"
 	mathrand "math/rand"
 	"net"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -627,6 +628,40 @@ func TestTargetProtoSupported(t *testing.T) {
 	if SIPExerTargetProtoSupported(sgsip.ProtoSCTP) {
 		t.Fatalf("expected SCTP to be unsupported")
 	}
+}
+
+func TestResolveUA2Target(t *testing.T) {
+	defaultTarget := sgsip.SGSIPSocketAddress{Proto: "udp", ProtoId: sgsip.ProtoUDP, Addr: "ua1.example.com", Port: "5060", PortNo: 5060}
+	defaultWSURL, err := url.Parse("ws://ua1.example.com:5080/sip")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("default target", func(t *testing.T) {
+		gotTarget, gotWSURL, ret := SIPExerResolveUA2Target(defaultTarget, defaultWSURL, "")
+		if ret != SIPExerRetOK || gotTarget != defaultTarget || gotWSURL != defaultWSURL {
+			t.Fatalf("expected primary target fallback, got target=%+v url=%v ret=%d", gotTarget, gotWSURL, ret)
+		}
+	})
+
+	t.Run("TCP target", func(t *testing.T) {
+		gotTarget, gotWSURL, ret := SIPExerResolveUA2Target(defaultTarget, defaultWSURL, "tcp:ua2.example.com:5070")
+		if ret != SIPExerRetOK || gotTarget.ProtoId != sgsip.ProtoTCP || gotTarget.Addr != "ua2.example.com" || gotTarget.Port != "5070" || gotWSURL != nil {
+			t.Fatalf("unexpected TCP target: target=%+v url=%v ret=%d", gotTarget, gotWSURL, ret)
+		}
+		registrarURI := sgsip.SGSIPURI{}
+		sgsip.SGSocketAddressToSIPURI(&gotTarget, "", 0, &registrarURI)
+		if registrarURI.Val != "sip:ua2.example.com:5070;transport=tcp" {
+			t.Fatalf("unexpected UA2 REGISTER URI: %q", registrarURI.Val)
+		}
+	})
+
+	t.Run("WebSocket URL", func(t *testing.T) {
+		gotTarget, gotWSURL, ret := SIPExerResolveUA2Target(defaultTarget, defaultWSURL, "wss://ua2.example.com:7443/sip")
+		if ret != SIPExerRetOK || gotTarget.ProtoId != sgsip.ProtoWSS || gotTarget.Addr != "ua2.example.com" || gotTarget.Port != "7443" || gotWSURL == nil || gotWSURL.Path != "/sip" {
+			t.Fatalf("unexpected WSS target: target=%+v url=%v ret=%d", gotTarget, gotWSURL, ret)
+		}
+	})
 }
 
 func TestBuildCallUsersResponseContactUsesDialogTransport(t *testing.T) {
