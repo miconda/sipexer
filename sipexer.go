@@ -391,6 +391,7 @@ type CLIOptions struct {
 	registerfirst    bool
 	u2fuser          string
 	u2fdomain        string
+	u2target         string
 	u2localaddress   string
 	u2template       string
 	u2templatebody   string
@@ -493,6 +494,7 @@ var cliops = CLIOptions{
 	registerfirst:    false,
 	u2fuser:          "",
 	u2fdomain:        "",
+	u2target:         "",
 	u2localaddress:   "",
 	u2template:       "",
 	u2templatebody:   "",
@@ -643,6 +645,7 @@ func init() {
 	flag.StringVar(&cliops.akaamf, "aka-amf", cliops.akaamf, "aka authentication management field - amf")
 	flag.StringVar(&cliops.u2fuser, "ua2-fuser", cliops.u2fuser, "second user From header URI username")
 	flag.StringVar(&cliops.u2fdomain, "ua2-fdomain", cliops.u2fdomain, "second user From header URI domain")
+	flag.StringVar(&cliops.u2target, "ua2-target", cliops.u2target, "second user REGISTER destination (defaults to the primary target)")
 	flag.StringVar(&cliops.u2localaddress, "ua2-local-address", cliops.u2localaddress, "second user local address (`ip:port` or `:port`)")
 	flag.StringVar(&cliops.u2localaddress, "ua2-laddr", cliops.u2localaddress, "second user local address (`ip:port` or `:port`)")
 	flag.StringVar(&cliops.u2template, "ua2-template-file", cliops.u2template, "second user path to template file")
@@ -1079,6 +1082,48 @@ func SIPExerTargetProtoSupported(protoId int) bool {
 		protoId == sgsip.ProtoTLS ||
 		protoId == sgsip.ProtoWS ||
 		protoId == sgsip.ProtoWSS
+}
+
+func SIPExerResolveUA2Target(defaultTarget sgsip.SGSIPSocketAddress, defaultWSURL *url.URL, target string) (sgsip.SGSIPSocketAddress, *url.URL, int) {
+	target = strings.TrimSpace(target)
+	if len(target) == 0 {
+		return defaultTarget, defaultWSURL, SIPExerRetOK
+	}
+
+	wsTarget := target
+	if strings.HasPrefix(wsTarget, "wss:") && !strings.HasPrefix(wsTarget, "wss://") {
+		wsTarget = "wss://" + strings.TrimPrefix(wsTarget, "wss:")
+	} else if strings.HasPrefix(wsTarget, "ws:") && !strings.HasPrefix(wsTarget, "ws://") {
+		wsTarget = "ws://" + strings.TrimPrefix(wsTarget, "ws:")
+	}
+
+	var wsURL *url.URL
+	parseTarget := target
+	if strings.HasPrefix(wsTarget, "wss://") || strings.HasPrefix(wsTarget, "ws://") {
+		var err error
+		wsURL, err = url.Parse(wsTarget)
+		if err != nil || len(wsURL.Host) == 0 {
+			return sgsip.SGSIPSocketAddress{}, nil, SIPExerErrWSURLFormat
+		}
+		if strings.HasPrefix(wsTarget, "wss://") {
+			parseTarget = "wss:" + wsURL.Host
+		} else {
+			parseTarget = "ws:" + wsURL.Host
+		}
+	}
+
+	dstSockAddr := sgsip.SGSIPSocketAddress{}
+	if sgsip.SGSIPParseSocketAddress(parseTarget, &dstSockAddr) != sgsip.SGSIPRetOK {
+		dstURI := sgsip.SGSIPURI{}
+		if sgsip.SGSIPParseURI(parseTarget, &dstURI) != sgsip.SGSIPRetOK {
+			return sgsip.SGSIPSocketAddress{}, nil, SIPExerErrDestinationFormat
+		}
+		sgsip.SGSIPURIToSocketAddress(&dstURI, &dstSockAddr)
+	}
+	if !SIPExerTargetProtoSupported(dstSockAddr.ProtoId) {
+		return sgsip.SGSIPSocketAddress{}, nil, SIPExerErrProtocolUnsuported
+	}
+	return dstSockAddr, wsURL, SIPExerRetOK
 }
 
 func SIPExerRunSend(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, tplstr string, tplfields map[string]any) int {
@@ -1610,6 +1655,11 @@ func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, 
 		SIPExerPrintf(SIPExerLogError, "call-users mode does not support target protocol %s\n", dstSockAddr.Proto)
 		return SIPExerErrProtocolUnsuported
 	}
+	u2DstSockAddr, u2WSURL, ret := SIPExerResolveUA2Target(dstSockAddr, wsurlp, cliops.u2target)
+	if ret != SIPExerRetOK {
+		SIPExerPrintf(SIPExerLogError, "invalid second user target: %s\n", cliops.u2target)
+		return ret
+	}
 
 	primary := SIPExerRuntimeCapture()
 	u2 := SIPExerRuntimeCapture()
@@ -1673,11 +1723,11 @@ func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, 
 	}
 	u2Fields := make(map[string]any)
 	SIPExerPrepareTemplateFields(u2Fields)
-	var registrarURI sgsip.SGSIPURI
-	sgsip.SGSocketAddressToSIPURI(&dstSockAddr, "", 0, &registrarURI)
-	u2Fields["ruri"] = registrarURI.Val
+	var u2RegistrarURI sgsip.SGSIPURI
+	sgsip.SGSocketAddressToSIPURI(&u2DstSockAddr, "", 0, &u2RegistrarURI)
+	u2Fields["ruri"] = u2RegistrarURI.Val
 	u2Fields["method"] = "REGISTER"
-	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
+	if u2DstSockAddr.ProtoId != sgsip.ProtoUDP {
 		SIPExerEnsureViaAlias(u2Fields)
 	}
 	u2.cli.register = true
@@ -1685,7 +1735,7 @@ func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, 
 	u2.cli.method = "REGISTER"
 	SIPExerRuntimeApply(u2)
 	u2Dlg := &SIPExerDialog{}
-	ret := SIPExerInitDialog(dstSockAddr, wsurlp, u2Dlg)
+	ret = SIPExerInitDialog(u2DstSockAddr, u2WSURL, u2Dlg)
 	if ret != SIPExerRetOK {
 		SIPExerRuntimeApply(primary)
 		return ret
@@ -1721,6 +1771,8 @@ func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, 
 
 	regFields := SIPExerCloneTplFields(baseTplFields)
 	regFields["method"] = "REGISTER"
+	var registrarURI sgsip.SGSIPURI
+	sgsip.SGSocketAddressToSIPURI(&dstSockAddr, "", 0, &registrarURI)
 	regFields["ruri"] = registrarURI.Val
 	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
 		SIPExerEnsureViaAlias(regFields)
