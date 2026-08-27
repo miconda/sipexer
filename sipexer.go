@@ -609,6 +609,7 @@ func init() {
 	flag.StringVar(&cliops.fuser, "fu", cliops.fuser, "From header URI username")
 	flag.StringVar(&cliops.fuser, "fuser", cliops.fuser, "From header URI username")
 	flag.StringVar(&cliops.localaddress, "laddr", cliops.localaddress, "local address (`ip:port` or `:port`)")
+	flag.StringVar(&cliops.localaddress, "local-address", cliops.localaddress, "local address (`ip:port` or `:port`)")
 	flag.StringVar(&cliops.method, "method", cliops.method, "SIP method")
 	flag.StringVar(&cliops.method, "mt", cliops.method, "SIP method")
 	flag.StringVar(&cliops.noval, "no-val", cliops.noval, "no value string")
