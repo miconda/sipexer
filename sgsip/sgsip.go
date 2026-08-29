@@ -222,6 +222,9 @@ var viaBranchCookie string = "z9hG4bKSG."
 
 // Quick detection of ip/address type
 func SGAddrType(addr string) int {
+	if len(addr) == 0 {
+		return AFNONE
+	}
 	if net.ParseIP(addr) == nil {
 		return AFHost
 	}
@@ -238,6 +241,9 @@ func SGAddrType(addr string) int {
 
 // Quick detection of ip/address type also with IPv6 square brackets
 func SGAddrTypeEx(addr string) int {
+	if len(addr) == 0 {
+		return AFNONE
+	}
 	if addr[0:1] == "[" {
 		// assuming only IPv6 address
 		if addr[len(addr)-1:] != "]" {
@@ -353,6 +359,9 @@ func SGSIPSetMethodId(method string, methodid *int) {
 
 // SGSIPParseSocketAddress --
 func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
+	if len(sockstr) == 0 {
+		return SGSIPRetErr
+	}
 	if sockstr[0:1] == "[" && sockstr[len(sockstr)-1:] == "]" {
 		sockaddr.Addr = sockstr
 		// assuming only IPv6 address -- fill with defaults
@@ -390,27 +399,47 @@ func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 		strAddrPort = sockstr
 		strProto = ""
 	}
+	if len(strAddrPort) == 0 {
+		return SGSIPRetErrSocketAddressPort
+	}
 	if strAddrPort[0:1] == "[" {
-		strArray = strings.SplitN(strAddrPort, "]", 2)
-		if strProto == "" && strArray[1][0:1] != ":" {
-			// no port and only IPv6 tested before
-			return SGSIPRetErrSocketAddressPort
+		closeBracket := strings.Index(strAddrPort, "]")
+		if closeBracket < 0 {
+			return SGSIPRetErrSocketAddressAFIPv6
 		}
-		sockaddr.Port = strArray[1][1:]
-		i, err := strconv.Atoi(sockaddr.Port)
-		if err != nil {
-			return SGSIPRetErrSocketAddressPortVal
-		}
-		sockaddr.PortNo = i
-		sockaddr.Addr = strArray[0] + "]"
+		sockaddr.Addr = strAddrPort[:closeBracket+1]
 		sockaddr.AType = SGAddrTypeEx(sockaddr.Addr)
 		if sockaddr.AType != AFIPv6 {
 			return SGSIPRetErrSocketAddressAFIPv6
 		}
+		rest := strAddrPort[closeBracket+1:]
+		if len(rest) == 0 {
+			if len(strProto) == 0 {
+				return SGSIPRetErrSocketAddressPort
+			}
+			sockaddr.Port = "5060"
+			sockaddr.PortNo = 5060
+		} else {
+			if rest[0] != ':' || len(rest) == 1 {
+				return SGSIPRetErrSocketAddressPort
+			}
+			sockaddr.Port = rest[1:]
+			i, err := strconv.Atoi(sockaddr.Port)
+			if err != nil {
+				return SGSIPRetErrSocketAddressPortVal
+			}
+			sockaddr.PortNo = i
+		}
 	} else {
 		strArray = strings.SplitN(strAddrPort, ":", 2)
+		if len(strArray[0]) == 0 {
+			return SGSIPRetErrSocketAddressPort
+		}
 		if len(strArray) > 1 {
 			sockaddr.Port = strArray[1]
+			if len(sockaddr.Port) == 0 {
+				return SGSIPRetErrSocketAddressPortVal
+			}
 			i, err := strconv.Atoi(sockaddr.Port)
 			if err != nil {
 				return SGSIPRetErrSocketAddressPortVal
@@ -431,7 +460,7 @@ func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	strArray := strings.SplitN(uristr, ":", 2)
 
-	if len(strArray) < 2 {
+	if len(strArray) < 2 || len(strArray[1]) == 0 {
 		return SGSIPRetErrURI
 	}
 	ret := SGSIPSetSchema(strArray[0], &uri.Schema, &uri.SchemaId)
@@ -439,13 +468,11 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		return ret
 	}
 	atPos := strings.Index(strArray[1], "@")
-	colPos := strings.Index(strArray[1], ":")
-	scPos := strings.Index(strArray[1], ";")
 	if atPos == 0 {
 		// empty user part
 		return SGSIPRetErrURIUser
 	}
-	if atPos < 0 && colPos < 0 && scPos < 0 {
+	if atPos < 0 && strArray[1][0] != '[' && strings.IndexAny(strArray[1], ":;") < 0 {
 		// no user, no port, no parameters
 		uri.Addr = strArray[1]
 		uri.Proto = "udp"
@@ -474,7 +501,10 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	} else {
 		pHostPP = strArray[1]
 	}
-	if colPos < 0 && scPos < 0 {
+	if len(pHostPP) == 0 {
+		return SGSIPRetErrURIFormat
+	}
+	if pHostPP[0] != '[' && strings.IndexAny(pHostPP, ":;") < 0 {
 		// no port, no params
 		uri.Addr = pHostPP
 		uri.Proto = "udp"
@@ -501,24 +531,33 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 			uri.Val = uristr
 			return SGSIPRetOK
 		}
-		strArray = strings.SplitN(pHostPP, "]", 2)
-		uri.Addr = strArray[0] + "]"
+		closeBracket := strings.Index(pHostPP, "]")
+		if closeBracket < 0 {
+			return SGSIPRetErrURIAFIPv6
+		}
+		uri.Addr = pHostPP[:closeBracket+1]
 		uri.AType = SGAddrTypeEx(uri.Addr)
 		if uri.AType != AFIPv6 {
 			return SGSIPRetErrURIAFIPv6
 		}
-		pPortParams = strArray[1]
+		pPortParams = pHostPP[closeBracket+1:]
 	} else {
-		scPos = strings.IndexAny(pHostPP, ":;")
+		scPos := strings.IndexAny(pHostPP, ":;")
+		if scPos <= 0 {
+			return SGSIPRetErrURIFormat
+		}
 		uri.Addr = pHostPP[0:scPos]
 		uri.AType = SGAddrType(uri.Addr)
 		pPortParams = pHostPP[scPos:]
+	}
+	if len(pPortParams) == 0 {
+		return SGSIPRetErrURIFormat
 	}
 	pParams := ""
 	if pPortParams[0:1] == ":" {
 		// port
 		pPort := ""
-		scPos = strings.Index(pPortParams, ";")
+		scPos := strings.Index(pPortParams, ";")
 		if scPos < 0 {
 			pPort = pPortParams[1:]
 		} else {
@@ -551,7 +590,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 			uri.Val = uristr
 			return SGSIPRetOK
 		}
-		scPos = strings.Index(strArray[1], ";")
+		scPos := strings.Index(strArray[1], ";")
 		pProto := ""
 		if scPos < 0 {
 			pProto = strArray[1]
