@@ -26,6 +26,7 @@ func TestSGAddrTypeHelpers(t *testing.T) {
 		{name: "host", in: "example.com", want: AFHost},
 		{name: "ipv6-brackets", in: "[::1]", want: AFIPv6},
 		{name: "invalid-brackets", in: "[::1", want: AFNONE},
+		{name: "empty", in: "", want: AFNONE},
 	}
 
 	for _, tc := range tests {
@@ -84,7 +85,13 @@ func TestParseSocketAddress(t *testing.T) {
 		{name: "host-port", in: "example.com:5070", wantRet: SGSIPRetOK, proto: "udp", addr: "example.com", port: "5070"},
 		{name: "proto-host-port", in: "tcp:127.0.0.1:5080", wantRet: SGSIPRetOK, proto: "tcp", addr: "127.0.0.1", port: "5080"},
 		{name: "ipv6", in: "tls:[::1]:5061", wantRet: SGSIPRetOK, proto: "tls", addr: "[::1]", port: "5061"},
+		{name: "ipv6-default-port", in: "tcp:[::1]", wantRet: SGSIPRetOK, proto: "tcp", addr: "[::1]", port: "5060"},
 		{name: "invalid-port", in: "udp:127.0.0.1:abc", wantRet: SGSIPRetErrSocketAddressPortVal},
+		{name: "empty", in: "", wantRet: SGSIPRetErr},
+		{name: "protocol-only", in: "tcp:", wantRet: SGSIPRetErrSocketAddressPort},
+		{name: "empty-host", in: ":5060", wantRet: SGSIPRetErrSocketAddressPort},
+		{name: "unterminated-ipv6", in: "tcp:[::1", wantRet: SGSIPRetErrSocketAddressAFIPv6},
+		{name: "ipv6-empty-port", in: "tcp:[::1]:", wantRet: SGSIPRetErrSocketAddressPort},
 	}
 
 	for _, tc := range tests {
@@ -116,9 +123,19 @@ func TestParseURI(t *testing.T) {
 		{name: "with-user-and-port", in: "sip:alice@example.com:5070", wantRet: SGSIPRetOK, addr: "example.com", port: "5070", proto: "udp"},
 		{name: "with-transport", in: "sip:example.com:5061;transport=tls", wantRet: SGSIPRetOK, addr: "example.com", port: "5061", proto: "tls"},
 		{name: "ipv6", in: "sip:[::1]:5060;transport=udp", wantRet: SGSIPRetOK, addr: "[::1]", port: "5060", proto: "udp"},
+		{name: "user-password", in: "sip:alice:secret@example.com", wantRet: SGSIPRetOK, addr: "example.com", port: "5060", proto: "udp"},
 		{name: "empty-user", in: "sip:@example.com", wantRet: SGSIPRetErrURIUser},
 		{name: "bad-port", in: "sip:example.com:0", wantRet: SGSIPRetErrURIPort},
 		{name: "bad-transport", in: "sip:example.com:5060;transport=bad", wantRet: SGSIPRetErrURIProto},
+		{name: "empty", in: "", wantRet: SGSIPRetErrURI},
+		{name: "empty-address", in: "sip:", wantRet: SGSIPRetErrURI},
+		{name: "empty-host", in: "sip:alice@", wantRet: SGSIPRetErrURIFormat},
+		{name: "host-port-empty-host", in: "sip::5060", wantRet: SGSIPRetErrURIFormat},
+		{name: "empty-port", in: "sip:example.com:", wantRet: SGSIPRetErrURIPort},
+		{name: "unterminated-ipv6", in: "sip:[::1", wantRet: SGSIPRetErrURIAFIPv6},
+		{name: "lone-ipv6-bracket", in: "sip:[", wantRet: SGSIPRetErrURIAFIPv6},
+		{name: "invalid-bracketed-host", in: "sip:[example.com]", wantRet: SGSIPRetErrURIAFIPv6},
+		{name: "invalid-ipv6-suffix", in: "sip:[::1]broken", wantRet: SGSIPRetErrURIFormat},
 	}
 
 	for _, tc := range tests {
@@ -438,4 +455,26 @@ func TestHeaderParseDigestAuthBodyCaseInsensitiveScheme(t *testing.T) {
 	if params["realm"] != "example.com" || params["nonce"] != "abc" || params["algorithm"] != "SHA-256" {
 		t.Fatalf("unexpected parsed params: %#v", params)
 	}
+}
+
+func FuzzSGSIPAddressParsersDoNotPanic(f *testing.F) {
+	for _, seed := range []string{
+		"",
+		":",
+		"tcp:",
+		"tcp:[::1",
+		"tcp:[::1]",
+		"sip:",
+		"sip:[",
+		"sip:[::1",
+		"sip:alice@",
+		"sip:alice:secret@example.com",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		_ = SGAddrTypeEx(input)
+		_ = SGSIPParseSocketAddress(input, &SGSIPSocketAddress{})
+		_ = SGSIPParseURI(input, &SGSIPURI{})
+	})
 }
