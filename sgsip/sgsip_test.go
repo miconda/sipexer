@@ -120,6 +120,15 @@ func TestParseURI(t *testing.T) {
 		proto   string
 	}{
 		{name: "simple", in: "sip:example.com", wantRet: SGSIPRetOK, addr: "example.com", port: "5060", proto: "udp"},
+		{name: "sips-simple", in: "sips:example.com", wantRet: SGSIPRetOK, addr: "example.com", port: "5061", proto: "tls"},
+		{name: "sips-user", in: "sips:alice@example.com", wantRet: SGSIPRetOK, addr: "example.com", port: "5061", proto: "tls"},
+		{name: "sips-ipv6", in: "sips:[::1]", wantRet: SGSIPRetOK, addr: "[::1]", port: "5061", proto: "tls"},
+		{name: "sips-explicit-port", in: "sips:example.com:5071", wantRet: SGSIPRetOK, addr: "example.com", port: "5071", proto: "tls"},
+		{name: "sips-tcp", in: "sips:example.com;transport=tcp", wantRet: SGSIPRetOK, addr: "example.com", port: "5061", proto: "tls"},
+		{name: "sips-tls", in: "sips:example.com;transport=tls", wantRet: SGSIPRetOK, addr: "example.com", port: "5061", proto: "tls"},
+		{name: "sips-wss", in: "sips:example.com;transport=wss", wantRet: SGSIPRetOK, addr: "example.com", port: "5061", proto: "wss"},
+		{name: "sips-udp-rejected", in: "sips:example.com;transport=udp", wantRet: SGSIPRetErrURIProto},
+		{name: "sips-ws-rejected", in: "sips:example.com;transport=ws", wantRet: SGSIPRetErrURIProto},
 		{name: "with-user-and-port", in: "sip:alice@example.com:5070", wantRet: SGSIPRetOK, addr: "example.com", port: "5070", proto: "udp"},
 		{name: "with-transport", in: "sip:example.com:5061;transport=tls", wantRet: SGSIPRetOK, addr: "example.com", port: "5061", proto: "tls"},
 		{name: "ipv6", in: "sip:[::1]:5060;transport=udp", wantRet: SGSIPRetOK, addr: "[::1]", port: "5060", proto: "udp"},
@@ -162,6 +171,14 @@ func TestURIAndSocketConversions(t *testing.T) {
 	}
 	if sa.Val != "tcp:example.com:5090" {
 		t.Fatalf("unexpected socket value: %q", sa.Val)
+	}
+
+	secureURI := SGSIPURI{Schema: "sips", SchemaId: SchemaSIPS, Addr: "secure.example.com", AType: AFHost}
+	if ret := SGSIPURIToSocketAddress(&secureURI, &sa); ret != SGSIPRetOK {
+		t.Fatalf("SIPS URI conversion failed: %d", ret)
+	}
+	if sa.Val != "tls:secure.example.com:5061" || sa.ProtoId != ProtoTLS || sa.PortNo != 5061 {
+		t.Fatalf("unexpected SIPS socket value: %+v", sa)
 	}
 
 	sa = SGSIPSocketAddress{Proto: "udp", ProtoId: ProtoUDP, Addr: "example.com", Port: "5060", PortNo: 5060}
