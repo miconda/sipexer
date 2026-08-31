@@ -309,6 +309,46 @@ func SGSIPSetSchema(schemastr string, schemaval *string, schemaid *int) int {
 	}
 }
 
+func SGSIPURISetDefaults(uri *SGSIPURI) {
+	if uri.SchemaId == SchemaSIPS {
+		uri.Proto = "tls"
+		uri.ProtoId = ProtoTLS
+		uri.Port = "5061"
+		uri.PortNo = 5061
+		return
+	}
+	uri.Proto = "udp"
+	uri.ProtoId = ProtoUDP
+	uri.Port = "5060"
+	uri.PortNo = 5060
+}
+
+func SGSIPURISetTransport(uri *SGSIPURI, transport string) int {
+	proto := ""
+	protoID := ProtoNONE
+	if SGSIPSetProto(transport, &proto, &protoID) != SGSIPRetOK {
+		return SGSIPRetErrURIProto
+	}
+	if uri.SchemaId != SchemaSIPS {
+		uri.Proto = proto
+		uri.ProtoId = protoID
+		return SGSIPRetOK
+	}
+
+	// SIPS requires a secure transport. TCP denotes TLS over TCP here.
+	switch protoID {
+	case ProtoTCP, ProtoTLS:
+		uri.Proto = "tls"
+		uri.ProtoId = ProtoTLS
+	case ProtoWSS:
+		uri.Proto = "wss"
+		uri.ProtoId = ProtoWSS
+	default:
+		return SGSIPRetErrURIProto
+	}
+	return SGSIPRetOK
+}
+
 // SGSIPSetMethodId --
 func SGSIPSetMethodId(method string, methodid *int) {
 	switch strings.ToUpper(method) {
@@ -467,6 +507,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	if ret != SGSIPRetOK {
 		return ret
 	}
+	SGSIPURISetDefaults(uri)
 	atPos := strings.Index(strArray[1], "@")
 	if atPos == 0 {
 		// empty user part
@@ -475,10 +516,6 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	if atPos < 0 && strArray[1][0] != '[' && strings.IndexAny(strArray[1], ":;") < 0 {
 		// no user, no port, no parameters
 		uri.Addr = strArray[1]
-		uri.Proto = "udp"
-		uri.ProtoId = ProtoUDP
-		uri.Port = "5060"
-		uri.PortNo = 5060
 		uri.AType = SGAddrType(uri.Addr)
 		uri.Val = uristr
 		return SGSIPRetOK
@@ -507,10 +544,6 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	if pHostPP[0] != '[' && strings.IndexAny(pHostPP, ":;") < 0 {
 		// no port, no params
 		uri.Addr = pHostPP
-		uri.Proto = "udp"
-		uri.ProtoId = ProtoUDP
-		uri.Port = "5060"
-		uri.PortNo = 5060
 		uri.AType = SGAddrType(uri.Addr)
 		uri.Val = uristr
 		return SGSIPRetOK
@@ -520,10 +553,6 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		if pHostPP[len(pHostPP)-1:] == "]" {
 			// only IPv6 address
 			uri.Addr = pHostPP
-			uri.Proto = "udp"
-			uri.ProtoId = ProtoUDP
-			uri.Port = "5060"
-			uri.PortNo = 5060
 			uri.AType = SGAddrTypeEx(uri.Addr)
 			if uri.AType != AFIPv6 {
 				return SGSIPRetErrURIAFIPv6
@@ -570,8 +599,6 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		uri.Port = pPort
 		uri.PortNo = i
 		if scPos < 0 {
-			uri.Proto = "udp"
-			uri.ProtoId = ProtoUDP
 			uri.Val = uristr
 			return SGSIPRetOK
 		}
@@ -581,8 +608,6 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	} else {
 		return SGSIPRetErrURIFormat
 	}
-	uri.Proto = "udp"
-	uri.ProtoId = ProtoUDP
 	if len(pParams) > 0 {
 		uri.Params = pParams[1:]
 		strArray = strings.Split(pParams, ";transport=")
@@ -597,8 +622,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		} else {
 			pProto = strArray[1][0:scPos]
 		}
-		ret := SGSIPSetProto(pProto, &uri.Proto, &uri.ProtoId)
-		if ret != SGSIPRetOK {
+		if SGSIPURISetTransport(uri, pProto) != SGSIPRetOK {
 			return SGSIPRetErrURIProto
 		}
 	}
@@ -611,6 +635,9 @@ func SGSIPURIToSocketAddress(uri *SGSIPURI, sockaddr *SGSIPSocketAddress) int {
 	if len(uri.Proto) > 0 {
 		sockaddr.Proto = uri.Proto
 		sockaddr.ProtoId = uri.ProtoId
+	} else if uri.SchemaId == SchemaSIPS || strings.EqualFold(uri.Schema, "sips") {
+		sockaddr.Proto = "tls"
+		sockaddr.ProtoId = ProtoTLS
 	} else {
 		sockaddr.Proto = "udp"
 		sockaddr.ProtoId = ProtoUDP
@@ -625,6 +652,9 @@ func SGSIPURIToSocketAddress(uri *SGSIPURI, sockaddr *SGSIPSocketAddress) int {
 	if len(uri.Port) > 0 {
 		sockaddr.Port = uri.Port
 		sockaddr.PortNo = uri.PortNo
+	} else if uri.SchemaId == SchemaSIPS || strings.EqualFold(uri.Schema, "sips") || sockaddr.ProtoId == ProtoTLS {
+		sockaddr.Port = "5061"
+		sockaddr.PortNo = 5061
 	} else {
 		sockaddr.Port = "5060"
 		sockaddr.PortNo = 5060
