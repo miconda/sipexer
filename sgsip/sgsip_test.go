@@ -407,6 +407,39 @@ func TestMessageToResponseString(t *testing.T) {
 	}
 }
 
+func TestMessageToResponseStringReusesInviteToTag(t *testing.T) {
+	req := mustParseMessage(t, "INVITE sip:bob@example.com SIP/2.0\r\nVia: SIP/2.0/UDP host;branch=z9hG4bKSG.req\r\nFrom: <sip:alice@example.com>;tag=f1\r\nTo: <sip:bob@example.com>\r\nCall-ID: c1\r\nCSeq: 10 INVITE\r\nContent-Length: 0\r\n\r\n")
+
+	responses := make(map[string]string)
+	for _, response := range []struct {
+		code   string
+		reason string
+	}{
+		{code: "100", reason: "Trying"},
+		{code: "180", reason: "Ringing"},
+		{code: "200", reason: "OK"},
+	} {
+		out := ""
+		if ret := SGSIPMessageToResponseString(&req, response.code, response.reason, &out); ret != SGSIPRetOK {
+			t.Fatalf("message->%s response failed: %d", response.code, ret)
+		}
+		responses[response.code] = out
+	}
+
+	tagPattern := regexp.MustCompile(`(?m)^To: .*;tag=([^;\r\n]+)`)
+	if tagPattern.MatchString(responses["100"]) {
+		t.Fatalf("100 Trying must not create a To-tag: %q", responses["100"])
+	}
+	tag180 := tagPattern.FindStringSubmatch(responses["180"])
+	tag200 := tagPattern.FindStringSubmatch(responses["200"])
+	if len(tag180) != 2 || len(tag200) != 2 {
+		t.Fatalf("expected 180 and 200 responses to contain To-tags: 180=%q 200=%q", responses["180"], responses["200"])
+	}
+	if tag180[1] != tag200[1] {
+		t.Fatalf("expected the same To-tag, got 180=%q 200=%q", tag180[1], tag200[1])
+	}
+}
+
 func TestMessageToResponseStringInviteRecordRoute(t *testing.T) {
 	reqWithRR := mustParseMessage(t, "INVITE sip:bob@example.com SIP/2.0\r\nVia: SIP/2.0/UDP host;branch=z9hG4bKSG.req\r\nFrom: <sip:alice@example.com>;tag=f1\r\nTo: <sip:bob@example.com>\r\nCall-ID: c1\r\nCSeq: 10 INVITE\r\nRecord-Route: <sip:rr1.example.com;lr>\r\nRecord-Route: <sip:rr2.example.com;lr>\r\nContent-Length: 0\r\n\r\n")
 	reqOptionsWithRR := mustParseMessage(t, "OPTIONS sip:bob@example.com SIP/2.0\r\nVia: SIP/2.0/UDP host;branch=z9hG4bKSG.req\r\nFrom: <sip:alice@example.com>;tag=f1\r\nTo: <sip:bob@example.com>\r\nCall-ID: c2\r\nCSeq: 11 OPTIONS\r\nRecord-Route: <sip:rr.example.com;lr>\r\nContent-Length: 0\r\n\r\n")
