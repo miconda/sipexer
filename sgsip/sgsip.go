@@ -1293,13 +1293,23 @@ func SGSIPMessageToResponseString(sipReq *SGSIPMessage, scode string, sreason st
 			sb.WriteString(h.Name + ": " + h.Body + "\r\n")
 		}
 	}
-	for _, h := range sipReq.Headers {
+	toTag := ""
+	for i := range sipReq.Headers {
+		h := &sipReq.Headers[i]
 		switch h.HType {
 		case HeaderTypeTo:
-			if strings.Index(h.Body, ";tag=") > 0 {
+			if strings.Contains(strings.ToLower(h.Body), ";tag=") {
+				sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+			} else if codeInt != 100 {
+				if len(toTag) == 0 {
+					toTag = uuid.New().String()
+				}
+				// Keep the locally generated tag on the request so every response
+				// built for this transaction uses the same dialog identifier.
+				h.Body += ";tag=" + toTag
 				sb.WriteString(h.Name + ": " + h.Body + "\r\n")
 			} else {
-				sb.WriteString(h.Name + ": " + h.Body + ";tag=" + uuid.New().String() + "\r\n")
+				sb.WriteString(h.Name + ": " + h.Body + "\r\n")
 			}
 		}
 	}
