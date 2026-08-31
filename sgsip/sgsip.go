@@ -949,6 +949,35 @@ func SGSIPParseBody(inputStr string, bodyVal *SGSIPBody) int {
 	return SGSIPRetOK
 }
 
+func sgsipMessageContentLength(msgVal *SGSIPMessage) (int, int) {
+	contentLength := 0
+	found := false
+	for _, header := range msgVal.Headers {
+		if header.HType != HeaderTypeContentLength {
+			continue
+		}
+		body := strings.TrimSpace(header.Body)
+		if len(body) == 0 {
+			return 0, SGSIPRetErrBody
+		}
+		for i := 0; i < len(body); i++ {
+			if body[i] < '0' || body[i] > '9' {
+				return 0, SGSIPRetErrBody
+			}
+		}
+		value, err := strconv.Atoi(body)
+		if err != nil {
+			return 0, SGSIPRetErrBody
+		}
+		if found && value != contentLength {
+			return 0, SGSIPRetErrBody
+		}
+		contentLength = value
+		found = true
+	}
+	return contentLength, SGSIPRetOK
+}
+
 // SGSIPMessageHeaderSet --
 func SGSIPMessageHeaderSet(msgVal *SGSIPMessage, hname string, hbody string) int {
 	htype := SGSIPHeaderGetType(hname)
@@ -1098,7 +1127,17 @@ func SGSIPParseMessage(inputStr string, msgVal *SGSIPMessage) int {
 	if ret != SGSIPRetOK {
 		return ret
 	}
-	return SGSIPParseBody(inputStr, &msgVal.Body)
+	ret = SGSIPParseBody(inputStr, &msgVal.Body)
+	if ret != SGSIPRetOK {
+		return ret
+	}
+	contentLength, ret := sgsipMessageContentLength(msgVal)
+	if ret != SGSIPRetOK || len(msgVal.Body.Content) < contentLength {
+		return SGSIPRetErrBody
+	}
+	msgVal.Body.Content = msgVal.Body.Content[:contentLength]
+	msgVal.Body.ContentLen = contentLength
+	return SGSIPRetOK
 }
 
 // SGSIPMessageToString --
