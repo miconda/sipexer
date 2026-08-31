@@ -344,6 +344,51 @@ func TestParseMessageAndMessageToString(t *testing.T) {
 	}
 }
 
+func TestParseMessageHonorsContentLength(t *testing.T) {
+	message := func(headers string, body string) string {
+		return "MESSAGE sip:bob@example.com SIP/2.0\r\n" +
+			"Via: SIP/2.0/UDP host;branch=z9hG4bKSG.a\r\n" +
+			"From: <sip:alice@example.com>;tag=1\r\n" +
+			"To: <sip:bob@example.com>\r\n" +
+			"Call-ID: abc\r\n" +
+			"CSeq: 1 MESSAGE\r\n" + headers + "\r\n" + body
+	}
+
+	tests := []struct {
+		name        string
+		headers     string
+		body        string
+		wantRet     int
+		wantContent string
+	}{
+		{name: "exact", headers: "Content-Length: 5\r\n", body: "hello", wantRet: SGSIPRetOK, wantContent: "hello"},
+		{name: "trims trailing data", headers: "Content-Length: 5\r\n", body: "helloNEXT", wantRet: SGSIPRetOK, wantContent: "hello"},
+		{name: "zero ignores trailing data", headers: "Content-Length: 0\r\n", body: "NEXT", wantRet: SGSIPRetOK, wantContent: ""},
+		{name: "compact header", headers: "l: 4\r\n", body: "testNEXT", wantRet: SGSIPRetOK, wantContent: "test"},
+		{name: "byte length", headers: "Content-Length: 2\r\n", body: "\xc3\xa9NEXT", wantRet: SGSIPRetOK, wantContent: "\xc3\xa9"},
+		{name: "missing header means zero", headers: "Content-Type: text/plain\r\n", body: "ignored", wantRet: SGSIPRetOK, wantContent: ""},
+		{name: "truncated", headers: "Content-Length: 6\r\n", body: "short", wantRet: SGSIPRetErrBody},
+		{name: "malformed", headers: "Content-Length: invalid\r\n", wantRet: SGSIPRetErrBody},
+		{name: "negative", headers: "Content-Length: -1\r\n", wantRet: SGSIPRetErrBody},
+		{name: "signed", headers: "Content-Length: +1\r\n", body: "x", wantRet: SGSIPRetErrBody},
+		{name: "matching duplicates", headers: "Content-Length: 4\r\nl: 4\r\n", body: "test", wantRet: SGSIPRetOK, wantContent: "test"},
+		{name: "conflicting duplicates", headers: "Content-Length: 4\r\nl: 5\r\n", body: "tests", wantRet: SGSIPRetErrBody},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var msg SGSIPMessage
+			ret := SGSIPParseMessage(message(tc.headers, tc.body), &msg)
+			if ret != tc.wantRet {
+				t.Fatalf("expected return %d, got %d", tc.wantRet, ret)
+			}
+			if ret == SGSIPRetOK && (msg.Body.Content != tc.wantContent || msg.Body.ContentLen != len(tc.wantContent)) {
+				t.Fatalf("unexpected body: content=%q length=%d", msg.Body.Content, msg.Body.ContentLen)
+			}
+		})
+	}
+}
+
 func TestInviteToACKString(t *testing.T) {
 	invReq := mustParseMessage(t, "INVITE sip:bob@example.com SIP/2.0\r\nVia: SIP/2.0/UDP host;branch=z9hG4bKSG.req\r\nFrom: <sip:alice@example.com>;tag=f1\r\nTo: <sip:bob@example.com>\r\nCall-ID: c1\r\nCSeq: 10 INVITE\r\nAuthorization: Digest user=\"alice\"\r\nContent-Length: 0\r\n\r\n")
 	invRpl2xx := mustParseMessage(t, "SIP/2.0 200 OK\r\nVia: SIP/2.0/UDP host;branch=z9hG4bKSG.req\r\nFrom: <sip:alice@example.com>;tag=f1\r\nTo: <sip:bob@example.com>;tag=t1\r\nCall-ID: c1\r\nCSeq: 10 INVITE\r\nContact: <sip:bob@contact.example.com>\r\nRecord-Route: <sip:rr1.example.com;lr>,<sip:rr2.example.com;lr>\r\nContent-Length: 0\r\n\r\n")
