@@ -613,20 +613,15 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	}
 	if len(pParams) > 0 {
 		uri.Params = pParams[1:]
-		strArray = strings.Split(pParams, ";transport=")
-		if len(strArray) == 1 {
-			uri.Val = uristr
-			return SGSIPRetOK
-		}
-		scPos := strings.Index(strArray[1], ";")
-		pProto := ""
-		if scPos < 0 {
-			pProto = strArray[1]
-		} else {
-			pProto = strArray[1][0:scPos]
-		}
-		if SGSIPURISetTransport(uri, pProto) != SGSIPRetOK {
-			return SGSIPRetErrURIProto
+		for _, param := range strings.Split(uri.Params, ";") {
+			nameValue := strings.SplitN(param, "=", 2)
+			if !strings.EqualFold(strings.TrimSpace(nameValue[0]), "transport") {
+				continue
+			}
+			if len(nameValue) != 2 || SGSIPURISetTransport(uri, strings.TrimSpace(nameValue[1])) != SGSIPRetOK {
+				return SGSIPRetErrURIProto
+			}
+			break
 		}
 	}
 	uri.Val = uristr
