@@ -139,6 +139,7 @@ const (
 	HeaderTypeAuthorization
 	HeaderTypeProxyAuthorization
 	HeaderTypeOther
+	HeaderTypeMaxForwards
 )
 
 type SGSIPSocketAddress struct {
@@ -219,6 +220,8 @@ type SGSIPMessage struct {
 }
 
 var viaBranchCookie string = "z9hG4bKSG."
+
+const sgsipDefaultMaxForwards = "70"
 
 // Quick detection of ip/address type
 func SGAddrType(addr string) int {
@@ -923,6 +926,8 @@ func SGSIPHeaderGetType(name string) int {
 		return HeaderTypeRecordRoute
 	case "route":
 		return HeaderTypeRoute
+	case "max-forwards":
+		return HeaderTypeMaxForwards
 	case "expires":
 		return HeaderTypeExpires
 	case "user-agent":
@@ -1171,6 +1176,7 @@ func SGSIPMessageToString(msgVal *SGSIPMessage, outputStr *string) int {
 // SGSIPInviteToACKString --
 func SGSIPInviteToACKString(invReq *SGSIPMessage, invRpl *SGSIPMessage, outputStr *string) int {
 	var sb strings.Builder
+	hasMaxForwards := false
 	if len(invReq.FLine.Val) == 0 || len(invReq.Headers) == 0 ||
 		len(invRpl.FLine.Val) == 0 || len(invRpl.Headers) == 0 {
 		return SGSIPRetErrMessageNotSet
@@ -1207,7 +1213,13 @@ func SGSIPInviteToACKString(invReq *SGSIPMessage, invRpl *SGSIPMessage, outputSt
 			}
 		case HeaderTypeFrom:
 			sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+		case HeaderTypeMaxForwards:
+			sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+			hasMaxForwards = true
 		}
+	}
+	if !hasMaxForwards {
+		sb.WriteString("Max-Forwards: " + sgsipDefaultMaxForwards + "\r\n")
 	}
 	for _, h := range invRpl.Headers {
 		switch h.HType {
@@ -1273,6 +1285,7 @@ func SGSIPInviteToACKString(invReq *SGSIPMessage, invRpl *SGSIPMessage, outputSt
 // SGSIPACKToByeString --
 func SGSIPACKToByeString(ackReq *SGSIPMessage, outputStr *string) int {
 	var sb strings.Builder
+	hasMaxForwards := false
 	if len(ackReq.FLine.Val) == 0 || len(ackReq.Headers) == 0 {
 		return SGSIPRetErrMessageNotSet
 	}
@@ -1296,6 +1309,9 @@ func SGSIPACKToByeString(ackReq *SGSIPMessage, outputStr *string) int {
 			}
 		case HeaderTypeFrom, HeaderTypeTo, HeaderTypeCallID, HeaderTypeRoute:
 			sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+		case HeaderTypeMaxForwards:
+			sb.WriteString(h.Name + ": " + h.Body + "\r\n")
+			hasMaxForwards = true
 		case HeaderTypeCSeq:
 			sList := strings.SplitN(h.Body, " ", 2)
 			if len(sList) != 2 {
@@ -1309,6 +1325,9 @@ func SGSIPACKToByeString(ackReq *SGSIPMessage, outputStr *string) int {
 
 			sb.WriteString(h.Name + ": " + strconv.Itoa(csn+1) + " BYE\r\n")
 		}
+	}
+	if !hasMaxForwards {
+		sb.WriteString("Max-Forwards: " + sgsipDefaultMaxForwards + "\r\n")
 	}
 	sb.WriteString("Content-Length: 0\r\n\r\n")
 	*outputStr = sb.String()
