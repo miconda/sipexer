@@ -390,7 +390,7 @@ func TestParseMessageHonorsContentLength(t *testing.T) {
 }
 
 func TestInviteToACKString(t *testing.T) {
-	invReq := mustParseMessage(t, "INVITE sip:bob@example.com SIP/2.0\r\nVia: SIP/2.0/UDP host;branch=z9hG4bKSG.req\r\nFrom: <sip:alice@example.com>;tag=f1\r\nTo: <sip:bob@example.com>\r\nCall-ID: c1\r\nCSeq: 10 INVITE\r\nAuthorization: Digest user=\"alice\"\r\nContent-Length: 0\r\n\r\n")
+	invReq := mustParseMessage(t, "INVITE sip:bob@example.com SIP/2.0\r\nVia: SIP/2.0/UDP host;branch=z9hG4bKSG.req\r\nMax-Forwards: 10\r\nFrom: <sip:alice@example.com>;tag=f1\r\nTo: <sip:bob@example.com>\r\nCall-ID: c1\r\nCSeq: 10 INVITE\r\nAuthorization: Digest user=\"alice\"\r\nContent-Length: 0\r\n\r\n")
 	invRpl2xx := mustParseMessage(t, "SIP/2.0 200 OK\r\nVia: SIP/2.0/UDP host;branch=z9hG4bKSG.req\r\nFrom: <sip:alice@example.com>;tag=f1\r\nTo: <sip:bob@example.com>;tag=t1\r\nCall-ID: c1\r\nCSeq: 10 INVITE\r\nContact: <sip:bob@contact.example.com>\r\nRecord-Route: <sip:rr1.example.com;lr>,<sip:rr2.example.com;lr>\r\nContent-Length: 0\r\n\r\n")
 	out := ""
 	if ret := SGSIPInviteToACKString(&invReq, &invRpl2xx, &out); ret != SGSIPRetOK {
@@ -401,6 +401,9 @@ func TestInviteToACKString(t *testing.T) {
 	}
 	if !strings.Contains(out, "CSeq: 10 ACK\r\n") {
 		t.Fatalf("expected CSeq ACK in output: %q", out)
+	}
+	if !strings.Contains(out, "Max-Forwards: 10\r\n") {
+		t.Fatalf("expected Max-Forwards in ACK: %q", out)
 	}
 	if !strings.Contains(out, "Route: <sip:rr2.example.com;lr>\r\nRoute: <sip:rr1.example.com;lr>\r\n") {
 		t.Fatalf("expected reversed Record-Route mapping in output: %q", out)
@@ -416,10 +419,21 @@ func TestInviteToACKString(t *testing.T) {
 	if !strings.HasPrefix(out, "ACK sip:bob@example.com SIP/2.0\r\n") {
 		t.Fatalf("expected original req-uri in non-2xx ack: %q", out)
 	}
+	if !strings.Contains(out, "Max-Forwards: 10\r\n") {
+		t.Fatalf("expected Max-Forwards in non-2xx ACK: %q", out)
+	}
+
+	invReq.Headers = append(invReq.Headers[:1], invReq.Headers[2:]...)
+	if ret := SGSIPInviteToACKString(&invReq, &invRpl2xx, &out); ret != SGSIPRetOK {
+		t.Fatalf("invite->ack without Max-Forwards failed: %d", ret)
+	}
+	if !strings.Contains(out, "Max-Forwards: 70\r\n") {
+		t.Fatalf("expected default Max-Forwards in ACK: %q", out)
+	}
 }
 
 func TestACKToByeString(t *testing.T) {
-	ackReq := mustParseMessage(t, "ACK sip:bob@example.com SIP/2.0\r\nVia: SIP/2.0/UDP host;branch=z9hG4bKSG.ack\r\nFrom: <sip:alice@example.com>;tag=f1\r\nTo: <sip:bob@example.com>;tag=t1\r\nCall-ID: c1\r\nCSeq: 10 ACK\r\nRoute: <sip:proxy.example.com;lr>\r\nContent-Length: 0\r\n\r\n")
+	ackReq := mustParseMessage(t, "ACK sip:bob@example.com SIP/2.0\r\nVia: SIP/2.0/UDP host;branch=z9hG4bKSG.ack\r\nMax-Forwards: 9\r\nFrom: <sip:alice@example.com>;tag=f1\r\nTo: <sip:bob@example.com>;tag=t1\r\nCall-ID: c1\r\nCSeq: 10 ACK\r\nRoute: <sip:proxy.example.com;lr>\r\nContent-Length: 0\r\n\r\n")
 	out := ""
 	if ret := SGSIPACKToByeString(&ackReq, &out); ret != SGSIPRetOK {
 		t.Fatalf("ack->bye failed: %d", ret)
@@ -432,6 +446,17 @@ func TestACKToByeString(t *testing.T) {
 	}
 	if !strings.Contains(out, "Route: <sip:proxy.example.com;lr>\r\n") {
 		t.Fatalf("expected route in BYE: %q", out)
+	}
+	if !strings.Contains(out, "Max-Forwards: 9\r\n") {
+		t.Fatalf("expected Max-Forwards in BYE: %q", out)
+	}
+
+	ackReq.Headers = append(ackReq.Headers[:1], ackReq.Headers[2:]...)
+	if ret := SGSIPACKToByeString(&ackReq, &out); ret != SGSIPRetOK {
+		t.Fatalf("ack->bye without Max-Forwards failed: %d", ret)
+	}
+	if !strings.Contains(out, "Max-Forwards: 70\r\n") {
+		t.Fatalf("expected default Max-Forwards in BYE: %q", out)
 	}
 }
 
