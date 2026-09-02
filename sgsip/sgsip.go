@@ -811,18 +811,71 @@ func SGSIPHeaderValidName(name string) bool {
 // SGSIPHeaderParseDigestAuthBody - parse www/proxy-authenticate header body.
 // Return a map of parameters or nil if the header is not Digest auth header.
 func SGSIPHeaderParseDigestAuthBody(hbody string) map[string]string {
-	s := strings.SplitN(strings.Trim(hbody, " "), " ", 2)
-	if len(s) != 2 || strings.ToLower(s[0]) != "digest" {
+	hbody = strings.TrimSpace(hbody)
+	schemeEnd := strings.IndexAny(hbody, " \t")
+	if schemeEnd < 0 || !strings.EqualFold(hbody[:schemeEnd], "digest") {
 		return nil
 	}
 
 	params := map[string]string{}
-	for _, kv := range strings.Split(s[1], ",") {
-		parts := strings.SplitN(kv, "=", 2)
-		if len(parts) != 2 {
+	input := hbody[schemeEnd:]
+	for pos := 0; pos < len(input); {
+		for pos < len(input) && (input[pos] == ' ' || input[pos] == '\t' || input[pos] == ',') {
+			pos++
+		}
+		nameStart := pos
+		for pos < len(input) && input[pos] != '=' && input[pos] != ',' {
+			pos++
+		}
+		if pos >= len(input) || input[pos] != '=' {
+			for pos < len(input) && input[pos] != ',' {
+				pos++
+			}
 			continue
 		}
-		params[strings.ToLower(strings.Trim(parts[0], "\" "))] = strings.Trim(parts[1], "\" ")
+		name := strings.ToLower(strings.TrimSpace(input[nameStart:pos]))
+		pos++
+		for pos < len(input) && (input[pos] == ' ' || input[pos] == '\t') {
+			pos++
+		}
+
+		value := ""
+		if pos < len(input) && input[pos] == '"' {
+			pos++
+			var sb strings.Builder
+			for pos < len(input) {
+				switch input[pos] {
+				case '\\':
+					pos++
+					if pos < len(input) {
+						sb.WriteByte(input[pos])
+						pos++
+					}
+				case '"':
+					pos++
+					value = sb.String()
+					goto valueDone
+				default:
+					sb.WriteByte(input[pos])
+					pos++
+				}
+			}
+			value = sb.String()
+		} else {
+			valueStart := pos
+			for pos < len(input) && input[pos] != ',' {
+				pos++
+			}
+			value = strings.TrimSpace(input[valueStart:pos])
+		}
+
+	valueDone:
+		if len(name) > 0 {
+			params[name] = value
+		}
+		for pos < len(input) && input[pos] != ',' {
+			pos++
+		}
 	}
 	return params
 }
