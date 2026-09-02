@@ -568,12 +568,45 @@ func TestMessageToResponseStringInviteRecordRoute(t *testing.T) {
 }
 
 func TestHeaderParseDigestAuthBodyCaseInsensitiveScheme(t *testing.T) {
-	params := SGSIPHeaderParseDigestAuthBody(`digest realm="example.com", nonce="abc", algorithm=SHA-256`)
-	if params == nil {
-		t.Fatalf("expected digest auth params map, got nil")
+	tests := []struct {
+		name string
+		body string
+		want map[string]string
+	}{
+		{
+			name: "case-insensitive scheme",
+			body: `digest realm="example.com", nonce="abc", algorithm=SHA-256`,
+			want: map[string]string{"realm": "example.com", "nonce": "abc", "algorithm": "SHA-256"},
+		},
+		{
+			name: "commas in quoted values",
+			body: `Digest realm="Example, Inc.", qop="auth,auth-int", opaque="one,two"`,
+			want: map[string]string{"realm": "Example, Inc.", "qop": "auth,auth-int", "opaque": "one,two"},
+		},
+		{
+			name: "escaped quotes and backslashes",
+			body: `Digest realm="say \"hello\"", nonce="abc\\def", algorithm=MD5`,
+			want: map[string]string{"realm": `say "hello"`, "nonce": `abc\def`, "algorithm": "MD5"},
+		},
+		{
+			name: "tab after scheme and equals in value",
+			body: "DIGEST\trealm=example.com, opaque=abc=def",
+			want: map[string]string{"realm": "example.com", "opaque": "abc=def"},
+		},
 	}
-	if params["realm"] != "example.com" || params["nonce"] != "abc" || params["algorithm"] != "SHA-256" {
-		t.Fatalf("unexpected parsed params: %#v", params)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			params := SGSIPHeaderParseDigestAuthBody(tc.body)
+			if params == nil {
+				t.Fatal("expected digest auth params map, got nil")
+			}
+			for name, value := range tc.want {
+				if params[name] != value {
+					t.Fatalf("unexpected %s: got=%q want=%q; params=%#v", name, params[name], value, params)
+				}
+			}
+		})
 	}
 }
 
