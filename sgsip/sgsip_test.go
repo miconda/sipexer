@@ -332,8 +332,8 @@ func TestParseMessageAndMessageToString(t *testing.T) {
 	if ret := SGSIPParseMessage(raw, &msg); ret != SGSIPRetOK {
 		t.Fatalf("parse message failed: %d", ret)
 	}
-	if msg.CSeq.Number != 1 || msg.Body.Content != "hello" {
-		t.Fatalf("unexpected parsed message fields: cseq=%+v body=%q", msg.CSeq, msg.Body.Content)
+	if msg.Data != raw || msg.CSeq.Number != 1 || msg.Body.Content != "hello" || msg.Body.ContentType != "text/plain" {
+		t.Fatalf("unexpected parsed message fields: data=%q cseq=%+v body=%+v", msg.Data, msg.CSeq, msg.Body)
 	}
 
 	out := ""
@@ -345,6 +345,68 @@ func TestParseMessageAndMessageToString(t *testing.T) {
 	}
 	if !strings.Contains(out, "\r\n\r\nhello") {
 		t.Fatalf("expected message body in output: %q", out)
+	}
+}
+
+func TestParseMessageResetsReusedDestination(t *testing.T) {
+	request := "MESSAGE sip:alice@example.com SIP/2.0\r\n" +
+		"Via: SIP/2.0/UDP request.example.com;branch=z9hG4bKSG.req\r\n" +
+		"From: <sip:bob@example.com>;tag=from-request\r\n" +
+		"To: <sip:alice@example.com>\r\n" +
+		"Call-ID: request-call-id\r\n" +
+		"CSeq: 10 MESSAGE\r\n" +
+		"c: application/sdp\r\n" +
+		"Content-Length: 4\r\n\r\nbody"
+	response := "SIP/2.0 200 OK\r\n" +
+		"Via: SIP/2.0/TCP response.example.com;branch=z9hG4bKSG.rsp\r\n" +
+		"From: <sip:bob@example.com>;tag=from-response\r\n" +
+		"To: <sip:alice@example.com>;tag=to-response\r\n" +
+		"Call-ID: response-call-id\r\n" +
+		"CSeq: 20 OPTIONS\r\n" +
+		"Content-Length: 0\r\n\r\n"
+
+	msg := SGSIPMessage{MFlags: SGSIPMFlagLateOffer}
+	if ret := SGSIPParseMessage(request, &msg); ret != SGSIPRetOK {
+		t.Fatalf("request parse failed: %d", ret)
+	}
+	if msg.Data != request || msg.RURI.User != "alice" || msg.RURI.Addr != "example.com" {
+		t.Fatalf("request data or R-URI not populated: %+v", msg)
+	}
+	if msg.Body.ContentType != "application/sdp" || msg.Body.Content != "body" || msg.MFlags != SGSIPMFlagNone {
+		t.Fatalf("request body or flags not reset/populated: body=%+v flags=%d", msg.Body, msg.MFlags)
+	}
+
+	if ret := SGSIPParseMessage(response, &msg); ret != SGSIPRetOK {
+		t.Fatalf("response parse failed: %d", ret)
+	}
+	if msg.Data != response || len(msg.Headers) != 6 {
+		t.Fatalf("response data or headers contain stale state: data=%q headers=%+v", msg.Data, msg.Headers)
+	}
+	if msg.FLine.MType != FLineResponse || msg.FLine.Code != 200 || msg.FLine.Method != "" || msg.FLine.URI != "" {
+		t.Fatalf("response first line contains stale request state: %+v", msg.FLine)
+	}
+	if msg.RURI != (SGSIPURI{}) {
+		t.Fatalf("response contains stale R-URI: %+v", msg.RURI)
+	}
+	if msg.CSeq.Number != 20 || msg.CSeq.Method != "OPTIONS" || msg.Body != (SGSIPBody{}) || msg.MFlags != SGSIPMFlagNone {
+		t.Fatalf("response contains stale parsed state: cseq=%+v body=%+v flags=%d", msg.CSeq, msg.Body, msg.MFlags)
+	}
+
+	if ret := SGSIPParseMessage(request, &msg); ret != SGSIPRetOK {
+		t.Fatalf("second request parse failed: %d", ret)
+	}
+	if msg.FLine.MType != FLineRequest || msg.FLine.Code != 0 || msg.FLine.CodeVal != "" || msg.FLine.Reason != "" {
+		t.Fatalf("request first line contains stale response state: %+v", msg.FLine)
+	}
+	if len(msg.Headers) != 7 || msg.RURI.User != "alice" || msg.Body.ContentType != "application/sdp" {
+		t.Fatalf("second request contains stale or missing state: headers=%+v ruri=%+v body=%+v", msg.Headers, msg.RURI, msg.Body)
+	}
+
+	if ret := SGSIPParseMessage("bad", &msg); ret == SGSIPRetOK {
+		t.Fatal("expected malformed message parse to fail")
+	}
+	if msg.Data != "bad" || len(msg.Headers) != 0 || msg.FLine != (SGSIPFirstLine{}) || msg.RURI != (SGSIPURI{}) {
+		t.Fatalf("failed parse retained stale state: %+v", msg)
 	}
 }
 
