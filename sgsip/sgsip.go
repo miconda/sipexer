@@ -1162,6 +1162,7 @@ func SGSIPMessageCSeqParse(msgVal *SGSIPMessage) int {
 
 // SGSIPParseMessage --
 func SGSIPParseMessage(inputStr string, msgVal *SGSIPMessage) int {
+	*msgVal = SGSIPMessage{Data: inputStr}
 	ret := SGSIPParseFirstLine(inputStr, &msgVal.FLine)
 	if ret != SGSIPRetOK {
 		return ret
@@ -1190,6 +1191,12 @@ func SGSIPParseMessage(inputStr string, msgVal *SGSIPMessage) int {
 	}
 	msgVal.Body.Content = msgVal.Body.Content[:contentLength]
 	msgVal.Body.ContentLen = contentLength
+	for _, header := range msgVal.Headers {
+		if header.HType == HeaderTypeContentType {
+			msgVal.Body.ContentType = header.Body
+			break
+		}
+	}
 	return SGSIPRetOK
 }
 
