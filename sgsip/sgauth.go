@@ -227,25 +227,30 @@ func SGAKAXor(v1, v2 []byte) []byte {
 	return out
 }
 
+func sgAKAValidateLength(name string, value []byte, expected int) error {
+	if len(value) != expected {
+		return fmt.Errorf("invalid %s length: got %d, want %d", name, len(value), expected)
+	}
+	return nil
+}
+
 // SGAKAComputeOPc computes OPc from K and OP inside m.
 func SGAKAComputeOPc(K, OP []byte) ([]byte, error) {
-	OPc := make([]byte, 16)
+	if err := sgAKAValidateLength("K", K, aes.BlockSize); err != nil {
+		return nil, err
+	}
+	if err := sgAKAValidateLength("OP", OP, aes.BlockSize); err != nil {
+		return nil, err
+	}
 
 	block, err := aes.NewCipher(K)
 	if err != nil {
 		return nil, err
 	}
-	eData := make([]byte, len(OP))
+	eData := make([]byte, aes.BlockSize)
 	block.Encrypt(eData, OP)
 
-	xBytes := SGAKAXor(eData, OP)
-	for i, b := range xBytes {
-		if i > len(OPc) {
-			break
-		}
-		OPc[i] = b
-	}
-	return OPc, nil
+	return SGAKAXor(eData, OP), nil
 }
 
 // SGAKAEncrypt encrypts text with key using AES cipher
@@ -254,8 +259,11 @@ func SGAKAEncrypt(key, text []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := sgAKAValidateLength("AES plaintext", text, block.BlockSize()); err != nil {
+		return nil, err
+	}
 
-	eBytes := make([]byte, len(text))
+	eBytes := make([]byte, block.BlockSize())
 	block.Encrypt(eBytes, text)
 	return eBytes, nil
 }
@@ -264,6 +272,18 @@ func SGAKAEncrypt(key, text []byte) ([]byte, error) {
 func SGAKAComputeF1Base(K, OP, OPC, RAND, sqn, amf []byte) ([]byte, error) {
 	var OPcV []byte
 	var err error
+	if err := sgAKAValidateLength("K", K, aes.BlockSize); err != nil {
+		return nil, err
+	}
+	if err := sgAKAValidateLength("RAND", RAND, aes.BlockSize); err != nil {
+		return nil, err
+	}
+	if err := sgAKAValidateLength("SQN", sqn, 6); err != nil {
+		return nil, err
+	}
+	if err := sgAKAValidateLength("AMF", amf, 2); err != nil {
+		return nil, err
+	}
 
 	if OPC == nil {
 		OPcV, err = SGAKAComputeOPc(K, OP)
@@ -271,11 +291,14 @@ func SGAKAComputeF1Base(K, OP, OPC, RAND, sqn, amf []byte) ([]byte, error) {
 			return nil, err
 		}
 	} else {
+		if err := sgAKAValidateLength("OPC", OPC, aes.BlockSize); err != nil {
+			return nil, err
+		}
 		OPcV = OPC
 	}
 
-	eData := make([]byte, 16)
-	for i := 0; i < 16; i++ {
+	eData := make([]byte, aes.BlockSize)
+	for i := 0; i < aes.BlockSize; i++ {
 		eData[i] = RAND[i] ^ OPcV[i]
 	}
 
@@ -284,7 +307,7 @@ func SGAKAComputeF1Base(K, OP, OPC, RAND, sqn, amf []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	in1 := make([]byte, 16)
+	in1 := make([]byte, aes.BlockSize)
 	for i := 0; i < 6; i++ {
 		in1[i] = sqn[i]
 		in1[i+8] = sqn[i]
@@ -294,11 +317,11 @@ func SGAKAComputeF1Base(K, OP, OPC, RAND, sqn, amf []byte) ([]byte, error) {
 		in1[i+14] = amf[i]
 	}
 
-	for i := 0; i < 16; i++ {
-		eData[(i+8)%16] = in1[i] ^ OPcV[i]
+	for i := 0; i < aes.BlockSize; i++ {
+		eData[(i+8)%aes.BlockSize] = in1[i] ^ OPcV[i]
 	}
 
-	for i := 0; i < 16; i++ {
+	for i := 0; i < aes.BlockSize; i++ {
 		eData[i] ^= tmp[i]
 	}
 
@@ -324,6 +347,12 @@ func SGAKAComputeF1(K, OP, OPC, RAND, SQN, AMF []byte) ([]byte, error) {
 func SGAKAComputeF2345(K, OP, OPC, RAND []byte) (res, ck, ik, ak []byte, errv error) {
 	var OPcV []byte
 	var err error
+	if err := sgAKAValidateLength("K", K, aes.BlockSize); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	if err := sgAKAValidateLength("RAND", RAND, aes.BlockSize); err != nil {
+		return nil, nil, nil, nil, err
+	}
 
 	if OPC == nil {
 		OPcV, err = SGAKAComputeOPc(K, OP)
@@ -331,51 +360,54 @@ func SGAKAComputeF2345(K, OP, OPC, RAND []byte) (res, ck, ik, ak []byte, errv er
 			return nil, nil, nil, nil, err
 		}
 	} else {
+		if err := sgAKAValidateLength("OPC", OPC, aes.BlockSize); err != nil {
+			return nil, nil, nil, nil, err
+		}
 		OPcV = OPC
 	}
 
-	eData := make([]byte, 16)
-	for i := 0; i < 16; i++ {
+	eData := make([]byte, aes.BlockSize)
+	for i := 0; i < aes.BlockSize; i++ {
 		eData[i] = RAND[i] ^ OPcV[i]
 	}
 
 	tmp, err := SGAKAEncrypt(K, eData)
 	if err != nil {
-		return
+		return nil, nil, nil, nil, err
 	}
 
-	for i := 0; i < 16; i++ {
+	for i := 0; i < aes.BlockSize; i++ {
 		eData[i] = tmp[i] ^ OPcV[i]
 	}
 	eData[15] ^= 1
 
 	out, err := SGAKAEncrypt(K, eData)
 	if err != nil {
-		return
+		return nil, nil, nil, nil, err
 	}
 	tv := SGAKAXor(out, OPcV)
 	res = tv[8:]
 	ak = tv[:6]
 
-	for i := 0; i < 16; i++ {
-		eData[(i+12)%16] = tmp[i] ^ OPcV[i]
+	for i := 0; i < aes.BlockSize; i++ {
+		eData[(i+12)%aes.BlockSize] = tmp[i] ^ OPcV[i]
 	}
 	eData[15] ^= 2
 
 	out, err = SGAKAEncrypt(K, eData)
 	if err != nil {
-		return
+		return nil, nil, nil, nil, err
 	}
 	ck = SGAKAXor(out, OPcV)
 
-	for i := 0; i < 16; i++ {
-		eData[(i+8)%16] = tmp[i] ^ OPcV[i]
+	for i := 0; i < aes.BlockSize; i++ {
+		eData[(i+8)%aes.BlockSize] = tmp[i] ^ OPcV[i]
 	}
 	eData[15] ^= 4
 
 	out, err = SGAKAEncrypt(K, eData)
 	if err != nil {
-		return
+		return nil, nil, nil, nil, err
 	}
 	ik = SGAKAXor(out, OPcV)
 
