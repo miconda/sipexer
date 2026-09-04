@@ -247,6 +247,50 @@ func TestAKAComputeFunctions(t *testing.T) {
 	}
 }
 
+func TestAKAMalformedInputsReturnErrors(t *testing.T) {
+	key := make([]byte, 16)
+	op := make([]byte, 16)
+	opc := make([]byte, 16)
+	rand := make([]byte, 16)
+	sqn := make([]byte, 6)
+	amf := make([]byte, 2)
+
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{name: "short K", call: func() error { _, err := SGAKAComputeOPc(key[:15], op); return err }},
+		{name: "oversized K", call: func() error { _, err := SGAKAComputeOPc(make([]byte, 24), op); return err }},
+		{name: "short OP", call: func() error { _, err := SGAKAComputeOPc(key, op[:15]); return err }},
+		{name: "oversized OP", call: func() error { _, err := SGAKAComputeOPc(key, make([]byte, 17)); return err }},
+		{name: "short AES plaintext", call: func() error { _, err := SGAKAEncrypt(key, rand[:15]); return err }},
+		{name: "oversized AES plaintext", call: func() error { _, err := SGAKAEncrypt(key, make([]byte, 17)); return err }},
+		{name: "short OPC", call: func() error { _, err := SGAKAComputeF1Base(key, op, opc[:15], rand, sqn, amf); return err }},
+		{name: "oversized OPC", call: func() error { _, err := SGAKAComputeF1Base(key, op, make([]byte, 17), rand, sqn, amf); return err }},
+		{name: "short RAND", call: func() error { _, err := SGAKAComputeF1Base(key, op, opc, rand[:15], sqn, amf); return err }},
+		{name: "oversized RAND", call: func() error { _, err := SGAKAComputeF1Base(key, op, opc, make([]byte, 17), sqn, amf); return err }},
+		{name: "short SQN", call: func() error { _, err := SGAKAComputeF1Base(key, op, opc, rand, sqn[:5], amf); return err }},
+		{name: "oversized SQN", call: func() error { _, err := SGAKAComputeF1Base(key, op, opc, rand, make([]byte, 7), amf); return err }},
+		{name: "short AMF", call: func() error { _, err := SGAKAComputeF1Base(key, op, opc, rand, sqn, amf[:1]); return err }},
+		{name: "oversized AMF", call: func() error { _, err := SGAKAComputeF1Base(key, op, opc, rand, sqn, make([]byte, 3)); return err }},
+		{name: "F2345 short OPC", call: func() error { _, _, _, _, err := SGAKAComputeF2345(key, op, opc[:15], rand); return err }},
+		{name: "F2345 short RAND", call: func() error { _, _, _, _, err := SGAKAComputeF2345(key, op, opc, rand[:15]); return err }},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					t.Fatalf("malformed AKA input panicked: %v", recovered)
+				}
+			}()
+			if err := tc.call(); err == nil {
+				t.Fatal("expected malformed AKA input to return an error")
+			}
+		})
+	}
+}
+
 func buildValidAKAChallenge(t *testing.T, key, op, amf []byte) map[string]string {
 	t.Helper()
 
@@ -332,5 +376,15 @@ func TestSGAKAHandleChallenge(t *testing.T) {
 	chBadKey := buildValidAKAChallenge(t, key, op, amf)
 	if _, err = SGAKAHandleChallenge("alice", []byte{1, 2, 3}, op, nil, amf, chBadKey); err == nil {
 		t.Fatalf("expected invalid key error")
+	}
+
+	chBadOP := buildValidAKAChallenge(t, key, op, amf)
+	if _, err = SGAKAHandleChallenge("alice", key, op[:15], nil, amf, chBadOP); err == nil {
+		t.Fatalf("expected invalid OP length error")
+	}
+
+	chBadOPC := buildValidAKAChallenge(t, key, op, amf)
+	if _, err = SGAKAHandleChallenge("alice", key, nil, make([]byte, 15), amf, chBadOPC); err == nil {
+		t.Fatalf("expected invalid OPC length error")
 	}
 }
