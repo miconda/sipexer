@@ -333,6 +333,7 @@ type CLIOptions struct {
 	nobody           bool
 	contenttype      string
 	localaddress     string
+	resultfile       string
 	useragent        string
 	template         string
 	templatebody     string
@@ -422,6 +423,7 @@ var cliops = CLIOptions{
 	nobody:           false,
 	contenttype:      "",
 	localaddress:     "",
+	resultfile:       "",
 	useragent:        "",
 	template:         "",
 	templatebody:     "",
@@ -617,6 +619,7 @@ func init() {
 	flag.StringVar(&cliops.noval, "no-val", cliops.noval, "no value string")
 	flag.StringVar(&cliops.ruri, "ru", cliops.ruri, "request uri (r-uri)")
 	flag.StringVar(&cliops.ruri, "ruri", cliops.ruri, "request uri (r-uri)")
+	flag.StringVar(&cliops.resultfile, "result-file", cliops.resultfile, "path to write the exact exit result as JSON")
 	flag.StringVar(&cliops.ruser, "rn", cliops.ruser, "request uri username for destination proxy address")
 	flag.StringVar(&cliops.ruser, "ruser", cliops.ruser, "request uri username for destination proxy address")
 	flag.StringVar(&cliops.tdomain, "td", cliops.tdomain, "To header URI domain")
@@ -1047,24 +1050,78 @@ func SIPExerRunBatch(tplstr string) int {
 	return SIPExerRetOK
 }
 
+type SIPExerExitResult struct {
+	Schema       string `json:"schema"`
+	Version      string `json:"version"`
+	Outcome      string `json:"outcome"`
+	InternalCode int    `json:"internalCode"`
+	ExitCode     int    `json:"exitCode"`
+	NagiosCode   int    `json:"nagiosCode"`
+	SIPStatus    int    `json:"sipStatus"`
+}
+
+func SIPExerNagiosExitCode(ret int) int {
+	if ret == SIPExerRetOK || ret == SIPExerRetDone || (ret >= 200 && ret <= 299) {
+		return 0
+	}
+	if ret >= 400 && ret <= 499 {
+		return 1
+	}
+	return 3
+}
+
+func SIPExerBuildExitResult(ret int, exitCode int) SIPExerExitResult {
+	outcome := "error"
+	sipStatus := 0
+	if ret == SIPExerRetOK {
+		outcome = "ok"
+	} else if ret == SIPExerRetDone {
+		outcome = "done"
+	} else if ret >= 100 && ret <= 699 {
+		outcome = "sip-response"
+		sipStatus = ret
+	}
+
+	result := SIPExerExitResult{
+		Schema:       "sipexer.exit.v1",
+		Version:      sipexerVersion,
+		Outcome:      outcome,
+		InternalCode: ret,
+		ExitCode:     exitCode,
+		NagiosCode:   SIPExerNagiosExitCode(ret),
+		SIPStatus:    sipStatus,
+	}
+
+	return result
+}
+
+func SIPExerWriteResultFile(path string, result SIPExerExitResult) error {
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(path, data, 0644)
+}
+
 func SIPExerExit(ret int) {
 	var nret int
 
 	nret = ret
 
 	if cliops.nagios {
-		if ret == SIPExerRetOK || ret == SIPExerRetDone || (ret >= 200 && ret <= 299) {
-			nret = 0
-		} else if ret >= 400 && ret <= 499 {
-			nret = 1
-		} else {
-			nret = 3
-		}
+		nret = SIPExerNagiosExitCode(ret)
 	}
 	if ret != nret {
 		SIPExerPrintf(SIPExerLogDebug, "initial return code: %d\n\n", ret)
 	}
 	SIPExerPrintf(SIPExerLogDebug, "return code: %d\n\n", nret)
+	if cliops.resultfile != "" {
+		result := SIPExerBuildExitResult(ret, nret)
+		if err := SIPExerWriteResultFile(cliops.resultfile, result); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to write result file %q: %v\n", cliops.resultfile, err)
+		}
+	}
 
 	os.Exit(nret)
 }
