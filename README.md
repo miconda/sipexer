@@ -14,6 +14,7 @@ Project URL:
     + [Compile From Sources](#compile-from-sources)
     + [Download Binary Release](#download-binary-release)
   * [Usage](#usage)
+    + [Result File](#result-file)
     + [Examples](#examples)
   * [Target Address](#target-address)
   * [Message Template](#message-template)
@@ -121,6 +122,35 @@ Defaults:
   * From domain: `localhost`
   * To user: `bob`
   * To domain: `localhost`
+
+### Result File
+
+Use `--result-file PATH` to write the exact, unwrapped result as JSON before
+the process exits. Existing process exit codes are unchanged. The result records
+the internal code, the code passed to `os.Exit`, and the corresponding Nagios
+return code. `internalCode` and `exitCode` differ when `--nagios` is enabled.
+
+```shell
+sipexer --result-file result.json tcp:server.com:5060
+```
+
+Example for a SIP response:
+
+```json
+{
+  "schema": "sipexer.exit.v1",
+  "version": "2.1.0",
+  "outcome": "sip-response",
+  "internalCode": 401,
+  "exitCode": 401,
+  "nagiosCode": 1,
+  "sipStatus": 401
+}
+```
+
+For local errors, `outcome` is `error`, `internalCode` contains the negative
+SIPExer error value, and `sipStatus` is `0`. If the result file cannot be written,
+SIPExer reports that failure on stderr and preserves the original exit code.
 
 ### Examples
 
