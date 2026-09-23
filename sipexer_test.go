@@ -2,10 +2,13 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	mathrand "math/rand"
 	"net"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -79,6 +82,73 @@ func TestParamFieldsTypeSet(t *testing.T) {
 	_ = m.Set("missing-separator")
 	if len(m) != 1 {
 		t.Fatalf("expected malformed value to be ignored, map size: %d", len(m))
+	}
+}
+
+func TestSIPExerBuildExitResult(t *testing.T) {
+	tests := []struct {
+		name      string
+		internal  int
+		exit      int
+		nagios    int
+		outcome   string
+		sipStatus int
+	}{
+		{name: "ok", internal: SIPExerRetOK, exit: SIPExerRetOK, nagios: 0, outcome: "ok"},
+		{name: "done", internal: SIPExerRetDone, exit: SIPExerRetDone, nagios: 0, outcome: "done"},
+		{name: "sip success", internal: 200, exit: 200, nagios: 0, outcome: "sip-response", sipStatus: 200},
+		{name: "sip client error", internal: 401, exit: 401, nagios: 1, outcome: "sip-response", sipStatus: 401},
+		{name: "sip server error", internal: 500, exit: 500, nagios: 3, outcome: "sip-response", sipStatus: 500},
+		{name: "internal error", internal: SIPExerErrTCPDial, exit: SIPExerErrTCPDial, nagios: 3, outcome: "error"},
+		{name: "mapped process exit", internal: 401, exit: 1, nagios: 1, outcome: "sip-response", sipStatus: 401},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := SIPExerBuildExitResult(tc.internal, tc.exit)
+			if result.Schema != "sipexer.exit.v1" || result.Version != sipexerVersion {
+				t.Fatalf("unexpected result metadata: %#v", result)
+			}
+			if result.InternalCode != tc.internal || result.ExitCode != tc.exit ||
+				result.NagiosCode != tc.nagios || result.Outcome != tc.outcome ||
+				result.SIPStatus != tc.sipStatus {
+				t.Fatalf("unexpected exit result: %#v", result)
+			}
+		})
+	}
+}
+
+func TestSIPExerWriteResultFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "result.json")
+	want := SIPExerBuildExitResult(SIPExerErrTCPDial, SIPExerErrTCPDial)
+	if err := SIPExerWriteResultFile(path, want); err != nil {
+		t.Fatalf("failed to write result file: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read result file: %v", err)
+	}
+	var got SIPExerExitResult
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("failed to parse result file: %v", err)
+	}
+	if got != want {
+		t.Fatalf("result file mismatch: got %#v, want %#v", got, want)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatalf("failed to parse result fields: %v", err)
+	}
+	for _, name := range []string{"internalCode", "exitCode", "nagiosCode", "sipStatus"} {
+		if _, ok := fields[name]; !ok {
+			t.Fatalf("missing camel-case result field %q in %s", name, data)
+		}
+	}
+	for _, name := range []string{"internal_code", "exit_code", "sip_status"} {
+		if _, ok := fields[name]; ok {
+			t.Fatalf("unexpected snake-case result field %q in %s", name, data)
+		}
 	}
 }
 
