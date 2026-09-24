@@ -92,9 +92,11 @@ func TestSIPExerBuildExitResult(t *testing.T) {
 		exit      int
 		nagios    int
 		outcome   string
+		tracked   int
 		sipStatus int
 	}{
 		{name: "ok", internal: SIPExerRetOK, exit: SIPExerRetOK, nagios: 0, outcome: "ok"},
+		{name: "ok after sip response", internal: SIPExerRetOK, exit: SIPExerRetOK, nagios: 0, outcome: "ok", tracked: 200, sipStatus: 200},
 		{name: "done", internal: SIPExerRetDone, exit: SIPExerRetDone, nagios: 0, outcome: "done"},
 		{name: "sip success", internal: 200, exit: 200, nagios: 0, outcome: "sip-response", sipStatus: 200},
 		{name: "sip client error", internal: 401, exit: 401, nagios: 1, outcome: "sip-response", sipStatus: 401},
@@ -105,7 +107,7 @@ func TestSIPExerBuildExitResult(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result := SIPExerBuildExitResult(tc.internal, tc.exit)
+			result := SIPExerBuildExitResult(tc.internal, tc.exit, tc.tracked)
 			if result.Schema != "sipexer.exit.v1" || result.Version != sipexerVersion {
 				t.Fatalf("unexpected result metadata: %#v", result)
 			}
@@ -120,7 +122,7 @@ func TestSIPExerBuildExitResult(t *testing.T) {
 
 func TestSIPExerWriteResultFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "result.json")
-	want := SIPExerBuildExitResult(SIPExerErrTCPDial, SIPExerErrTCPDial)
+	want := SIPExerBuildExitResult(SIPExerErrTCPDial, SIPExerErrTCPDial, 0)
 	if err := SIPExerWriteResultFile(path, want); err != nil {
 		t.Fatalf("failed to write result file: %v", err)
 	}
@@ -149,6 +151,27 @@ func TestSIPExerWriteResultFile(t *testing.T) {
 		if _, ok := fields[name]; ok {
 			t.Fatalf("unexpected snake-case result field %q in %s", name, data)
 		}
+	}
+}
+
+func TestSIPExerSIPStatusTracking(t *testing.T) {
+	SIPExerResetSIPStatus()
+	t.Cleanup(SIPExerResetSIPStatus)
+
+	SIPExerRecordSIPStatus(180)
+	SIPExerRecordSIPStatus(200)
+	if got := int(sipexerLastSIPStatus.Load()); got != 200 {
+		t.Fatalf("unexpected last SIP status: got %d, want 200", got)
+	}
+
+	SIPExerRecordSIPStatus(SIPExerErrTCPDial)
+	if got := int(sipexerLastSIPStatus.Load()); got != 200 {
+		t.Fatalf("non-SIP result replaced last SIP status: got %d, want 200", got)
+	}
+
+	SIPExerResetSIPStatus()
+	if got := int(sipexerLastSIPStatus.Load()); got != 0 {
+		t.Fatalf("SIP status was not reset: got %d", got)
 	}
 }
 
