@@ -148,9 +148,12 @@ Example for a SIP response:
 }
 ```
 
-For local errors, `outcome` is `error`, `internalCode` contains the negative
-SIPExer error value, and `sipStatus` is `0`. If the result file cannot be written,
-SIPExer reports that failure on stderr and preserves the original exit code.
+For multi-step scenarios such as `--call-self`, `sipStatus` contains the last
+received SIP response code even when the scenario completes with `internalCode`
+set to `0`. If no SIP response was received, `sipStatus` is `0`. For local errors,
+`outcome` is `error` and `internalCode` contains the negative SIPExer error value.
+If the result file cannot be written, SIPExer reports that failure on stderr and
+preserves the original exit code.
 
 ### Examples
 
