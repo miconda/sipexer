@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"text/template"
 	"time"
 
@@ -854,6 +855,8 @@ func SIPExerRunScenario(tplstr string, scenarioIndex int) int {
 	var tret int
 	var target string
 
+	SIPExerResetSIPStatus()
+
 	tplfields := make(map[string]any)
 
 	SIPExerPrepareTemplateFields(tplfields)
@@ -1060,6 +1063,18 @@ type SIPExerExitResult struct {
 	SIPStatus    int    `json:"sipStatus"`
 }
 
+var sipexerLastSIPStatus atomic.Int64
+
+func SIPExerRecordSIPStatus(status int) {
+	if status >= 100 && status <= 699 {
+		sipexerLastSIPStatus.Store(int64(status))
+	}
+}
+
+func SIPExerResetSIPStatus() {
+	sipexerLastSIPStatus.Store(0)
+}
+
 func SIPExerNagiosExitCode(ret int) int {
 	if ret == SIPExerRetOK || ret == SIPExerRetDone || (ret >= 200 && ret <= 299) {
 		return 0
@@ -1070,16 +1085,17 @@ func SIPExerNagiosExitCode(ret int) int {
 	return 3
 }
 
-func SIPExerBuildExitResult(ret int, exitCode int) SIPExerExitResult {
+func SIPExerBuildExitResult(ret int, exitCode int, sipStatus int) SIPExerExitResult {
 	outcome := "error"
-	sipStatus := 0
 	if ret == SIPExerRetOK {
 		outcome = "ok"
 	} else if ret == SIPExerRetDone {
 		outcome = "done"
 	} else if ret >= 100 && ret <= 699 {
 		outcome = "sip-response"
-		sipStatus = ret
+		if sipStatus == 0 {
+			sipStatus = ret
+		}
 	}
 
 	result := SIPExerExitResult{
@@ -1117,7 +1133,7 @@ func SIPExerExit(ret int) {
 	}
 	SIPExerPrintf(SIPExerLogDebug, "return code: %d\n\n", nret)
 	if cliops.resultfile != "" {
-		result := SIPExerBuildExitResult(ret, nret)
+		result := SIPExerBuildExitResult(ret, nret, int(sipexerLastSIPStatus.Load()))
 		if err := SIPExerWriteResultFile(cliops.resultfile, result); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to write result file %q: %v\n", cliops.resultfile, err)
 		}
@@ -2944,6 +2960,9 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 			ret = SIPExerProcessResponse(seDlg.FirstRequest, seDlg.RecvBuf[:seDlg.RecvN], seDlg.LastResponse, &seDlg.SkipAuth, &smsg, &sack, seDlg.AuthUser, seDlg.AuthPassword)
 			if ret < 0 {
 				return ret
+			}
+			if seDlg.LastResponse.FLine.MType == sgsip.FLineResponse {
+				SIPExerRecordSIPStatus(seDlg.LastResponse.FLine.Code)
 			}
 			if cliops.callself && seDlg.LastResponse.FLine.MType == sgsip.FLineRequest {
 				if seDlg.LastResponse.FLine.MethodId == sgsip.SIPMethodINVITE {
