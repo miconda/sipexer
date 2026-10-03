@@ -366,6 +366,7 @@ type CLIOptions struct {
 	noval            string
 	contacturi       string
 	contactbuild     bool
+	callidprefix     string
 	registerparty    bool
 	expires          string
 	raw              bool
@@ -456,6 +457,7 @@ var cliops = CLIOptions{
 	noval:            "no",
 	contacturi:       "",
 	contactbuild:     false,
+	callidprefix:     "",
 	expires:          "",
 	register:         false,
 	message:          false,
@@ -602,6 +604,8 @@ func init() {
 	flag.StringVar(&cliops.body, "message-body", cliops.body, "message body")
 	flag.StringVar(&cliops.contacturi, "contact-uri", cliops.contacturi, "contact header uri")
 	flag.StringVar(&cliops.contacturi, "cu", cliops.contacturi, "contact header uri")
+	flag.StringVar(&cliops.callidprefix, "call-id-prefix", cliops.callidprefix, "prefix added to generated Call-ID values")
+	flag.StringVar(&cliops.callidprefix, "cip", cliops.callidprefix, "prefix added to generated Call-ID values")
 	flag.StringVar(&cliops.contenttype, "content-type", cliops.contenttype, "content type")
 	flag.StringVar(&cliops.contenttype, "ct", cliops.contenttype, "content type")
 	flag.StringVar(&cliops.expires, "ex", cliops.expires, "expires header value")
@@ -1149,6 +1153,15 @@ func SIPExerGetUUIDB64R() string {
 	return escapeX.Replace(base64.RawURLEncoding.EncodeToString(uuidVal[:]))
 }
 
+func SIPExerMakeCallID(prefix string) string {
+	callID := uuid.New().String()
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return callID
+	}
+	return prefix + callID
+}
+
 func SIPExerTargetProtoSupported(protoId int) bool {
 	return protoId == sgsip.ProtoUDP ||
 		protoId == sgsip.ProtoTCP ||
@@ -1585,7 +1598,7 @@ func SIPExerRunCallSelf(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, t
 
 	invFields := SIPExerCloneTplFields(baseTplFields)
 	invFields["method"] = "INVITE"
-	invFields["callid"] = uuid.New().String()
+	invFields["callid"] = SIPExerMakeCallID(cliops.callidprefix)
 	invFields["cseqnum"] = strconv.Itoa(1 + mathrand.Intn(999999))
 	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
 		SIPExerEnsureViaAlias(invFields)
@@ -1861,7 +1874,7 @@ func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, 
 
 	invFields := SIPExerCloneTplFields(baseTplFields)
 	invFields["method"] = "INVITE"
-	invFields["callid"] = uuid.New().String()
+	invFields["callid"] = SIPExerMakeCallID(cliops.callidprefix)
 	invFields["cseqnum"] = strconv.Itoa(1 + mathrand.Intn(999999))
 	if dstSockAddr.ProtoId != sgsip.ProtoUDP {
 		SIPExerEnsureViaAlias(invFields)
@@ -1924,7 +1937,11 @@ func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
 			switch tplfields[k].(type) {
 			case string:
 				if tplfields[k] == "$uuid" {
-					tplfields[k] = uuid.New().String()
+					if strings.EqualFold(k, "callid") && strings.TrimSpace(cliops.callidprefix) != "" {
+						tplfields[k] = SIPExerMakeCallID(cliops.callidprefix)
+					} else {
+						tplfields[k] = uuid.New().String()
+					}
 				} else if tplfields[k] == "$uuidb64u" {
 					uuidVal := uuid.New()
 					tplfields[k] = base64.RawURLEncoding.EncodeToString(uuidVal[:])

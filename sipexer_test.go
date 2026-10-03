@@ -317,6 +317,19 @@ func TestCallSelfRegisterUsesRegistrarURIWithoutUser(t *testing.T) {
 	})
 }
 
+func TestSIPExerMakeCallIDUsesOptionalPrefix(t *testing.T) {
+	withCleanState(t, func() {
+		cliops.callidprefix = "abc-"
+		got := SIPExerMakeCallID(cliops.callidprefix)
+		if !strings.HasPrefix(got, "abc-") {
+			t.Fatalf("expected prefixed call-id, got: %q", got)
+		}
+		if _, err := uuid.Parse(strings.TrimPrefix(got, "abc-")); err != nil {
+			t.Fatalf("expected UUID suffix after prefix, got: %q (%v)", got, err)
+		}
+	})
+}
+
 func TestCallSelfInviteGetsFreshCallID(t *testing.T) {
 	withCleanState(t, func() {
 		baseTplFields := map[string]any{"callid": "register-call-id", "fuser": "alice"}
