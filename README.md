@@ -329,9 +329,9 @@ The format can be:
   * WSS URL (e.g., `wss://server.com:8442/webrtc`)
   * only the server `hostname` or `IP` (e.g., `server.com`)
   * `host:port` (transport protocol is set to `UDP`)
-  * `proto:host` (port is set to `5060`)
+  * `proto:host` (port is set to `5061` for TLS and `5060` for other transports)
   * `host port` (transport protocol is set to `UDP`)
-  * `proto host` (port is set to `5060`)
+  * `proto host` (port is set to `5061` for TLS and `5060` for other transports)
   * `proto host port` (same as `proto:host:port`)
 
 
