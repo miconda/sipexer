@@ -292,6 +292,26 @@ func SGSIPSetProto(protostr string, protoval *string, protoid *int) int {
 	return SGSIPRetErr
 }
 
+func defaultPortForProto(protoID int) (string, int) {
+	if protoID == ProtoTLS {
+		return "5061", 5061
+	}
+	return "5060", 5060
+}
+
+func setSocketAddressDefaultPort(sockaddr *SGSIPSocketAddress) {
+	sockaddr.Port, sockaddr.PortNo = defaultPortForProto(sockaddr.ProtoId)
+}
+
+func setURIDefaultPort(uri *SGSIPURI) {
+	if uri.SchemaId == SchemaSIPS {
+		uri.Port = "5061"
+		uri.PortNo = 5061
+		return
+	}
+	uri.Port, uri.PortNo = defaultPortForProto(uri.ProtoId)
+}
+
 // SGSIPSetSchema --
 func SGSIPSetSchema(schemastr string, schemaval *string, schemaid *int) int {
 	switch schemastr {
@@ -316,14 +336,11 @@ func SGSIPURISetDefaults(uri *SGSIPURI) {
 	if uri.SchemaId == SchemaSIPS {
 		uri.Proto = "tls"
 		uri.ProtoId = ProtoTLS
-		uri.Port = "5061"
-		uri.PortNo = 5061
-		return
+	} else {
+		uri.Proto = "udp"
+		uri.ProtoId = ProtoUDP
 	}
-	uri.Proto = "udp"
-	uri.ProtoId = ProtoUDP
-	uri.Port = "5060"
-	uri.PortNo = 5060
+	setURIDefaultPort(uri)
 }
 
 func SGSIPURISetTransport(uri *SGSIPURI, transport string) int {
@@ -415,8 +432,7 @@ func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 		sockaddr.Val = sockstr
 		sockaddr.Proto = "udp"
 		sockaddr.ProtoId = ProtoUDP
-		sockaddr.Port = "5060"
-		sockaddr.PortNo = 5060
+		setSocketAddressDefaultPort(sockaddr)
 		return SGSIPRetOK
 	}
 	strArray := strings.SplitN(sockstr, ":", 2)
@@ -426,8 +442,7 @@ func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 		sockaddr.Proto = "udp"
 		sockaddr.ProtoId = ProtoUDP
 		sockaddr.Addr = sockstr
-		sockaddr.Port = "5060"
-		sockaddr.PortNo = 5060
+		setSocketAddressDefaultPort(sockaddr)
 		sockaddr.AType = SGAddrType(sockaddr.Addr)
 		return SGSIPRetOK
 	}
@@ -460,8 +475,7 @@ func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 			if len(strProto) == 0 {
 				return SGSIPRetErrSocketAddressPort
 			}
-			sockaddr.Port = "5060"
-			sockaddr.PortNo = 5060
+			setSocketAddressDefaultPort(sockaddr)
 		} else {
 			if rest[0] != ':' || len(rest) == 1 {
 				return SGSIPRetErrSocketAddressPort
@@ -489,8 +503,7 @@ func SGSIPParseSocketAddress(sockstr string, sockaddr *SGSIPSocketAddress) int {
 			}
 			sockaddr.PortNo = i
 		} else {
-			sockaddr.Port = "5060"
-			sockaddr.PortNo = 5060
+			setSocketAddressDefaultPort(sockaddr)
 		}
 		sockaddr.Addr = strArray[0]
 		sockaddr.AType = SGAddrType(sockaddr.Addr)
@@ -552,6 +565,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 		return SGSIPRetOK
 	}
 	pPortParams := ""
+	portExplicit := false
 	if pHostPP[0:1] == "[" {
 		if pHostPP[len(pHostPP)-1:] == "]" {
 			// only IPv6 address
@@ -588,6 +602,7 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 	pParams := ""
 	if pPortParams[0:1] == ":" {
 		// port
+		portExplicit = true
 		pPort := ""
 		scPos := strings.Index(pPortParams, ";")
 		if scPos < 0 {
@@ -623,6 +638,9 @@ func SGSIPParseURI(uristr string, uri *SGSIPURI) int {
 			}
 			break
 		}
+	}
+	if !portExplicit {
+		setURIDefaultPort(uri)
 	}
 	uri.Val = uristr
 	return SGSIPRetOK
@@ -686,16 +704,15 @@ func SGSocketAddressToSIPURI(sockaddr *SGSIPSocketAddress, user string, tmode in
 		uri.Port = sockaddr.Port
 		uri.PortNo = sockaddr.PortNo
 	} else {
-		uri.Port = "5060"
-		uri.PortNo = 5060
+		uri.Port, uri.PortNo = defaultPortForProto(uri.ProtoId)
 	}
 	uri.Schema = "sip"
 	uri.SchemaId = SchemaSIP
 
 	if tmode == 0 && uri.ProtoId == ProtoUDP {
-		uri.Val = uri.Schema + ":" + upart + sockaddr.Addr + ":" + sockaddr.Port
+		uri.Val = uri.Schema + ":" + upart + uri.Addr + ":" + uri.Port
 	} else {
-		uri.Val = uri.Schema + ":" + upart + sockaddr.Addr + ":" + sockaddr.Port + ";transport=" + sockaddr.Proto
+		uri.Val = uri.Schema + ":" + upart + uri.Addr + ":" + uri.Port + ";transport=" + uri.Proto
 	}
 
 	return SGSIPRetOK
