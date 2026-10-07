@@ -80,12 +80,17 @@ func TestParseSocketAddress(t *testing.T) {
 		proto   string
 		addr    string
 		port    string
+		portNo  int
 	}{
-		{name: "host-only", in: "example.com", wantRet: SGSIPRetOK, proto: "udp", addr: "example.com", port: "5060"},
-		{name: "host-port", in: "example.com:5070", wantRet: SGSIPRetOK, proto: "udp", addr: "example.com", port: "5070"},
-		{name: "proto-host-port", in: "tcp:127.0.0.1:5080", wantRet: SGSIPRetOK, proto: "tcp", addr: "127.0.0.1", port: "5080"},
-		{name: "ipv6", in: "tls:[::1]:5061", wantRet: SGSIPRetOK, proto: "tls", addr: "[::1]", port: "5061"},
-		{name: "ipv6-default-port", in: "tcp:[::1]", wantRet: SGSIPRetOK, proto: "tcp", addr: "[::1]", port: "5060"},
+		{name: "host-only", in: "example.com", wantRet: SGSIPRetOK, proto: "udp", addr: "example.com", port: "5060", portNo: 5060},
+		{name: "host-port", in: "example.com:5070", wantRet: SGSIPRetOK, proto: "udp", addr: "example.com", port: "5070", portNo: 5070},
+		{name: "proto-host-port", in: "tcp:127.0.0.1:5080", wantRet: SGSIPRetOK, proto: "tcp", addr: "127.0.0.1", port: "5080", portNo: 5080},
+		{name: "tls-default-port", in: "tls:example.com", wantRet: SGSIPRetOK, proto: "tls", addr: "example.com", port: "5061", portNo: 5061},
+		{name: "uppercase-tls-default-port", in: "TLS:example.com", wantRet: SGSIPRetOK, proto: "tls", addr: "example.com", port: "5061", portNo: 5061},
+		{name: "tls-explicit-port", in: "tls:example.com:5060", wantRet: SGSIPRetOK, proto: "tls", addr: "example.com", port: "5060", portNo: 5060},
+		{name: "ipv6", in: "tls:[::1]:5071", wantRet: SGSIPRetOK, proto: "tls", addr: "[::1]", port: "5071", portNo: 5071},
+		{name: "ipv6-tls-default-port", in: "tls:[::1]", wantRet: SGSIPRetOK, proto: "tls", addr: "[::1]", port: "5061", portNo: 5061},
+		{name: "ipv6-default-port", in: "tcp:[::1]", wantRet: SGSIPRetOK, proto: "tcp", addr: "[::1]", port: "5060", portNo: 5060},
 		{name: "invalid-port", in: "udp:127.0.0.1:abc", wantRet: SGSIPRetErrSocketAddressPortVal},
 		{name: "empty", in: "", wantRet: SGSIPRetErr},
 		{name: "protocol-only", in: "tcp:", wantRet: SGSIPRetErrSocketAddressPort},
@@ -102,7 +107,7 @@ func TestParseSocketAddress(t *testing.T) {
 				t.Fatalf("unexpected return: got=%d want=%d", ret, tc.wantRet)
 			}
 			if ret == SGSIPRetOK {
-				if sa.Proto != tc.proto || sa.Addr != tc.addr || sa.Port != tc.port {
+				if sa.Proto != tc.proto || sa.Addr != tc.addr || sa.Port != tc.port || sa.PortNo != tc.portNo {
 					t.Fatalf("unexpected parsed socket addr: %+v", sa)
 				}
 			}
@@ -131,6 +136,8 @@ func TestParseURI(t *testing.T) {
 		{name: "sips-ws-rejected", in: "sips:example.com;transport=ws", wantRet: SGSIPRetErrURIProto},
 		{name: "with-user-and-port", in: "sip:alice@example.com:5070", wantRet: SGSIPRetOK, addr: "example.com", port: "5070", proto: "udp"},
 		{name: "with-transport", in: "sip:example.com:5061;transport=tls", wantRet: SGSIPRetOK, addr: "example.com", port: "5061", proto: "tls"},
+		{name: "tls-transport-default-port", in: "sip:example.com;transport=tls", wantRet: SGSIPRetOK, addr: "example.com", port: "5061", proto: "tls"},
+		{name: "tls-transport-explicit-port", in: "sip:example.com:5060;transport=tls", wantRet: SGSIPRetOK, addr: "example.com", port: "5060", proto: "tls"},
 		{name: "uppercase-transport-name-and-value", in: "sip:example.com;Transport=TCP", wantRet: SGSIPRetOK, addr: "example.com", port: "5060", proto: "tcp"},
 		{name: "mixed-case-transport-with-params", in: "sip:example.com;foo=1;tRaNsPoRt=Ws;bar=2", wantRet: SGSIPRetOK, addr: "example.com", port: "5060", proto: "ws"},
 		{name: "sips-uppercase-transport", in: "sips:example.com;TRANSPORT=TCP", wantRet: SGSIPRetOK, addr: "example.com", port: "5061", proto: "tls"},
@@ -198,6 +205,14 @@ func TestURIAndSocketConversions(t *testing.T) {
 	}
 	if outURI.Val != "sip:alice@example.com:5060;transport=udp" {
 		t.Fatalf("unexpected transport uri value: %q", outURI.Val)
+	}
+
+	sa = SGSIPSocketAddress{Proto: "tls", ProtoId: ProtoTLS, Addr: "secure.example.com"}
+	if ret := SGSocketAddressToSIPURI(&sa, "alice", 1, &outURI); ret != SGSIPRetOK {
+		t.Fatalf("TLS SGSocketAddressToSIPURI failed: %d", ret)
+	}
+	if outURI.Val != "sip:alice@secure.example.com:5061;transport=tls" || outURI.PortNo != 5061 {
+		t.Fatalf("unexpected TLS transport uri value: %+v", outURI)
 	}
 }
 
