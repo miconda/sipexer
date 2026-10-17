@@ -222,6 +222,8 @@ type SIPExerDialog struct {
 
 	TargetHostPort string
 	TargetAFProto  string
+	InitConnUDP    *net.UDPConn
+	InDialogReq    []byte
 }
 
 type paramFieldsType map[string]string
@@ -383,6 +385,7 @@ type CLIOptions struct {
 	helpcommands     bool
 	dnssrvprint      bool
 	indialogdns      bool
+	indialogsocket   bool
 	lateoffer        bool
 	akauser          string
 	akakey           string
@@ -486,6 +489,7 @@ var cliops = CLIOptions{
 	runbatchinterval: 1000,
 	dnssrvprint:      false,
 	indialogdns:      false,
+	indialogsocket:   false,
 	lateoffer:        false,
 	helpcommands:     false,
 	version:          false,
@@ -682,6 +686,8 @@ func init() {
 	flag.BoolVar(&cliops.dnssrvprint, "dns-srv-print", cliops.dnssrvprint, "print DNS SRV records")
 	flag.BoolVar(&cliops.indialogdns, "in-dialog-dns", cliops.indialogdns, "re-resolve FQDN target via DNS before each in-dialog request (UDP only)")
 	flag.BoolVar(&cliops.indialogdns, "idd", cliops.indialogdns, "re-resolve FQDN target via DNS before each in-dialog request (UDP only)")
+	flag.BoolVar(&cliops.indialogsocket, "in-dialog-socket", cliops.indialogsocket, "send each in-dialog request from a new local socket (UDP only)")
+	flag.BoolVar(&cliops.indialogsocket, "ids", cliops.indialogsocket, "send each in-dialog request from a new local socket (UDP only)")
 	flag.BoolVar(&cliops.fieldseval, "fe", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.fieldseval, "fields-eval", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.flagdefaults, "flag-defaults", cliops.flagdefaults, "print flag (cli param) default values")
@@ -789,6 +795,10 @@ func main() {
 	}
 	if cliops.callself && cliops.callusers {
 		SIPExerPrintf(SIPExerLogError, "call-self and call-user cannot be enabled at the same time\n")
+		SIPExerExit(SIPExerRetErr)
+	}
+	if cliops.callself && cliops.indialogsocket {
+		SIPExerPrintf(SIPExerLogError, "call-self and in-dialog-socket cannot be enabled at the same time\n")
 		SIPExerExit(SIPExerRetErr)
 	}
 	if cliops.flagdefaults {
@@ -2793,12 +2803,53 @@ func SIPExerResolveDialogTarget(seDlg *SIPExerDialog) int {
 	return SIPExerRetOK
 }
 
+func SIPExerInDialogSocket(seDlg *SIPExerDialog, bmsg []byte) int {
+	if seDlg.ProtoId != sgsip.ProtoUDP || cliops.connectudp || seDlg.InitConnUDP == nil {
+		SIPExerPrintf(SIPExerLogInfo, "in-dialog-socket: applies only to connectionless UDP, not applied for %s\n", seDlg.Proto)
+		return SIPExerRetOK
+	}
+	// responses and retransmissions keep the current socket
+	if bytes.HasPrefix(bmsg, []byte("SIP/2.0 ")) || bytes.Equal(bmsg, seDlg.InDialogReq) {
+		return SIPExerRetOK
+	}
+	lAddr := &net.UDPAddr{IP: seDlg.InitConnUDP.LocalAddr().(*net.UDPAddr).IP}
+	conn, err := net.ListenUDP(seDlg.TargetAFProto, lAddr)
+	if err != nil {
+		SIPExerPrintf(SIPExerLogError, "in-dialog-socket: failed to open udp socket - %v\n", err)
+		return SIPExerErrUDPSocket
+	}
+	// the new socket also takes far-end requests until the next in-dialog request
+	prevAddr := seDlg.ConnUDP.Conn.LocalAddr()
+	SIPExerInDialogSocketRestore(seDlg)
+	seDlg.ConnUDP.Conn = conn
+	seDlg.InDialogReq = append([]byte(nil), bmsg...)
+	SIPExerSetWriteTimeout(seDlg)
+	SIPExerPrintf(SIPExerLogInfo, "in-dialog-socket: sending from %s (replacing %s)\n",
+		conn.LocalAddr(), prevAddr)
+	return SIPExerRetOK
+}
+
+func SIPExerInDialogSocketRestore(seDlg *SIPExerDialog) {
+	if seDlg.ConnUDP == nil || seDlg.InitConnUDP == nil || seDlg.ConnUDP.Conn == seDlg.InitConnUDP {
+		return
+	}
+	seDlg.ConnUDP.Conn.Close()
+	seDlg.ConnUDP.Conn = seDlg.InitConnUDP
+	seDlg.InDialogReq = nil
+}
+
 func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 	var err error
 	// re-resolve DNS only once the dialog is established (2xx received)
 	if cliops.indialogdns &&
 		(seDlg.State == SIPExerDialogAnswered || seDlg.State == SIPExerDialogConfirmed) {
 		SIPExerResolveDialogTarget(seDlg)
+	}
+	if cliops.indialogsocket &&
+		(seDlg.State == SIPExerDialogAnswered || seDlg.State == SIPExerDialogConfirmed) {
+		if ret := SIPExerInDialogSocket(seDlg, bmsg); ret < 0 {
+			return ret
+		}
 	}
 	if seDlg.ProtoId == sgsip.ProtoUDP {
 		if cliops.connectudp {
@@ -3327,12 +3378,13 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 		tchan <- ret
 		return
 	}
-	defer seDlg.ConnUDP.Conn.Close()
+	defer SIPExerDialogCloseConn(&seDlg)
 	ret = SIPExerDialogLoop(tplstr, tplfields, &seDlg)
 	tchan <- ret
 }
 
 func SIPExerDialogResetForRequest(seDlg *SIPExerDialog) {
+	SIPExerInDialogSocketRestore(seDlg)
 	seDlg.State = SIPExerDialogInit
 	seDlg.Method = ""
 	seDlg.MethodId = 0
@@ -3356,6 +3408,7 @@ func SIPExerDialogCloseConn(seDlg *SIPExerDialog) {
 		return
 	}
 	if seDlg.ProtoId == sgsip.ProtoUDP && seDlg.ConnUDP != nil && seDlg.ConnUDP.Conn != nil {
+		SIPExerInDialogSocketRestore(seDlg)
 		seDlg.ConnUDP.Conn.Close()
 		return
 	}
@@ -3454,6 +3507,7 @@ func SIPExerInitUDPDialog(dstSockAddr sgsip.SGSIPSocketAddress, seDlg *SIPExerDi
 	seDlg.TargetAddr = seDlg.ConnUDP.DstAddr.String()
 	seDlg.TargetHostPort = dstSockAddr.Addr + ":" + dstSockAddr.Port
 	seDlg.TargetAFProto = strAFProto
+	seDlg.InitConnUDP = seDlg.ConnUDP.Conn
 	seDlg.RecvAddr = seDlg.TargetAddr
 	SIPExerDialogResetForRequest(seDlg)
 	return SIPExerRetOK
