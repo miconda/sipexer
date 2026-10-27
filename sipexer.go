@@ -172,6 +172,7 @@ const (
 type SIPExerConnUDP struct {
 	SrcAddr *net.UDPAddr
 	DstAddr *net.UDPAddr
+	RcvAddr *net.UDPAddr
 	Conn    *net.UDPConn
 }
 
@@ -2603,7 +2604,7 @@ func SIPExerDialogReadBytes(seDlg *SIPExerDialog) int {
 	var err error
 
 	if seDlg.ProtoId == sgsip.ProtoUDP {
-		var rcvAddr net.Addr
+		var rcvAddr *net.UDPAddr
 		seDlg.RecvN, rcvAddr, err = seDlg.ConnUDP.Conn.ReadFromUDP(seDlg.RecvBuf)
 		if err != nil {
 			SIPExerPrintf(SIPExerLogDebug, "not receiving after %dms (bytes %d - %v)\n", seDlg.TimeoutVal, seDlg.RecvN, err)
@@ -2615,6 +2616,7 @@ func SIPExerDialogReadBytes(seDlg *SIPExerDialog) int {
 			}
 			return SIPExerErrUDPReceiveTimeout
 		} else {
+			seDlg.ConnUDP.RcvAddr = rcvAddr
 			seDlg.RecvAddr = rcvAddr.String()
 		}
 	} else if seDlg.ProtoId == sgsip.ProtoTCP {
@@ -2808,8 +2810,8 @@ func SIPExerInDialogSocket(seDlg *SIPExerDialog, bmsg []byte) int {
 		SIPExerPrintf(SIPExerLogInfo, "in-dialog-socket: applies only to connectionless UDP, not applied for %s\n", seDlg.Proto)
 		return SIPExerRetOK
 	}
-	// responses and retransmissions keep the current socket
-	if bytes.HasPrefix(bmsg, []byte("SIP/2.0 ")) || bytes.Equal(bmsg, seDlg.InDialogReq) {
+	// retransmissions keep the current socket
+	if bytes.Equal(bmsg, seDlg.InDialogReq) {
 		return SIPExerRetOK
 	}
 	lAddr := &net.UDPAddr{IP: seDlg.InitConnUDP.LocalAddr().(*net.UDPAddr).IP}
@@ -2840,12 +2842,13 @@ func SIPExerInDialogSocketRestore(seDlg *SIPExerDialog) {
 
 func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 	var err error
-	// re-resolve DNS only once the dialog is established (2xx received)
-	if cliops.indialogdns &&
+	isReply := bytes.HasPrefix(bmsg, []byte("SIP/2.0 "))
+	// re-resolve DNS for requests only once the dialog is established (2xx received)
+	if cliops.indialogdns && !isReply &&
 		(seDlg.State == SIPExerDialogAnswered || seDlg.State == SIPExerDialogConfirmed) {
 		SIPExerResolveDialogTarget(seDlg)
 	}
-	if cliops.indialogsocket &&
+	if cliops.indialogsocket && !isReply &&
 		(seDlg.State == SIPExerDialogAnswered || seDlg.State == SIPExerDialogConfirmed) {
 		if ret := SIPExerInDialogSocket(seDlg, bmsg); ret < 0 {
 			return ret
@@ -2854,6 +2857,13 @@ func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 	if seDlg.ProtoId == sgsip.ProtoUDP {
 		if cliops.connectudp {
 			_, err = seDlg.ConnUDP.Conn.Write(bmsg)
+		} else if isReply && seDlg.ConnUDP.RcvAddr != nil {
+			// replies go back to the request source, as on stream connections
+			if seDlg.ConnUDP.RcvAddr.String() != seDlg.TargetAddr {
+				SIPExerPrintf(SIPExerLogInfo, "sending reply to %s (request source), not to target %s\n",
+					seDlg.ConnUDP.RcvAddr, seDlg.TargetAddr)
+			}
+			_, err = seDlg.ConnUDP.Conn.WriteToUDP(bmsg, seDlg.ConnUDP.RcvAddr)
 		} else {
 			_, err = seDlg.ConnUDP.Conn.WriteToUDP(bmsg, seDlg.ConnUDP.DstAddr)
 		}
