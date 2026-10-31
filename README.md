@@ -155,6 +155,36 @@ set to `0`. If no SIP response was received, `sipStatus` is `0`. For local error
 If the result file cannot be written, SIPExer reports that failure on stderr and
 preserves the original exit code.
 
+For TLS and secure WebSocket targets, add `--rf-tls-info` to include metadata
+about the negotiated TLS connection and its leaf peer certificate. The metadata
+is added only after a successful TLS handshake. Certificate timestamps use UTC
+RFC 3339 format.
+
+```shell
+sipexer --result-file result.json --rf-tls-info tls:server.com:5061
+```
+
+The result then includes a `tls` object:
+
+```json
+{
+  "tls": {
+    "version": "TLS 1.3",
+    "cipherSuite": "TLS_AES_128_GCM_SHA256",
+    "serverName": "server.com",
+    "verified": true,
+    "peerCertificate": {
+      "subject": "CN=server.com",
+      "issuer": "CN=Example CA",
+      "serialNumber": "42",
+      "notBefore": "2026-01-01T00:00:00Z",
+      "notAfter": "2027-01-01T00:00:00Z",
+      "dnsNames": ["server.com"]
+    }
+  }
+}
+```
+
 ### Examples
 
 Send an `OPTIONS` request over `UDP` to `127.0.0.1` and port `5060` - couple of variants:
