@@ -338,6 +338,7 @@ type CLIOptions struct {
 	contenttype      string
 	localaddress     string
 	resultfile       string
+	rftlsinfo        bool
 	useragent        string
 	template         string
 	templatebody     string
@@ -430,6 +431,7 @@ var cliops = CLIOptions{
 	contenttype:      "",
 	localaddress:     "",
 	resultfile:       "",
+	rftlsinfo:        false,
 	useragent:        "",
 	template:         "",
 	templatebody:     "",
@@ -710,6 +712,7 @@ func init() {
 	flag.BoolVar(&cliops.options, "o", cliops.options, "set method to OPTIONS")
 	flag.BoolVar(&cliops.options, "options", cliops.options, "set method to OPTIONS")
 	flag.BoolVar(&cliops.prack, "prack", cliops.prack, "set method to PRACK")
+	flag.BoolVar(&cliops.rftlsinfo, "rf-tls-info", cliops.rftlsinfo, "include peer TLS metadata in the result file")
 	flag.BoolVar(&cliops.publish, "publish", cliops.publish, "set method to PUBLISH")
 	flag.BoolVar(&cliops.raw, "raw", cliops.registerparty, "sent raw template content (no evaluation)")
 	flag.BoolVar(&cliops.register, "r", cliops.register, "set method to REGISTER")
@@ -871,6 +874,7 @@ func SIPExerRunScenario(tplstr string, scenarioIndex int) int {
 	var target string
 
 	SIPExerResetSIPStatus()
+	SIPExerResetTLSInfo()
 
 	tplfields := make(map[string]any)
 
@@ -1069,16 +1073,36 @@ func SIPExerRunBatch(tplstr string) int {
 }
 
 type SIPExerExitResult struct {
-	Schema       string `json:"schema"`
-	Version      string `json:"version"`
-	Outcome      string `json:"outcome"`
-	InternalCode int    `json:"internalCode"`
-	ExitCode     int    `json:"exitCode"`
-	NagiosCode   int    `json:"nagiosCode"`
-	SIPStatus    int    `json:"sipStatus"`
+	Schema       string          `json:"schema"`
+	Version      string          `json:"version"`
+	Outcome      string          `json:"outcome"`
+	InternalCode int             `json:"internalCode"`
+	ExitCode     int             `json:"exitCode"`
+	NagiosCode   int             `json:"nagiosCode"`
+	SIPStatus    int             `json:"sipStatus"`
+	TLS          *SIPExerTLSInfo `json:"tls,omitempty"`
+}
+
+type SIPExerTLSCertificateInfo struct {
+	Subject      string   `json:"subject"`
+	Issuer       string   `json:"issuer"`
+	SerialNumber string   `json:"serialNumber"`
+	NotBefore    string   `json:"notBefore"`
+	NotAfter     string   `json:"notAfter"`
+	DNSNames     []string `json:"dnsNames,omitempty"`
+}
+
+type SIPExerTLSInfo struct {
+	Version            string                     `json:"version"`
+	CipherSuite        string                     `json:"cipherSuite"`
+	ServerName         string                     `json:"serverName,omitempty"`
+	NegotiatedProtocol string                     `json:"negotiatedProtocol,omitempty"`
+	Verified           bool                       `json:"verified"`
+	PeerCertificate    *SIPExerTLSCertificateInfo `json:"peerCertificate,omitempty"`
 }
 
 var sipexerLastSIPStatus atomic.Int64
+var sipexerLastTLSInfo atomic.Pointer[SIPExerTLSInfo]
 
 func SIPExerRecordSIPStatus(status int) {
 	if status >= 100 && status <= 699 {
@@ -1088,6 +1112,51 @@ func SIPExerRecordSIPStatus(status int) {
 
 func SIPExerResetSIPStatus() {
 	sipexerLastSIPStatus.Store(0)
+}
+
+func SIPExerTLSVersionName(version uint16) string {
+	switch version {
+	case tls.VersionTLS10:
+		return "TLS 1.0"
+	case tls.VersionTLS11:
+		return "TLS 1.1"
+	case tls.VersionTLS12:
+		return "TLS 1.2"
+	case tls.VersionTLS13:
+		return "TLS 1.3"
+	default:
+		return fmt.Sprintf("0x%04x", version)
+	}
+}
+
+func SIPExerRecordTLSInfo(state tls.ConnectionState) {
+	info := &SIPExerTLSInfo{
+		Version:            SIPExerTLSVersionName(state.Version),
+		CipherSuite:        tls.CipherSuiteName(state.CipherSuite),
+		ServerName:         state.ServerName,
+		NegotiatedProtocol: state.NegotiatedProtocol,
+		Verified:           len(state.VerifiedChains) > 0,
+	}
+	if len(state.PeerCertificates) > 0 && state.PeerCertificates[0] != nil {
+		cert := state.PeerCertificates[0]
+		serialNumber := ""
+		if cert.SerialNumber != nil {
+			serialNumber = cert.SerialNumber.String()
+		}
+		info.PeerCertificate = &SIPExerTLSCertificateInfo{
+			Subject:      cert.Subject.String(),
+			Issuer:       cert.Issuer.String(),
+			SerialNumber: serialNumber,
+			NotBefore:    cert.NotBefore.UTC().Format(time.RFC3339),
+			NotAfter:     cert.NotAfter.UTC().Format(time.RFC3339),
+			DNSNames:     append([]string(nil), cert.DNSNames...),
+		}
+	}
+	sipexerLastTLSInfo.Store(info)
+}
+
+func SIPExerResetTLSInfo() {
+	sipexerLastTLSInfo.Store(nil)
 }
 
 func SIPExerNagiosExitCode(ret int) int {
@@ -1149,6 +1218,9 @@ func SIPExerExit(ret int) {
 	SIPExerPrintf(SIPExerLogDebug, "return code: %d\n\n", nret)
 	if cliops.resultfile != "" {
 		result := SIPExerBuildExitResult(ret, nret, int(sipexerLastSIPStatus.Load()))
+		if cliops.rftlsinfo {
+			result.TLS = sipexerLastTLSInfo.Load()
+		}
 		if err := SIPExerWriteResultFile(cliops.resultfile, result); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to write result file %q: %v\n", cliops.resultfile, err)
 		}
@@ -3639,9 +3711,12 @@ func SIPExerInitTLSDialog(dstSockAddr sgsip.SGSIPSocketAddress, seDlg *SIPExerDi
 		return SIPExerErrTLSDial
 	}
 
+	state := seDlg.ConnTLS.Conn.ConnectionState()
+	if cliops.rftlsinfo {
+		SIPExerRecordTLSInfo(state)
+	}
 	if cliops.verbosity >= SIPExerLogDebug {
 		SIPExerPrintln(SIPExerLogDebug, "client: ", seDlg.ConnTLS.Conn.LocalAddr(), "connected to: ", seDlg.ConnTLS.Conn.RemoteAddr())
-		state := seDlg.ConnTLS.Conn.ConnectionState()
 		for _, v := range state.PeerCertificates {
 			SIPExerPrintln(SIPExerLogDebug, fmt.Sprint(x509.MarshalPKIXPublicKey(v.PublicKey)))
 			SIPExerPrintln(SIPExerLogDebug, v.Subject)
@@ -3716,7 +3791,7 @@ func SIPExerInitWSXDialog(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL,
 	if cliops.timeoutconnect > 0 {
 		netDialer.Timeout = time.Millisecond * time.Duration(cliops.timeoutconnect)
 	}
-	seDlg.ConnWSS.Conn, err = websocket.DialConfig(&websocket.Config{
+	wsConfig := &websocket.Config{
 		Location:  wsurlp,
 		Origin:    wsorgp,
 		Protocol:  []string{cliops.wsproto},
@@ -3724,7 +3799,24 @@ func SIPExerInitWSXDialog(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL,
 		TlsConfig: tlc,
 		Dialer:    &netDialer,
 		Header:    http.Header{"User-Agent": {"sipexer v" + sipexerVersion}},
-	})
+	}
+	if cliops.rftlsinfo && seDlg.ProtoId == sgsip.ProtoWSS {
+		authority := wsurlp.Host
+		if _, _, splitErr := net.SplitHostPort(authority); splitErr != nil {
+			authority = net.JoinHostPort(wsurlp.Hostname(), "443")
+		}
+		var tlsConn *tls.Conn
+		tlsConn, err = tls.DialWithDialer(&netDialer, "tcp", authority, tlc)
+		if err == nil {
+			SIPExerRecordTLSInfo(tlsConn.ConnectionState())
+			seDlg.ConnWSS.Conn, err = websocket.NewClient(wsConfig, tlsConn)
+			if err != nil {
+				tlsConn.Close()
+			}
+		}
+	} else {
+		seDlg.ConnWSS.Conn, err = websocket.DialConfig(wsConfig)
+	}
 	if err != nil {
 		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
 		return SIPExerErrWSDial
