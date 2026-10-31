@@ -1,9 +1,13 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"math/big"
 	mathrand "math/rand"
 	"net"
 	"net/url"
@@ -151,6 +155,73 @@ func TestSIPExerWriteResultFile(t *testing.T) {
 		if _, ok := fields[name]; ok {
 			t.Fatalf("unexpected snake-case result field %q in %s", name, data)
 		}
+	}
+	if _, ok := fields["tls"]; ok {
+		t.Fatalf("unexpected TLS field without requested TLS info in %s", data)
+	}
+}
+
+func TestSIPExerTLSInfoTracking(t *testing.T) {
+	SIPExerResetTLSInfo()
+	t.Cleanup(SIPExerResetTLSInfo)
+
+	notBefore := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.FixedZone("test", 3600))
+	notAfter := time.Date(2027, time.February, 3, 4, 5, 6, 0, time.FixedZone("test", 3600))
+	cert := &x509.Certificate{
+		Subject:      pkix.Name{CommonName: "sip.example.org"},
+		Issuer:       pkix.Name{CommonName: "Example CA"},
+		SerialNumber: big.NewInt(42),
+		NotBefore:    notBefore,
+		NotAfter:     notAfter,
+		DNSNames:     []string{"sip.example.org", "voice.example.org"},
+	}
+	SIPExerRecordTLSInfo(tls.ConnectionState{
+		Version:            tls.VersionTLS13,
+		CipherSuite:        tls.TLS_AES_128_GCM_SHA256,
+		ServerName:         "sip.example.org",
+		NegotiatedProtocol: "sip",
+		PeerCertificates:   []*x509.Certificate{cert},
+		VerifiedChains:     [][]*x509.Certificate{{cert}},
+	})
+
+	got := sipexerLastTLSInfo.Load()
+	if got == nil || got.PeerCertificate == nil {
+		t.Fatal("TLS info or peer certificate was not recorded")
+	}
+	if got.Version != "TLS 1.3" || got.CipherSuite != "TLS_AES_128_GCM_SHA256" ||
+		got.ServerName != "sip.example.org" || got.NegotiatedProtocol != "sip" || !got.Verified {
+		t.Fatalf("unexpected TLS connection info: %#v", got)
+	}
+	if got.PeerCertificate.Subject != "CN=sip.example.org" ||
+		got.PeerCertificate.Issuer != "CN=Example CA" ||
+		got.PeerCertificate.SerialNumber != "42" ||
+		got.PeerCertificate.NotBefore != "2026-01-02T02:04:05Z" ||
+		got.PeerCertificate.NotAfter != "2027-02-03T03:05:06Z" ||
+		len(got.PeerCertificate.DNSNames) != 2 {
+		t.Fatalf("unexpected TLS peer certificate info: %#v", got.PeerCertificate)
+	}
+
+	path := filepath.Join(t.TempDir(), "result.json")
+	result := SIPExerBuildExitResult(200, 200, 200)
+	result.TLS = got
+	if err := SIPExerWriteResultFile(path, result); err != nil {
+		t.Fatalf("failed to write result file with TLS info: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read result file with TLS info: %v", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatalf("failed to parse result file with TLS info: %v", err)
+	}
+	if _, ok := fields["tls"]; !ok {
+		t.Fatalf("missing TLS field in %s", data)
+	}
+
+	SIPExerResetTLSInfo()
+	if got := sipexerLastTLSInfo.Load(); got != nil {
+		t.Fatalf("TLS info was not reset: %#v", got)
 	}
 }
 
