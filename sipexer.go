@@ -2988,6 +2988,17 @@ func SIPExerFindRequestStartInBuffer(rawBuf string, reqMethod string) int {
 	return idxReq + 2
 }
 
+// SIPExerDialogSetLastRequest stores a new in-dialog request (e.g., BYE), so that
+// its responses (e.g., auth challenges) are processed against it
+func SIPExerDialogSetLastRequest(seDlg *SIPExerDialog, smsg string) int {
+	seDlg.LastRequest = new(sgsip.SGSIPMessage)
+	if sgsip.SGSIPParseMessage(smsg, seDlg.LastRequest) != sgsip.SGSIPRetOK {
+		SIPExerPrintf(SIPExerLogError, "failed to parse sip request\n%+v\n\n", smsg)
+		return SIPExerErrSIPMessageFormat
+	}
+	return SIPExerRetOK
+}
+
 func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDialog) int {
 	var smsg string = ""
 	var sack string = ""
@@ -3060,6 +3071,9 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					SIPExerPrintf(SIPExerLogError, "failed to build sip bye message\n")
 					return SIPExerErrSIPMessageToString
 				}
+				if lret := SIPExerDialogSetLastRequest(seDlg, smsg); lret < 0 {
+					return lret
+				}
 				wmsg = []byte(smsg)
 				SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
 				SIPExerMessagePrint("\n\n", smsg, "\n")
@@ -3110,7 +3124,11 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 			SIPExerMessagePrint("\n\n", string(seDlg.RecvBuf[:seDlg.RecvN]), "\n")
 			SIPExerPrintf(SIPExerLogInfo, "---]]\n")
 			seDlg.LastResponse = new(sgsip.SGSIPMessage)
-			ret = SIPExerProcessResponse(seDlg.FirstRequest, seDlg.RecvBuf[:seDlg.RecvN], seDlg.LastResponse, &seDlg.SkipAuth, &smsg, &sack, seDlg.AuthUser, seDlg.AuthPassword)
+			reqMsg := seDlg.FirstRequest
+			if seDlg.LastRequest != nil {
+				reqMsg = seDlg.LastRequest
+			}
+			ret = SIPExerProcessResponse(reqMsg, seDlg.RecvBuf[:seDlg.RecvN], seDlg.LastResponse, &seDlg.SkipAuth, &smsg, &sack, seDlg.AuthUser, seDlg.AuthPassword)
 			if ret < 0 {
 				return ret
 			}
@@ -3212,6 +3230,9 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 						if sgsip.SGSIPACKToByeString(seDlg.LastResponse, &smsg) != sgsip.SGSIPRetOK {
 							SIPExerPrintf(SIPExerLogError, "failed to build sip bye message\n")
 							return SIPExerErrSIPMessageToString
+						}
+						if lret := SIPExerDialogSetLastRequest(seDlg, smsg); lret < 0 {
+							return lret
 						}
 						wmsg = []byte(smsg)
 						SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
@@ -3368,6 +3389,9 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 						SIPExerPrintf(SIPExerLogError, "failed to build sip bye message\n")
 						return SIPExerErrSIPMessageToString
 					}
+					if lret := SIPExerDialogSetLastRequest(seDlg, smsg); lret < 0 {
+						return lret
+					}
 					wmsg = []byte(smsg)
 					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
 					SIPExerMessagePrint("\n\n", smsg, "\n")
@@ -3426,6 +3450,9 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					if sgsip.SGSIPACKToByeString(seDlg.AckRequest, &smsg) != sgsip.SGSIPRetOK {
 						SIPExerPrintf(SIPExerLogError, "failed to build sip bye message\n")
 						return SIPExerErrSIPMessageToString
+					}
+					if lret := SIPExerDialogSetLastRequest(seDlg, smsg); lret < 0 {
+						return lret
 					}
 				} else if cliops.subscribesession {
 					// subscribe-session mode ends after waiting for NOTIFY handling
