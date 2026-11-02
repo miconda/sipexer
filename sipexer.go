@@ -1370,10 +1370,14 @@ func SIPExerRunRegisterFirst(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.U
 	}
 
 	svRegister := cliops.register
+	svInvite := cliops.invite
+	svMessage := cliops.message
 	svMethod := cliops.method
 	svSessionWait := cliops.sessionwait
 	defer func() {
 		cliops.register = svRegister
+		cliops.invite = svInvite
+		cliops.message = svMessage
 		cliops.method = svMethod
 		cliops.sessionwait = svSessionWait
 	}()
@@ -1401,6 +1405,9 @@ func SIPExerRunRegisterFirst(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.U
 		SIPExerEnsureViaAlias(regFields)
 	}
 	cliops.register = true
+	// no INVITE or MESSAGE default body for the REGISTER stage
+	cliops.invite = false
+	cliops.message = false
 	cliops.method = "REGISTER"
 	cliops.sessionwait = 0
 	SIPExerPrintf(SIPExerLogInfo, "register-first stage: REGISTER\n")
@@ -1421,6 +1428,8 @@ func SIPExerRunRegisterFirst(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.U
 		SIPExerEnsureViaAlias(reqFields)
 	}
 	cliops.register = false
+	cliops.invite = svInvite
+	cliops.message = svMessage
 	cliops.method = reqMethod
 	cliops.sessionwait = svSessionWait
 	SIPExerPrintf(SIPExerLogInfo, "register-first stage: %s\n", reqMethod)
