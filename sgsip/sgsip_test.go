@@ -425,6 +425,31 @@ func TestParseMessageResetsReusedDestination(t *testing.T) {
 	}
 }
 
+func TestParseMessageLFOnlySeparator(t *testing.T) {
+	raw := "SIP/2.0 200 OK\n" +
+		"Via: SIP/2.0/UDP host;branch=z9hG4bKSG.a\n" +
+		"From: <sip:alice@example.com>;tag=1\n" +
+		"To: <sip:bob@example.com>;tag=2\n" +
+		"Call-ID: abc\n" +
+		"CSeq: 1 OPTIONS\n" +
+		"Content-Length: 5\n\nhello"
+	msg := SGSIPMessage{}
+	if ret := SGSIPParseMessage(raw, &msg); ret != SGSIPRetOK {
+		t.Fatalf("parse of LF-only message failed: %d", ret)
+	}
+	if msg.FLine.Code != 200 || msg.Body.Content != "hello" || msg.Body.ContentLen != 5 {
+		t.Fatalf("unexpected parsed LF-only message: fline=%+v body=%+v", msg.FLine, msg.Body)
+	}
+
+	body := SGSIPBody{}
+	if ret := SGSIPParseBody("OPTIONS sip:bob@example.com SIP/2.0\nCSeq: 1 OPTIONS\n\n", &body); ret != SGSIPRetOK {
+		t.Fatalf("parse of LF-only empty body failed: %d", ret)
+	}
+	if body.Content != "" || body.ContentLen != 0 {
+		t.Fatalf("unexpected LF-only empty body: %+v", body)
+	}
+}
+
 func TestParseMessageHonorsContentLength(t *testing.T) {
 	message := func(headers string, body string) string {
 		return "MESSAGE sip:bob@example.com SIP/2.0\r\n" +
