@@ -15,6 +15,7 @@ Project URL:
     + [Download Binary Release](#download-binary-release)
   * [Usage](#usage)
     + [Result File](#result-file)
+    + [RTP Audio](#rtp-audio)
     + [Examples](#examples)
   * [Target Address](#target-address)
   * [Message Template](#message-template)
@@ -71,6 +72,7 @@ Among features:
   to the second one, answering and hanging up
   * simulate subscribe session: send SUBSCRIBE and wait for NOTIFY requests
   * optionally re-resolve an FQDN target via DNS before each in-dialog request (UDP only)
+  * send audio (WAV or raw G.711 file, or a tone) as RTP after a call is answered
 
 ## Installation
 
@@ -184,6 +186,58 @@ The result then includes a `tls` object:
   }
 }
 ```
+
+### RTP Audio
+
+After an `INVITE` is answered, `sipexer` can send audio as plain RTP (`RTP/AVP` over
+UDP) to the address and port in the SDP of the `200 OK`. The audio source is one of:
+
+  * `--rtp-file PATH` - a WAV file with 8000 Hz mono 16-bit PCM, G.711 u-law or A-law
+  data, or a raw G.711 file (`.ulaw`/`.pcmu` or `.alaw`/`.pcma`, or set the law with
+  `--rtp-file-law pcmu|pcma`)
+  * `--rtp-tone FREQUENCY[:DURATION]` - a sine tone (Hz, milliseconds; defaults `1000:5000`)
+
+The payload type is the first `PCMU` or `PCMA` one in the SDP answer. The audio is
+encoded to it (G.711 data of the same law is sent as is) in packets of 20ms, from the
+local port of the SDP offer, which also counts the RTP packets received (symmetric RTP).
+Without `--sw`, the call lasts for the audio and then `sipexer` sends `BYE`; with `--sw`,
+the call lasts `--sw` milliseconds and longer audio is cut. `--rtp-duration MS` stops
+the audio after `MS` milliseconds.
+
+```shell
+sipexer -invite -fuser alice -tuser bob -cb -sd -su --rtp-file prompt.wav udp:server.com:5060
+sipexer -invite -fuser alice -tuser bob -cb -sd -su --rtp-tone 1000:3000 udp:server.com:5060
+```
+
+Other WAV files are refused (there is no resampling); convert them with:
+
+```shell
+ffmpeg -i input.wav -ar 8000 -ac 1 -c:a pcm_s16le prompt.wav
+sox input.wav -r 8000 -c 1 -b 16 prompt.wav
+```
+
+With `--result-file`, the result includes an `rtp` object (bytes count the RTP payload,
+times are UTC):
+
+```json
+{
+  "rtp": {
+    "localAddress": "192.0.2.10:30000",
+    "remoteAddress": "198.51.100.20:40000",
+    "payloadType": 0,
+    "packetsSent": 150,
+    "bytesSent": 24000,
+    "packetsReceived": 150,
+    "bytesReceived": 24000,
+    "firstSent": "2026-01-01T00:00:00.120Z",
+    "firstReceived": "2026-01-01T00:00:00.140Z"
+  }
+}
+```
+
+Only plain RTP is supported: no SRTP, DTLS-SRTP or ICE, so WebSocket (`ws`/`wss`) targets
+and SRTP offers are refused. The RTP options cannot be used with `--call-self`,
+`--call-user` or `--run-batch`.
 
 ### Examples
 
