@@ -1015,6 +1015,85 @@ func TestDialogResetForRequestReliableTransportDisablesResend(t *testing.T) {
 	})
 }
 
+func TestDialogLoopAnswersRequestWhileWaitingForResponse(t *testing.T) {
+	withCleanState(t, func() {
+		cliops.timeout = 3000
+
+		srv, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer srv.Close()
+
+		done := make(chan string, 1)
+		go func() {
+			buf := make([]byte, 65535)
+			_ = srv.SetReadDeadline(time.Now().Add(3 * time.Second))
+			n, peer, err := srv.ReadFromUDP(buf)
+			if err != nil {
+				done <- "failed to read request: " + err.Error()
+				return
+			}
+			req := sgsip.SGSIPMessage{}
+			if sgsip.SGSIPParseMessage(string(buf[:n]), &req) != sgsip.SGSIPRetOK {
+				done <- "failed to parse request"
+				return
+			}
+			notify := "NOTIFY sip:alice@127.0.0.1 SIP/2.0\r\nVia: SIP/2.0/UDP 127.0.0.1;branch=z9hG4bKn1\r\nFrom: <sip:bob@127.0.0.1>;tag=n1\r\nTo: <sip:alice@127.0.0.1>;tag=a1\r\nCall-ID: notify-call\r\nCSeq: 1 NOTIFY\r\nEvent: test\r\nContent-Length: 0\r\n\r\n"
+			if _, err = srv.WriteToUDP([]byte(notify), peer); err != nil {
+				done <- "failed to send NOTIFY: " + err.Error()
+				return
+			}
+			for {
+				n, _, err = srv.ReadFromUDP(buf)
+				if err != nil {
+					done <- "no response to NOTIFY: " + err.Error()
+					return
+				}
+				rsp := sgsip.SGSIPMessage{}
+				if sgsip.SGSIPParseMessage(string(buf[:n]), &rsp) == sgsip.SGSIPRetOK &&
+					rsp.FLine.MType == sgsip.FLineResponse && rsp.CSeq.MethodId == sgsip.SIPMethodNOTIFY {
+					if rsp.FLine.Code != 200 {
+						done <- "unexpected response to NOTIFY: " + rsp.FLine.Val
+						return
+					}
+					break
+				}
+			}
+			final := ""
+			if sgsip.SGSIPMessageToResponseString(&req, "404", "Not Found", &final) != sgsip.SGSIPRetOK {
+				done <- "failed to build final response"
+				return
+			}
+			if _, err = srv.WriteToUDP([]byte(final), peer); err != nil {
+				done <- "failed to send final response: " + err.Error()
+				return
+			}
+			done <- ""
+		}()
+
+		dstSockAddr := sgsip.SGSIPSocketAddress{}
+		if sgsip.SGSIPParseSocketAddress("udp:"+srv.LocalAddr().String(), &dstSockAddr) != sgsip.SGSIPRetOK {
+			t.Fatal("failed to parse responder address")
+		}
+		seDlg := &SIPExerDialog{}
+		if ret := SIPExerInitUDPDialog(dstSockAddr, seDlg); ret != SIPExerRetOK {
+			t.Fatalf("failed to init udp dialog: %d", ret)
+		}
+		defer SIPExerDialogCloseConn(seDlg)
+		tplfields := make(map[string]any)
+		SIPExerPrepareTemplateFields(tplfields)
+		tplfields["ruri"] = "sip:bob@" + srv.LocalAddr().String()
+
+		if ret := SIPExerDialogLoop(templateDefaultText, tplfields, seDlg); ret != 404 {
+			t.Fatalf("expected the final response code 404, got: %d", ret)
+		}
+		if msg := <-done; msg != "" {
+			t.Fatal(msg)
+		}
+	})
+}
+
 func TestRunRegisterFirstRequiresFUser(t *testing.T) {
 	withCleanState(t, func() {
 		ret := SIPExerRunRegisterFirst(sgsip.SGSIPSocketAddress{}, nil, "", map[string]any{"method": "INVITE"})
