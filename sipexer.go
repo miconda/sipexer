@@ -2804,10 +2804,11 @@ func SIPExerExtractNextSIPMessage(rawBuf string) (string, string, bool) {
 	}
 	hlen := eoh + 4
 	clen := SIPExerParseContentLength(data[0:eoh])
-	mLen := hlen + clen
-	if mLen > len(data) {
+	// compare without adding to avoid an integer overflow for huge values
+	if clen > len(data)-hlen {
 		return "", data, false
 	}
+	mLen := hlen + clen
 	return data[0:mLen], data[mLen:], true
 }
 
