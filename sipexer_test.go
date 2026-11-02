@@ -1118,6 +1118,121 @@ func TestRunRegisterFirstRequiresFUser(t *testing.T) {
 	})
 }
 
+func TestDialogLoopAuthenticatesChallengedBYE(t *testing.T) {
+	withCleanState(t, func() {
+		cliops.timeout = 3000
+		cliops.invite = true
+		cliops.sessionwait = 100
+		cliops.authuser = "alice"
+		cliops.authapassword = "secret"
+
+		srv, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer srv.Close()
+
+		done := make(chan string, 1)
+		go func() {
+			buf := make([]byte, 65535)
+			_ = srv.SetReadDeadline(time.Now().Add(3 * time.Second))
+			readRequest := func(skip string) (sgsip.SGSIPMessage, *net.UDPAddr, error) {
+				for {
+					n, peer, err := srv.ReadFromUDP(buf)
+					if err != nil {
+						return sgsip.SGSIPMessage{}, nil, err
+					}
+					msg := sgsip.SGSIPMessage{}
+					if sgsip.SGSIPParseMessage(string(buf[:n]), &msg) == sgsip.SGSIPRetOK &&
+						msg.FLine.MType == sgsip.FLineRequest && msg.FLine.Method != skip {
+						return msg, peer, nil
+					}
+				}
+			}
+			reply := func(req *sgsip.SGSIPMessage, peer *net.UDPAddr, code string, reason string, hname string, hbody string) error {
+				rsp := ""
+				if sgsip.SGSIPMessageToResponseString(req, code, reason, &rsp) != sgsip.SGSIPRetOK {
+					return io.ErrUnexpectedEOF
+				}
+				if len(hname) > 0 {
+					rmsg := sgsip.SGSIPMessage{}
+					if sgsip.SGSIPParseMessage(rsp, &rmsg) != sgsip.SGSIPRetOK {
+						return io.ErrUnexpectedEOF
+					}
+					sgsip.SGSIPMessageHeaderSet(&rmsg, hname, hbody)
+					if sgsip.SGSIPMessageToString(&rmsg, &rsp) != sgsip.SGSIPRetOK {
+						return io.ErrUnexpectedEOF
+					}
+				}
+				_, err := srv.WriteToUDP([]byte(rsp), peer)
+				return err
+			}
+
+			invite, peer, err := readRequest("")
+			if err != nil || invite.FLine.Method != "INVITE" {
+				done <- "expected INVITE"
+				return
+			}
+			if err = reply(&invite, peer, "200", "OK", "Contact", "<sip:bob@"+srv.LocalAddr().String()+">"); err != nil {
+				done <- "failed to send 200 for INVITE"
+				return
+			}
+			bye, peer, err := readRequest("ACK")
+			if err != nil || bye.FLine.Method != "BYE" {
+				done <- "expected BYE"
+				return
+			}
+			if err = reply(&bye, peer, "401", "Unauthorized", "WWW-Authenticate", `Digest realm="127.0.0.1", nonce="n1", qop="auth", algorithm=MD5`); err != nil {
+				done <- "failed to send 401 for BYE"
+				return
+			}
+			var next sgsip.SGSIPMessage
+			for {
+				next, peer, err = readRequest("")
+				if err != nil {
+					done <- "no request after 401 for BYE"
+					return
+				}
+				// skip retransmissions of the challenged BYE
+				if next.FLine.Method != "BYE" || next.CSeq.Number != bye.CSeq.Number {
+					break
+				}
+			}
+			_ = reply(&next, peer, "200", "OK", "", "")
+			if next.FLine.Method != "BYE" {
+				done <- "expected authenticated BYE, got: " + next.FLine.Method
+				return
+			}
+			if !strings.Contains(next.Data, "Authorization: Digest") || !strings.Contains(next.Data, `uri="`+bye.FLine.URI+`"`) {
+				done <- "expected BYE with Authorization for the BYE R-URI, got: " + next.Data
+				return
+			}
+			done <- ""
+		}()
+
+		dstSockAddr := sgsip.SGSIPSocketAddress{}
+		if sgsip.SGSIPParseSocketAddress("udp:"+srv.LocalAddr().String(), &dstSockAddr) != sgsip.SGSIPRetOK {
+			t.Fatal("failed to parse responder address")
+		}
+		seDlg := &SIPExerDialog{}
+		if ret := SIPExerInitUDPDialog(dstSockAddr, seDlg); ret != SIPExerRetOK {
+			t.Fatalf("failed to init udp dialog: %d", ret)
+		}
+		defer SIPExerDialogCloseConn(seDlg)
+		tplfields := make(map[string]any)
+		SIPExerPrepareTemplateFields(tplfields)
+		tplfields["ruri"] = "sip:bob@" + srv.LocalAddr().String()
+
+		ret := SIPExerDialogLoop(templateDefaultText, tplfields, seDlg)
+		if msg := <-done; msg != "" {
+			t.Fatal(msg)
+		}
+		if ret != 200 {
+			t.Fatalf("expected 200 for the authenticated BYE, got: %d", ret)
+		}
+	})
+}
+
 func TestSelectDigestAuthParamsUsesFirstHeader(t *testing.T) {
 	msg := sgsip.SGSIPMessage{
 		Headers: []sgsip.SGSIPHeader{
