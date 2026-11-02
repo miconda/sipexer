@@ -2026,10 +2026,16 @@ func SIPExerRunCallUsers(dstSockAddr sgsip.SGSIPSocketAddress, wsurlp *url.URL, 
 	return SIPExerRetOK
 }
 
+// serialize preparing the fields, the scenarios of run-batch share the int vars
+var sipexerFieldsMutex sync.Mutex
+
 func SIPExerPrepareTemplateFields(tplfields map[string]any) int {
 	var err error
 	var ival int
 	var ok bool
+
+	sipexerFieldsMutex.Lock()
+	defer sipexerFieldsMutex.Unlock()
 
 	if len(cliops.fields) > 0 {
 		fieldsdata, err1 := os.ReadFile(cliops.fields)
