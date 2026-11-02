@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math/big"
 	mathrand "math/rand"
@@ -18,6 +19,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -633,6 +635,42 @@ func TestPrepareTemplateFieldsArithmeticExpressions(t *testing.T) {
 
 		if tplfields["add"] == "$add(x,5)" || tplfields["sub"] == "$sub(x,3)" || tplfields["mul"] == "$mul(x,2)" {
 			t.Fatalf("expected arithmetic expressions to be evaluated")
+		}
+	})
+}
+
+func TestPrepareTemplateFieldsCountersConcurrent(t *testing.T) {
+	withCleanState(t, func() {
+		cliops.fieldseval = true
+		fpath := filepath.Join(t.TempDir(), "fields.json")
+		if err := os.WriteFile(fpath, []byte(`{"method":"OPTIONS","cseqnum":"$inc(cseq)"}`), 0644); err != nil {
+			t.Fatal(err)
+		}
+		cliops.fields = fpath
+
+		const n = 50
+		values := make(chan string, n)
+		var wg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				tplfields := make(map[string]any)
+				SIPExerPrepareTemplateFields(tplfields)
+				values <- fmt.Sprint(tplfields["cseqnum"])
+			}()
+		}
+		wg.Wait()
+		close(values)
+		seen := make(map[string]bool)
+		for v := range values {
+			if seen[v] {
+				t.Fatalf("duplicate counter value %q", v)
+			}
+			seen[v] = true
+		}
+		if got := iVarMap["cseq"]; got != n {
+			t.Fatalf("expected counter value %d, got %d", n, got)
 		}
 	})
 }
