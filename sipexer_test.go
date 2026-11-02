@@ -1000,6 +1000,21 @@ func TestDialogReadStreamConnHandlesChunked183WithBody(t *testing.T) {
 	})
 }
 
+func TestDialogReadStreamConnRejectsHugeContentLength(t *testing.T) {
+	withCleanState(t, func() {
+		msg := "SIP/2.0 200 OK\r\nVia: SIP/2.0/TCP host;branch=z9hG4bK1\r\nFrom: <sip:a@example.com>;tag=1\r\nTo: <sip:b@example.com>;tag=2\r\nCall-ID: c1\r\nCSeq: 1 OPTIONS\r\nContent-Length: 9223372036854775807\r\n\r\nbody"
+		reader := &chunkReader{chunks: []string{msg}}
+		seDlg := &SIPExerDialog{}
+
+		if ret := SIPExerDialogReadStreamConn(seDlg, reader, SIPExerErrTCPRead); ret != SIPExerErrTCPRead {
+			t.Fatalf("expected read error for incomplete message, got: %d", ret)
+		}
+		if _, _, ok := SIPExerExtractNextSIPMessage(msg); ok {
+			t.Fatalf("expected message with huge Content-Length to be incomplete")
+		}
+	})
+}
+
 func TestDialogResetForRequestReliableTransportDisablesResend(t *testing.T) {
 	withCleanState(t, func() {
 		seDlg := &SIPExerDialog{ProtoId: sgsip.ProtoTLS}
