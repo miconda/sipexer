@@ -2992,6 +2992,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 	var sack string = ""
 	var err error
 	var wmsg []byte
+	var skipsend bool = false
 
 	// if no --auth-csv, fall back to the global -au/-ap values.
 	seDlg.AuthUser = cliops.authuser
@@ -3031,7 +3032,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 	seDlg.RecvBuf = make([]byte, cliops.buffersize)
 	// retransmissions loop
 	for {
-		if (seDlg.ProtoId != sgsip.ProtoUDP && seDlg.State != SIPExerDialogEarly) || seDlg.Resend {
+		if !skipsend && ((seDlg.ProtoId != sgsip.ProtoUDP && seDlg.State != SIPExerDialogEarly) || seDlg.Resend) {
 			SIPExerSetWriteTimeout(seDlg)
 			ret = SIPExerSendBytes(seDlg, wmsg)
 			if ret < 0 {
@@ -3041,6 +3042,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 				seDlg.State = SIPExerDialogStarted
 			}
 		}
+		skipsend = false
 
 		seDlg.RecvN = 0
 		ret = SIPExerSetReadTimeout(seDlg)
@@ -3286,6 +3288,32 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 						return ret
 					}
 				}
+				seDlg.RecvBuf = make([]byte, cliops.buffersize)
+				continue
+			}
+			if seDlg.LastResponse.FLine.MType == sgsip.FLineRequest {
+				// request received while waiting for the response - reply to it
+				// and read again, without re-sending the request
+				if seDlg.LastResponse.FLine.MethodId != sgsip.SIPMethodACK {
+					rcode, rreason := "200", "OK"
+					if seDlg.LastResponse.FLine.MethodId == sgsip.SIPMethodINVITE {
+						rcode, rreason = "480", "Temporarily Unavailable"
+					}
+					rsmsg := ""
+					if sgsip.SGSIPMessageToResponseString(seDlg.LastResponse, rcode, rreason, &rsmsg) != sgsip.SGSIPRetOK {
+						SIPExerPrintf(SIPExerLogError, "failed to build sip response\n")
+						return SIPExerErrSIPMessageToString
+					}
+					SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
+					SIPExerMessagePrint("\n\n", rsmsg, "\n")
+					SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+					SIPExerSetWriteTimeout(seDlg)
+					ret = SIPExerSendBytes(seDlg, []byte(rsmsg))
+					if ret < 0 {
+						return ret
+					}
+				}
+				skipsend = true
 				seDlg.RecvBuf = make([]byte, cliops.buffersize)
 				continue
 			}
