@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
@@ -18,6 +19,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
+	"math/bits"
 	mathrand "math/rand"
 	"net"
 	"net/http"
@@ -97,6 +100,9 @@ const (
 	SIPExerErrAKAInvalidOPC       = -1182
 	SIPExerErrAKAInvalidAMF       = -1183
 	SIPExerErrAKAHeaderFailure    = -1184
+	SIPExerErrRTPOptions          = -1190
+	SIPExerErrRTPOffer            = -1191
+	SIPExerErrRTPAnswer           = -1192
 )
 
 var templateDefaultText string = `{{.method}} {{.ruri}} SIP/2.0
@@ -225,6 +231,9 @@ type SIPExerDialog struct {
 	TargetAFProto  string
 	InitConnUDP    *net.UDPConn
 	InDialogReq    []byte
+
+	RTP    *SIPExerRTPSession
+	RTPRet int
 }
 
 type paramFieldsType map[string]string
@@ -414,6 +423,10 @@ type CLIOptions struct {
 	u2akauser        string
 	ringtime         int
 	callduration     int
+	rtpfile          string
+	rtpfilelaw       string
+	rtptone          string
+	rtpduration      int
 	version          bool
 }
 
@@ -521,6 +534,10 @@ var cliops = CLIOptions{
 	u2akauser:        "",
 	ringtime:         2000,
 	callduration:     10000,
+	rtpfile:          "",
+	rtpfilelaw:       "",
+	rtptone:          "",
+	rtpduration:      0,
 }
 
 func sipexer_help_commands() {
@@ -673,6 +690,9 @@ func init() {
 	flag.StringVar(&cliops.u2akaop, "ua2-aka-op", cliops.u2akaop, "second user aka authentication operator key - op")
 	flag.StringVar(&cliops.u2akaopc, "ua2-aka-opc", cliops.u2akaopc, "second user aka authentication operator derived key - opc")
 	flag.StringVar(&cliops.u2akaamf, "ua2-aka-amf", cliops.u2akaamf, "second user aka authentication management field - amf")
+	flag.StringVar(&cliops.rtpfile, "rtp-file", cliops.rtpfile, "send audio as RTP after INVITE is answered, from a WAV (8000 Hz mono, 16-bit PCM or G.711) or a raw G.711 file (.ulaw/.pcmu, .alaw/.pcma)")
+	flag.StringVar(&cliops.rtpfilelaw, "rtp-file-law", cliops.rtpfilelaw, "G.711 law of a raw rtp-file: pcmu | pcma (default from file extension)")
+	flag.StringVar(&cliops.rtptone, "rtp-tone", cliops.rtptone, "send a sine tone as RTP after INVITE is answered: 'frequency[:duration]' (Hz, ms; defaults 1000:5000)")
 
 	flag.BoolVar(&cliops.ack, "ack", cliops.ack, "set method to ACK")
 	flag.BoolVar(&cliops.cancel, "cancel", cliops.cancel, "set method to CANCEL")
@@ -743,6 +763,7 @@ func init() {
 	flag.IntVar(&cliops.ringtime, "rt", cliops.ringtime, "ringing time in milliseconds before 200 OK in self-call mode")
 	flag.IntVar(&cliops.callduration, "call-duration", cliops.callduration, "call duration in milliseconds before BYE in self-call mode")
 	flag.IntVar(&cliops.callduration, "cd", cliops.callduration, "call duration in milliseconds before BYE in self-call mode")
+	flag.IntVar(&cliops.rtpduration, "rtp-duration", cliops.rtpduration, "stop sending RTP after this many milliseconds (0: end of audio)")
 	flag.IntVar(&cliops.sessionwait, "sessionwait", cliops.sessionwait, "time in millisecons to wait for a session")
 	flag.IntVar(&cliops.sessionwait, "sw", cliops.sessionwait, "time in millisecons to wait for a session")
 	flag.IntVar(&cliops.timeout, "timeout", cliops.timeout, "timeout waiting to receive data (milliseconds)")
@@ -853,6 +874,16 @@ func main() {
 		SIPExerExit(tret)
 	}
 
+	// rtp audio source
+	if sipexerRTPAudio, terr = SIPExerRTPLoadAudio(); terr != nil {
+		SIPExerPrintf(SIPExerLogError, "rtp: %v\n", terr)
+		SIPExerExit(SIPExerErrRTPOptions)
+	}
+	if sipexerRTPAudio != nil && (cliops.callself || cliops.callusers || cliops.runbatch > 0) {
+		SIPExerPrintf(SIPExerLogError, "rtp options cannot be used with call-self, call-user or run-batch\n")
+		SIPExerExit(SIPExerErrRTPOptions)
+	}
+
 	// run-batch injector
 	if cliops.runbatch > 0 {
 		tret = SIPExerRunBatch(tplstr)
@@ -875,6 +906,7 @@ func SIPExerRunScenario(tplstr string, scenarioIndex int) int {
 
 	SIPExerResetSIPStatus()
 	SIPExerResetTLSInfo()
+	SIPExerResetRTPInfo()
 
 	tplfields := make(map[string]any)
 
@@ -1000,6 +1032,10 @@ func SIPExerRunScenario(tplstr string, scenarioIndex int) int {
 		SIPExerPrintf(SIPExerLogError, "transport protocol not supported yet for target %s\n", dstAddr)
 		SIPExerExit(SIPExerErrProtocolUnsuported)
 	}
+	if sipexerRTPAudio != nil && (!cliops.invite || dstSockAddr.ProtoId == sgsip.ProtoWS || dstSockAddr.ProtoId == sgsip.ProtoWSS) {
+		SIPExerPrintf(SIPExerLogError, "rtp options require INVITE (-invite) over udp, tcp or tls targets (no WebRTC media for ws/wss)\n")
+		SIPExerExit(SIPExerErrRTPOptions)
+	}
 	if cliops.callusers {
 		tret = SIPExerRunCallUsers(dstSockAddr, wsurlp, tplstr, tplfields)
 	} else if cliops.callself {
@@ -1081,6 +1117,7 @@ type SIPExerExitResult struct {
 	NagiosCode   int             `json:"nagiosCode"`
 	SIPStatus    int             `json:"sipStatus"`
 	TLS          *SIPExerTLSInfo `json:"tls,omitempty"`
+	RTP          *SIPExerRTPInfo `json:"rtp,omitempty"`
 }
 
 type SIPExerTLSCertificateInfo struct {
@@ -1221,6 +1258,7 @@ func SIPExerExit(ret int) {
 		if cliops.rftlsinfo {
 			result.TLS = sipexerLastTLSInfo.Load()
 		}
+		result.RTP = sipexerLastRTPInfo.Load()
 		if err := SIPExerWriteResultFile(cliops.resultfile, result); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to write result file %q: %v\n", cliops.resultfile, err)
 		}
@@ -3033,6 +3071,16 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 		return ret
 	}
 	smsg = seDlg.FirstRequest.Data
+	if sipexerRTPAudio != nil && seDlg.FirstRequest.FLine.MethodId == sgsip.SIPMethodINVITE {
+		if ret = SIPExerRTPOpen(seDlg); ret < 0 {
+			return ret
+		}
+		defer SIPExerRTPClose(seDlg)
+		if seDlg.SessionWait <= 0 {
+			// keep the call for the duration of the audio, then send BYE
+			seDlg.SessionWait = SIPExerRTPPacketCount(sipexerRTPAudio)*SIPExerRTPPtime + 200
+		}
+	}
 	SIPExerPrintf(SIPExerLogInfo, "local socket address: %v (%v)\n", seDlg.LocalAddr, seDlg.Proto)
 	SIPExerPrintf(SIPExerLogInfo, "local via address: %v\n", tplfields["viaaddr"])
 	SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
@@ -3430,7 +3478,13 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 			}
 			if seDlg.SessionWait > 0 && ret >= 200 && ret < 300 &&
 				(cliops.invite || cliops.register || cliops.subscribesession) {
-				SIPExerSessionWaitAndRead(seDlg)
+				if seDlg.RTP != nil {
+					seDlg.RTPRet = SIPExerRTPStart(seDlg)
+				}
+				if seDlg.RTPRet == SIPExerRetOK {
+					SIPExerSessionWaitAndRead(seDlg)
+				}
+				SIPExerRTPClose(seDlg)
 				smsg = ""
 				seDlg.SessionWait = 0
 				if cliops.register {
@@ -3497,6 +3551,9 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					seDlg.State = SIPExerDialogStarted
 					continue
 				}
+			}
+			if seDlg.RTPRet < 0 {
+				return seDlg.RTPRet
 			}
 			return ret
 		}
@@ -4012,4 +4069,478 @@ func SIPExerMessagePrint(prefix string, smsg string, suffix string) {
 		fmt.Printf("%s", msgObj.Body.Content)
 	}
 	fmt.Printf("%s", suffix)
+}
+
+// RTP (plain RTP/AVP over UDP) audio streaming after the INVITE is answered
+
+const (
+	SIPExerRTPLawLinear = -1
+	SIPExerRTPLawPCMU   = 0
+	SIPExerRTPLawPCMA   = 8
+	SIPExerRTPPtime     = 20
+	SIPExerRTPSamples   = 160
+)
+
+// SIPExerRTPAudio keeps 8000 Hz mono audio, as G.711 data or linear samples
+type SIPExerRTPAudio struct {
+	Law     int
+	G711    []byte
+	Samples []int16
+}
+
+type SIPExerRTPInfo struct {
+	LocalAddress    string `json:"localAddress"`
+	RemoteAddress   string `json:"remoteAddress"`
+	PayloadType     int    `json:"payloadType"`
+	PacketsSent     int    `json:"packetsSent"`
+	BytesSent       int    `json:"bytesSent"`
+	PacketsReceived int    `json:"packetsReceived"`
+	BytesReceived   int    `json:"bytesReceived"`
+	FirstSent       string `json:"firstSent,omitempty"`
+	FirstReceived   string `json:"firstReceived,omitempty"`
+}
+
+type SIPExerRTPSession struct {
+	Conn     *net.UDPConn
+	Info     SIPExerRTPInfo
+	Started  bool
+	stop     chan struct{}
+	sendDone chan struct{}
+	recvDone chan struct{}
+}
+
+type SIPExerRTPMedia struct {
+	Addr   string
+	Port   int
+	Proto  string
+	PTs    []int
+	RTPMap map[int]string
+}
+
+var sipexerRTPAudio *SIPExerRTPAudio = nil
+var sipexerLastRTPInfo atomic.Pointer[SIPExerRTPInfo]
+
+func SIPExerResetRTPInfo() {
+	sipexerLastRTPInfo.Store(nil)
+}
+
+func SIPExerRTPConvertHint(name string) string {
+	return fmt.Sprintf("convert it to 8000 Hz mono 16-bit PCM with:\n    ffmpeg -i %s -ar 8000 -ac 1 -c:a pcm_s16le out.wav\n    sox %s -r 8000 -c 1 -b 16 out.wav", name, name)
+}
+
+// SIPExerRTPLoadAudio loads the audio source given by the rtp cli options
+func SIPExerRTPLoadAudio() (*SIPExerRTPAudio, error) {
+	if len(cliops.rtpfile) > 0 && len(cliops.rtptone) > 0 {
+		return nil, fmt.Errorf("rtp-file and rtp-tone cannot be used at the same time")
+	}
+	if len(cliops.rtptone) > 0 {
+		return SIPExerRTPTone(cliops.rtptone)
+	}
+	if len(cliops.rtpfile) == 0 {
+		return nil, nil
+	}
+	data, err := os.ReadFile(cliops.rtpfile)
+	if err != nil {
+		return nil, err
+	}
+	ext := strings.ToLower(filepath.Ext(cliops.rtpfile))
+	if ext == ".wav" || bytes.HasPrefix(data, []byte("RIFF")) {
+		return SIPExerRTPParseWAV(data, cliops.rtpfile)
+	}
+	// raw G.711 file - the law is given by rtp-file-law or by the file extension
+	lawName := strings.ToLower(cliops.rtpfilelaw)
+	if len(lawName) == 0 {
+		lawName = strings.TrimPrefix(ext, ".")
+	}
+	law := SIPExerRTPLawPCMA
+	if lawName == "pcmu" || lawName == "ulaw" {
+		law = SIPExerRTPLawPCMU
+	} else if lawName != "pcma" && lawName != "alaw" {
+		return nil, fmt.Errorf("unknown G.711 law of raw file %s - use a .ulaw/.pcmu or .alaw/.pcma extension or -rtp-file-law pcmu|pcma", cliops.rtpfile)
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("no audio data in %s", cliops.rtpfile)
+	}
+	return &SIPExerRTPAudio{Law: law, G711: data}, nil
+}
+
+// SIPExerRTPParseWAV accepts 8000 Hz mono WAV with 16-bit PCM or G.711 data
+func SIPExerRTPParseWAV(data []byte, name string) (*SIPExerRTPAudio, error) {
+	var format, channels, width uint16
+	var rate uint32
+	var samples []byte = nil
+	if len(data) < 12 || string(data[0:4]) != "RIFF" || string(data[8:12]) != "WAVE" {
+		return nil, fmt.Errorf("%s is not a WAV file", name)
+	}
+	for pos := 12; pos+8 <= len(data); {
+		id := string(data[pos : pos+4])
+		size := int(binary.LittleEndian.Uint32(data[pos+4 : pos+8]))
+		pos += 8
+		if size < 0 || size > len(data)-pos {
+			size = len(data) - pos
+		}
+		if id == "fmt " && size >= 16 {
+			format = binary.LittleEndian.Uint16(data[pos:])
+			channels = binary.LittleEndian.Uint16(data[pos+2:])
+			rate = binary.LittleEndian.Uint32(data[pos+4:])
+			width = binary.LittleEndian.Uint16(data[pos+14:])
+		} else if id == "data" {
+			samples = data[pos : pos+size]
+		}
+		pos += size + size%2
+	}
+	if format == 0 || len(samples) == 0 {
+		return nil, fmt.Errorf("%s has no audio format or data", name)
+	}
+	if channels != 1 || rate != 8000 {
+		return nil, fmt.Errorf("%s has %d channel(s) at %d Hz, RTP needs 8000 Hz mono - %s", name, channels, rate, SIPExerRTPConvertHint(name))
+	}
+	if format == 1 && width == 16 {
+		pcm := make([]int16, len(samples)/2)
+		for i := range pcm {
+			pcm[i] = int16(binary.LittleEndian.Uint16(samples[2*i:]))
+		}
+		return &SIPExerRTPAudio{Law: SIPExerRTPLawLinear, Samples: pcm}, nil
+	} else if format == 7 && width == 8 {
+		return &SIPExerRTPAudio{Law: SIPExerRTPLawPCMU, G711: samples}, nil
+	} else if format == 6 && width == 8 {
+		return &SIPExerRTPAudio{Law: SIPExerRTPLawPCMA, G711: samples}, nil
+	}
+	return nil, fmt.Errorf("%s has an unsupported encoding (format %d, %d bits) - %s", name, format, width, SIPExerRTPConvertHint(name))
+}
+
+// SIPExerRTPTone builds a sine tone from 'frequency[:duration]' (Hz, ms)
+func SIPExerRTPTone(spec string) (*SIPExerRTPAudio, error) {
+	var err error
+	freq, duration := 1000, 5000
+	fstr, dstr, _ := strings.Cut(spec, ":")
+	if len(fstr) > 0 {
+		freq, err = strconv.Atoi(fstr)
+	}
+	if err == nil && len(dstr) > 0 {
+		duration, err = strconv.Atoi(dstr)
+	}
+	if err != nil || freq <= 0 || freq >= 4000 || duration <= 0 {
+		return nil, fmt.Errorf("invalid rtp-tone value: %s (use frequency[:duration], 1..3999 Hz, ms)", spec)
+	}
+	pcm := make([]int16, duration*8)
+	for i := range pcm {
+		pcm[i] = int16(10000 * math.Sin(2*math.Pi*float64(freq)*float64(i)/8000))
+	}
+	return &SIPExerRTPAudio{Law: SIPExerRTPLawLinear, Samples: pcm}, nil
+}
+
+func SIPExerLinearToULaw(sample int16) byte {
+	sign := byte(0)
+	val := int(sample)
+	if val < 0 {
+		sign = 0x80
+		val = -val
+	}
+	if val > 32635 {
+		val = 32635
+	}
+	val += 0x84
+	exp := bits.Len(uint(val)) - 8
+	return ^(sign | byte(exp<<4) | byte((val>>(exp+3))&0x0F))
+}
+
+func SIPExerULawToLinear(uval byte) int16 {
+	uval = ^uval
+	t := ((int(uval&0x0F) << 3) + 0x84) << ((uval & 0x70) >> 4)
+	if uval&0x80 != 0 {
+		return int16(0x84 - t)
+	}
+	return int16(t - 0x84)
+}
+
+func SIPExerLinearToALaw(sample int16) byte {
+	mask := byte(0xD5)
+	val := int(sample) >> 3
+	if val < 0 {
+		mask = 0x55
+		val = -val - 1
+	}
+	seg, shift := 0, 1
+	if val > 0x1F {
+		seg = bits.Len(uint(val)) - 5
+		shift = seg
+	}
+	return (byte(seg<<4) | byte((val>>shift)&0x0F)) ^ mask
+}
+
+func SIPExerALawToLinear(aval byte) int16 {
+	aval ^= 0x55
+	t := int(aval&0x0F) << 4
+	seg := int(aval&0x70) >> 4
+	if seg == 0 {
+		t += 8
+	} else {
+		t = (t + 0x108) << (seg - 1)
+	}
+	if aval&0x80 != 0 {
+		return int16(t)
+	}
+	return int16(-t)
+}
+
+// SIPExerRTPEncodeAudio returns the audio as G.711 data with the given law
+func SIPExerRTPEncodeAudio(audio *SIPExerRTPAudio, law int) []byte {
+	if audio.Law == law {
+		return audio.G711
+	}
+	n := len(audio.Samples)
+	if audio.Law != SIPExerRTPLawLinear {
+		n = len(audio.G711)
+	}
+	out := make([]byte, n)
+	for i := range out {
+		var sample int16
+		if audio.Law == SIPExerRTPLawPCMU {
+			sample = SIPExerULawToLinear(audio.G711[i])
+		} else if audio.Law == SIPExerRTPLawPCMA {
+			sample = SIPExerALawToLinear(audio.G711[i])
+		} else {
+			sample = audio.Samples[i]
+		}
+		if law == SIPExerRTPLawPCMU {
+			out[i] = SIPExerLinearToULaw(sample)
+		} else {
+			out[i] = SIPExerLinearToALaw(sample)
+		}
+	}
+	return out
+}
+
+// SIPExerRTPPacketCount returns the number of 20ms packets to send for the audio
+func SIPExerRTPPacketCount(audio *SIPExerRTPAudio) int {
+	n := len(audio.Samples)
+	if audio.Law != SIPExerRTPLawLinear {
+		n = len(audio.G711)
+	}
+	npkts := (n + SIPExerRTPSamples - 1) / SIPExerRTPSamples
+	if cliops.rtpduration > 0 && npkts > cliops.rtpduration/SIPExerRTPPtime {
+		npkts = cliops.rtpduration / SIPExerRTPPtime
+	}
+	return npkts
+}
+
+func SIPExerRTPPacket(pt int, marker bool, seq uint16, ts uint32, ssrc uint32, payload []byte) []byte {
+	pkt := make([]byte, 12, 12+len(payload))
+	pkt[0] = 0x80
+	pkt[1] = byte(pt & 0x7F)
+	if marker {
+		pkt[1] |= 0x80
+	}
+	binary.BigEndian.PutUint16(pkt[2:], seq)
+	binary.BigEndian.PutUint32(pkt[4:], ts)
+	binary.BigEndian.PutUint32(pkt[8:], ssrc)
+	return append(pkt, payload...)
+}
+
+// SIPExerRTPParseSDP returns the first audio stream of the SDP body
+func SIPExerRTPParseSDP(sdp string) (SIPExerRTPMedia, error) {
+	media := SIPExerRTPMedia{RTPMap: make(map[int]string)}
+	section := ""
+	for _, line := range strings.Split(sdp, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "m=") {
+			if section == "audio" {
+				break
+			}
+			section = "other"
+			fields := strings.Fields(line[2:])
+			if len(fields) >= 3 && fields[0] == "audio" {
+				section = "audio"
+				media.Port, _ = strconv.Atoi(fields[1])
+				media.Proto = fields[2]
+				for _, f := range fields[3:] {
+					if pt, err := strconv.Atoi(f); err == nil {
+						media.PTs = append(media.PTs, pt)
+					}
+				}
+			}
+		} else if strings.HasPrefix(line, "c=") && section != "other" {
+			if fields := strings.Fields(line[2:]); len(fields) >= 3 {
+				media.Addr = strings.SplitN(fields[2], "/", 2)[0]
+			}
+		} else if strings.HasPrefix(line, "a=rtpmap:") && section == "audio" {
+			ptstr, enc, _ := strings.Cut(line[9:], " ")
+			if pt, err := strconv.Atoi(ptstr); err == nil {
+				media.RTPMap[pt] = strings.ToLower(strings.TrimSpace(enc))
+			}
+		}
+	}
+	if section != "audio" {
+		return media, fmt.Errorf("no audio stream in SDP")
+	}
+	return media, nil
+}
+
+// SIPExerRTPSelectPayload returns the first PCMU or PCMA payload type of the stream
+func SIPExerRTPSelectPayload(media *SIPExerRTPMedia) (int, int, bool) {
+	for _, pt := range media.PTs {
+		enc, ok := media.RTPMap[pt]
+		if (ok && strings.HasPrefix(enc, "pcmu/8000")) || (!ok && pt == SIPExerRTPLawPCMU) {
+			return pt, SIPExerRTPLawPCMU, true
+		}
+		if (ok && strings.HasPrefix(enc, "pcma/8000")) || (!ok && pt == SIPExerRTPLawPCMA) {
+			return pt, SIPExerRTPLawPCMA, true
+		}
+	}
+	return 0, 0, false
+}
+
+func SIPExerRTPCheckMedia(media *SIPExerRTPMedia, answer bool) error {
+	if !strings.EqualFold(media.Proto, "RTP/AVP") {
+		return fmt.Errorf("media protocol %s is not supported, only plain RTP/AVP (no SRTP, DTLS or ICE)", media.Proto)
+	}
+	if media.Port <= 0 || media.Port > 65535 {
+		return fmt.Errorf("audio stream without a valid port")
+	}
+	if _, _, ok := SIPExerRTPSelectPayload(media); !ok {
+		return fmt.Errorf("audio stream without PCMU or PCMA payload type")
+	}
+	if answer {
+		if ip := net.ParseIP(media.Addr); len(media.Addr) == 0 || (ip != nil && ip.IsUnspecified()) {
+			return fmt.Errorf("audio stream without a connection address")
+		}
+	}
+	return nil
+}
+
+// SIPExerRTPOpen binds the RTP socket on the port of the SDP offer
+func SIPExerRTPOpen(seDlg *SIPExerDialog) int {
+	offer, err := SIPExerRTPParseSDP(seDlg.FirstRequest.Body.Content)
+	if err == nil {
+		err = SIPExerRTPCheckMedia(&offer, false)
+	}
+	if err != nil {
+		SIPExerPrintf(SIPExerLogError, "rtp: invalid SDP offer - %v\n", err)
+		return SIPExerErrRTPOffer
+	}
+	lAddr := &net.UDPAddr{Port: offer.Port}
+	if host, _, err1 := net.SplitHostPort(seDlg.LocalAddr); err1 == nil {
+		lAddr.IP = net.ParseIP(host)
+	}
+	conn, err := net.ListenUDP("udp", lAddr)
+	if err != nil {
+		SIPExerPrintf(SIPExerLogError, "rtp: failed to open socket - %v\n", err)
+		return SIPExerErrRTPOffer
+	}
+	seDlg.RTP = &SIPExerRTPSession{Conn: conn, stop: make(chan struct{})}
+	seDlg.RTP.Info.LocalAddress = conn.LocalAddr().String()
+	return SIPExerRetOK
+}
+
+// SIPExerRTPStart sends the audio to the address of the SDP answer, from the same socket
+func SIPExerRTPStart(seDlg *SIPExerDialog) int {
+	rtpS := seDlg.RTP
+	answer, err := SIPExerRTPParseSDP(seDlg.LastResponse.Body.Content)
+	if err == nil {
+		err = SIPExerRTPCheckMedia(&answer, true)
+	}
+	var rAddr *net.UDPAddr
+	if err == nil {
+		rAddr, err = net.ResolveUDPAddr("udp", net.JoinHostPort(answer.Addr, strconv.Itoa(answer.Port)))
+	}
+	if err != nil {
+		SIPExerPrintf(SIPExerLogError, "rtp: invalid SDP answer - %v\n", err)
+		return SIPExerErrRTPAnswer
+	}
+	pt, law, _ := SIPExerRTPSelectPayload(&answer)
+	rtpS.Info.RemoteAddress = rAddr.String()
+	rtpS.Info.PayloadType = pt
+	rtpS.Started = true
+	rtpS.sendDone = make(chan struct{})
+	rtpS.recvDone = make(chan struct{})
+	npkts := SIPExerRTPPacketCount(sipexerRTPAudio)
+	SIPExerPrintf(SIPExerLogInfo, "rtp: sending %d packets with payload type %d from %s to %s\n",
+		npkts, pt, rtpS.Info.LocalAddress, rtpS.Info.RemoteAddress)
+	go SIPExerRTPReceive(rtpS)
+	go SIPExerRTPSend(rtpS, rAddr, pt, law, SIPExerRTPEncodeAudio(sipexerRTPAudio, law), npkts)
+	return SIPExerRetOK
+}
+
+func SIPExerRTPTime(t time.Time) string {
+	return t.UTC().Format("2006-01-02T15:04:05.000Z07:00")
+}
+
+func SIPExerRTPSend(rtpS *SIPExerRTPSession, rAddr *net.UDPAddr, pt int, law int, payload []byte, npkts int) {
+	defer close(rtpS.sendDone)
+	silence := byte(0xFF)
+	if law == SIPExerRTPLawPCMA {
+		silence = 0xD5
+	}
+	seq := uint16(mathrand.Intn(0x10000))
+	ts := mathrand.Uint32()
+	ssrc := mathrand.Uint32()
+	chunk := make([]byte, SIPExerRTPSamples)
+	tStart := time.Now()
+	for i := 0; i < npkts; i++ {
+		if i > 0 {
+			select {
+			case <-rtpS.stop:
+				return
+			case <-time.After(time.Until(tStart.Add(time.Duration(i*SIPExerRTPPtime) * time.Millisecond))):
+			}
+		}
+		n := copy(chunk, payload[i*SIPExerRTPSamples:])
+		for j := n; j < len(chunk); j++ {
+			chunk[j] = silence
+		}
+		pkt := SIPExerRTPPacket(pt, i == 0, seq+uint16(i), ts+uint32(i*SIPExerRTPSamples), ssrc, chunk)
+		if _, err := rtpS.Conn.WriteToUDP(pkt, rAddr); err != nil {
+			SIPExerPrintf(SIPExerLogError, "rtp: failed to send - %v\n", err)
+			return
+		}
+		if i == 0 {
+			rtpS.Info.FirstSent = SIPExerRTPTime(time.Now())
+		}
+		rtpS.Info.PacketsSent++
+		rtpS.Info.BytesSent += len(chunk)
+	}
+}
+
+func SIPExerRTPReceive(rtpS *SIPExerRTPSession) {
+	defer close(rtpS.recvDone)
+	buf := make([]byte, 2048)
+	for {
+		n, _, err := rtpS.Conn.ReadFromUDP(buf)
+		if err != nil {
+			return
+		}
+		hlen := 12 + 4*int(buf[0]&0x0F)
+		if n < hlen || buf[0]>>6 != 2 || (buf[1]&0x7F >= 72 && buf[1]&0x7F <= 76) {
+			// skip non-RTP and multiplexed RTCP packets
+			continue
+		}
+		if rtpS.Info.PacketsReceived == 0 {
+			rtpS.Info.FirstReceived = SIPExerRTPTime(time.Now())
+		}
+		rtpS.Info.PacketsReceived++
+		rtpS.Info.BytesReceived += n - hlen
+	}
+}
+
+// SIPExerRTPClose stops sending and receiving, then records the statistics
+func SIPExerRTPClose(seDlg *SIPExerDialog) {
+	rtpS := seDlg.RTP
+	if rtpS == nil {
+		return
+	}
+	seDlg.RTP = nil
+	close(rtpS.stop)
+	if rtpS.Started {
+		<-rtpS.sendDone
+	}
+	rtpS.Conn.Close()
+	if !rtpS.Started {
+		return
+	}
+	<-rtpS.recvDone
+	info := rtpS.Info
+	sipexerLastRTPInfo.Store(&info)
+	SIPExerPrintf(SIPExerLogInfo, "rtp: sent %d packets (%d bytes), received %d packets (%d bytes)\n",
+		info.PacketsSent, info.BytesSent, info.PacketsReceived, info.BytesReceived)
 }
