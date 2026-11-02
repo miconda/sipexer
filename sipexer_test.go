@@ -5,6 +5,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"math/big"
@@ -1270,4 +1272,276 @@ func TestSelectDigestAuthParamsModes(t *testing.T) {
 	if got := SIPExerSelectDigestAuthParams(&msg, "WWW-Authenticate", "SHA-1"); got != nil {
 		t.Fatalf("expected nil for non-existing requested algorithm, got: %#v", got)
 	}
+}
+
+func makeTestWAV(format uint16, channels uint16, rate uint32, width uint16, data []byte) []byte {
+	b := []byte("RIFF\x00\x00\x00\x00WAVEfmt \x10\x00\x00\x00")
+	b = binary.LittleEndian.AppendUint16(b, format)
+	b = binary.LittleEndian.AppendUint16(b, channels)
+	b = binary.LittleEndian.AppendUint32(b, rate)
+	b = binary.LittleEndian.AppendUint32(b, rate*uint32(channels*width/8))
+	b = binary.LittleEndian.AppendUint16(b, channels*width/8)
+	b = binary.LittleEndian.AppendUint16(b, width)
+	b = append(b, "LIST\x03\x00\x00\x00abc\x00data"...)
+	b = binary.LittleEndian.AppendUint32(b, uint32(len(data)))
+	return append(b, data...)
+}
+
+func TestRTPParseWAV(t *testing.T) {
+	audio, err := SIPExerRTPParseWAV(makeTestWAV(1, 1, 8000, 16, []byte{0x01, 0x00, 0xff, 0xff, 0x00, 0x80}), "a.wav")
+	if err != nil || audio.Law != SIPExerRTPLawLinear || len(audio.Samples) != 3 ||
+		audio.Samples[0] != 1 || audio.Samples[1] != -1 || audio.Samples[2] != -32768 {
+		t.Fatalf("unexpected 16-bit PCM WAV result: %+v %v", audio, err)
+	}
+	audio, err = SIPExerRTPParseWAV(makeTestWAV(7, 1, 8000, 8, []byte{0xff, 0x7f}), "u.wav")
+	if err != nil || audio.Law != SIPExerRTPLawPCMU || string(audio.G711) != "\xff\x7f" {
+		t.Fatalf("unexpected G.711 WAV result: %+v %v", audio, err)
+	}
+	for _, wav := range [][]byte{makeTestWAV(1, 1, 16000, 16, []byte{0, 0}), makeTestWAV(1, 2, 8000, 16, []byte{0, 0, 0, 0}),
+		makeTestWAV(1, 1, 8000, 8, []byte{0x80})} {
+		if _, err = SIPExerRTPParseWAV(wav, "in.wav"); err == nil ||
+			!strings.Contains(err.Error(), "ffmpeg -i in.wav -ar 8000 -ac 1") || !strings.Contains(err.Error(), "sox in.wav -r 8000 -c 1") {
+			t.Fatalf("expected an error with conversion commands, got: %v", err)
+		}
+	}
+	if _, err = SIPExerRTPParseWAV([]byte("not a wav file"), "x.wav"); err == nil {
+		t.Fatalf("expected an error for a non WAV file")
+	}
+}
+
+func TestRTPLoadAudioRawAndTone(t *testing.T) {
+	withCleanState(t, func() {
+		dir := t.TempDir()
+		for _, tc := range []struct {
+			name   string
+			option string
+			law    int
+		}{{"a.alaw", "", SIPExerRTPLawPCMA}, {"a.pcmu", "", SIPExerRTPLawPCMU}, {"a.raw", "", -2},
+			{"a.raw", "pcmu", SIPExerRTPLawPCMU}, {"a.ulaw", "alaw", SIPExerRTPLawPCMA}, {"a.alaw", "x", -2}} {
+			cliops.rtpfile = filepath.Join(dir, tc.name)
+			cliops.rtpfilelaw = tc.option
+			if err := os.WriteFile(cliops.rtpfile, []byte{0xd5, 0xd5}, 0644); err != nil {
+				t.Fatal(err)
+			}
+			audio, err := SIPExerRTPLoadAudio()
+			if (tc.law == -2 && err == nil) || (tc.law != -2 && (err != nil || audio.Law != tc.law || len(audio.G711) != 2)) {
+				t.Fatalf("unexpected raw audio for %+v: %+v %v", tc, audio, err)
+			}
+		}
+		cliops.rtptone = "440"
+		if _, err := SIPExerRTPLoadAudio(); err == nil {
+			t.Fatalf("expected an error for rtp-file and rtp-tone together")
+		}
+		cliops.rtpfile = ""
+		for spec, n := range map[string]int{"440": 40000, "440:100": 800, ":40": 320, "4000": -1, "0:10": -1, "a": -1, "1000:-5": -1} {
+			cliops.rtptone = spec
+			audio, err := SIPExerRTPLoadAudio()
+			if (n < 0 && err == nil) || (n >= 0 && (err != nil || len(audio.Samples) != n)) {
+				t.Fatalf("unexpected tone result for %q: %v", spec, err)
+			}
+		}
+	})
+}
+
+func TestRTPG711(t *testing.T) {
+	for _, tc := range []struct {
+		sample int16
+		ulaw   byte
+		alaw   byte
+	}{{0, 0xff, 0xd5}, {32767, 0x80, 0xaa}, {-32768, 0x00, 0x2a}, {1000, 0xce, 0xfa}, {-1000, 0x4e, 0x7a}} {
+		if u, a := SIPExerLinearToULaw(tc.sample), SIPExerLinearToALaw(tc.sample); u != tc.ulaw || a != tc.alaw {
+			t.Fatalf("unexpected G.711 encoding of %d: ulaw 0x%02x alaw 0x%02x", tc.sample, u, a)
+		}
+	}
+	if SIPExerULawToLinear(0x80) != 32124 || SIPExerULawToLinear(0x00) != -32124 ||
+		SIPExerALawToLinear(0xaa) != 32256 || SIPExerALawToLinear(0x2a) != -32256 {
+		t.Fatalf("unexpected G.711 decoding of the largest values")
+	}
+	for i := 0; i < 256; i++ {
+		if c := byte(i); c != 0x7f && SIPExerLinearToULaw(SIPExerULawToLinear(c)) != c {
+			t.Fatalf("ulaw round trip failed for 0x%02x", c)
+		}
+		if c := byte(i); SIPExerLinearToALaw(SIPExerALawToLinear(c)) != c {
+			t.Fatalf("alaw round trip failed for 0x%02x", c)
+		}
+	}
+	ulaw := &SIPExerRTPAudio{Law: SIPExerRTPLawPCMU, G711: []byte{0x80, 0xff, 0x00}}
+	if got := SIPExerRTPEncodeAudio(ulaw, SIPExerRTPLawPCMU); string(got) != string(ulaw.G711) {
+		t.Fatalf("expected G.711 data of the same law as is, got: %x", got)
+	}
+	if got := SIPExerRTPEncodeAudio(ulaw, SIPExerRTPLawPCMA); string(got) != "\xaa\xd5\x2a" {
+		t.Fatalf("unexpected ulaw to alaw transcoding: %x", got)
+	}
+	pcm := &SIPExerRTPAudio{Law: SIPExerRTPLawLinear, Samples: []int16{1000, -1000}}
+	if got := SIPExerRTPEncodeAudio(pcm, SIPExerRTPLawPCMU); string(got) != "\xce\x4e" {
+		t.Fatalf("unexpected linear to ulaw encoding: %x", got)
+	}
+}
+
+func TestRTPPacketAndSDP(t *testing.T) {
+	pkt := SIPExerRTPPacket(8, true, 0xfffe, 0x01020304, 0x0a0b0c0d, []byte{0xd5, 0xd5})
+	if string(pkt) != "\x80\x88\xff\xfe\x01\x02\x03\x04\x0a\x0b\x0c\x0d\xd5\xd5" {
+		t.Fatalf("unexpected RTP packet: %x", pkt)
+	}
+	if pkt = SIPExerRTPPacket(0, false, 1, 2, 3, nil); pkt[1] != 0x00 || len(pkt) != 12 {
+		t.Fatalf("unexpected RTP packet without marker: %x", pkt)
+	}
+
+	sdp := "v=0\r\no=- 1 1 IN IP4 192.0.2.1\r\ns=-\r\nc=IN IP4 192.0.2.1\r\nt=0 0\r\n" +
+		"m=video 4000 RTP/AVP 97\r\nc=IN IP4 192.0.2.9\r\n" +
+		"m=audio 4002 RTP/AVP 101 96 0\r\na=rtpmap:101 telephone-event/8000\r\na=rtpmap:96 PCMA/8000\r\n"
+	media, err := SIPExerRTPParseSDP(sdp)
+	if err != nil || SIPExerRTPCheckMedia(&media, true) != nil || media.Addr != "192.0.2.1" || media.Port != 4002 {
+		t.Fatalf("unexpected parsed audio stream: %+v %v", media, err)
+	}
+	if pt, law, ok := SIPExerRTPSelectPayload(&media); !ok || pt != 96 || law != SIPExerRTPLawPCMA {
+		t.Fatalf("expected dynamic PCMA payload type 96, got: %d %d %v", pt, law, ok)
+	}
+	for _, bad := range []string{
+		"c=IN IP4 192.0.2.1\r\nm=audio 4002 RTP/SAVP 0\r\na=crypto:1 AES_CM_128_HMAC_SHA1_80 inline:x\r\n",
+		"c=IN IP4 192.0.2.1\r\nm=audio 0 RTP/AVP 0\r\n",
+		"c=IN IP4 192.0.2.1\r\nm=audio 4002 RTP/AVP 9 18\r\n",
+		"c=IN IP4 0.0.0.0\r\nm=audio 4002 RTP/AVP 8\r\n",
+		"c=IN IP4 192.0.2.1\r\nm=video 4002 RTP/AVP 97\r\n",
+	} {
+		if media, err = SIPExerRTPParseSDP(bad); err == nil && SIPExerRTPCheckMedia(&media, true) == nil {
+			t.Fatalf("expected unusable SDP answer: %q", bad)
+		}
+	}
+}
+
+func TestDialogLoopRTPStream(t *testing.T) {
+	withCleanState(t, func() {
+		cliops.timeout = 3000
+		cliops.invite = true
+		cliops.rtptone = "1000:200"
+		var err error
+		if sipexerRTPAudio, err = SIPExerRTPLoadAudio(); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { sipexerRTPAudio = nil }()
+		SIPExerResetRTPInfo()
+		defer SIPExerResetRTPInfo()
+
+		srv, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer srv.Close()
+		peer, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer peer.Close()
+
+		done := make(chan string, 2)
+		offerPort := make(chan int, 1)
+		go func() {
+			// RTP peer: check and echo the packets
+			port := <-offerPort
+			buf := make([]byte, 2048)
+			var first []byte
+			for i := 0; i < 10; i++ {
+				_ = peer.SetReadDeadline(time.Now().Add(2 * time.Second))
+				n, src, err := peer.ReadFromUDP(buf)
+				if err != nil {
+					done <- "rtp packet " + strconv.Itoa(i) + " not received: " + err.Error()
+					return
+				}
+				if src.Port != port || n != 172 || buf[0] != 0x80 || buf[1]&0x7f != 8 || (buf[1]&0x80 != 0) != (i == 0) {
+					done <- "unexpected rtp packet " + strconv.Itoa(i) + " from " + src.String() + ": " + hex.EncodeToString(buf[:12])
+					return
+				}
+				if i == 0 {
+					first = append([]byte(nil), buf[:12]...)
+				} else if binary.BigEndian.Uint16(buf[2:]) != binary.BigEndian.Uint16(first[2:])+uint16(i) ||
+					binary.BigEndian.Uint32(buf[4:]) != binary.BigEndian.Uint32(first[4:])+uint32(160*i) ||
+					binary.BigEndian.Uint32(buf[8:]) != binary.BigEndian.Uint32(first[8:]) {
+					done <- "unexpected rtp sequence, timestamp or ssrc in packet " + strconv.Itoa(i) + ": " + hex.EncodeToString(buf[:12])
+					return
+				}
+				_, _ = peer.WriteToUDP(buf[:n], src)
+			}
+			done <- ""
+		}()
+		go func() {
+			// SIP peer: answer the INVITE with PCMA, then BYE with 200
+			buf := make([]byte, 65535)
+			_ = srv.SetReadDeadline(time.Now().Add(3 * time.Second))
+			for {
+				n, src, err := srv.ReadFromUDP(buf)
+				if err != nil {
+					done <- "sip request not received: " + err.Error()
+					return
+				}
+				req := sgsip.SGSIPMessage{}
+				if sgsip.SGSIPParseMessage(string(buf[:n]), &req) != sgsip.SGSIPRetOK || req.FLine.MType != sgsip.FLineRequest ||
+					req.FLine.MethodId == sgsip.SIPMethodACK {
+					continue
+				}
+				rsp := ""
+				sgsip.SGSIPMessageToResponseString(&req, "200", "OK", &rsp)
+				if req.FLine.MethodId == sgsip.SIPMethodINVITE {
+					offer, _ := SIPExerRTPParseSDP(req.Body.Content)
+					offerPort <- offer.Port
+					rmsg := sgsip.SGSIPMessage{}
+					sgsip.SGSIPParseMessage(rsp, &rmsg)
+					sgsip.SGSIPMessageHeaderSet(&rmsg, "Contact", "<sip:bob@"+srv.LocalAddr().String()+">")
+					rmsg.Body.Content = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=-\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\nm=audio " +
+						strconv.Itoa(peer.LocalAddr().(*net.UDPAddr).Port) + " RTP/AVP 8 101\r\na=rtpmap:101 telephone-event/8000\r\n"
+					rmsg.Body.ContentLen = len(rmsg.Body.Content)
+					rmsg.Body.ContentType = "application/sdp"
+					sgsip.SGSIPMessageToString(&rmsg, &rsp)
+				}
+				_, _ = srv.WriteToUDP([]byte(rsp), src)
+				if req.FLine.MethodId == sgsip.SIPMethodBYE {
+					done <- ""
+					return
+				}
+			}
+		}()
+
+		dstSockAddr := sgsip.SGSIPSocketAddress{}
+		sgsip.SGSIPParseSocketAddress("udp:"+srv.LocalAddr().String(), &dstSockAddr)
+		seDlg := &SIPExerDialog{}
+		if ret := SIPExerInitUDPDialog(dstSockAddr, seDlg); ret != SIPExerRetOK {
+			t.Fatalf("failed to init udp dialog: %d", ret)
+		}
+		defer SIPExerDialogCloseConn(seDlg)
+		tplfields := make(map[string]any)
+		SIPExerPrepareTemplateFields(tplfields)
+		tplfields["ruri"] = "sip:bob@" + srv.LocalAddr().String()
+
+		ret := SIPExerDialogLoop(templateDefaultText, tplfields, seDlg)
+		for i := 0; i < 2; i++ {
+			if msg := <-done; msg != "" {
+				t.Fatal(msg)
+			}
+		}
+		if ret != 200 {
+			t.Fatalf("expected 200 for the BYE after streaming, got: %d", ret)
+		}
+		info := sipexerLastRTPInfo.Load()
+		if info == nil || info.PacketsSent != 10 || info.BytesSent != 1600 || info.PacketsReceived != 10 ||
+			info.BytesReceived != 1600 || info.PayloadType != 8 || info.RemoteAddress != peer.LocalAddr().String() ||
+			len(info.FirstSent) == 0 || len(info.FirstReceived) == 0 {
+			t.Fatalf("unexpected rtp info: %+v", info)
+		}
+		data, _ := json.Marshal(SIPExerExitResult{RTP: info})
+		if !strings.Contains(string(data), `"rtp":{"localAddress":`) {
+			t.Fatalf("unexpected rtp info in result: %s", data)
+		}
+	})
+}
+
+func TestRTPOpenRefusesSRTPOffer(t *testing.T) {
+	withCleanState(t, func() {
+		for _, offer := range []string{"m=audio 4000 RTP/SAVP 0\r\n", "m=audio 4000 UDP/TLS/RTP/SAVPF 0\r\n", "m=video 4000 RTP/AVP 97\r\n"} {
+			seDlg := &SIPExerDialog{Proto: "udp", ProtoId: sgsip.ProtoUDP, LocalAddr: "127.0.0.1:5060",
+				FirstRequest: &sgsip.SGSIPMessage{Body: sgsip.SGSIPBody{Content: "c=IN IP4 127.0.0.1\r\n" + offer}}}
+			if ret := SIPExerRTPOpen(seDlg); ret != SIPExerErrRTPOffer || seDlg.RTP != nil {
+				t.Fatalf("expected rtp to be refused for offer %q, got: %d", offer, ret)
+			}
+		}
+	})
 }
