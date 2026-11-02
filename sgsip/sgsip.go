@@ -1009,7 +1009,7 @@ func SGSIPHeaderGetType(name string) int {
 func SGSIPParseBody(inputStr string, bodyVal *SGSIPBody) int {
 	strArray := strings.SplitN(inputStr, "\r\n\r\n", 2)
 	if len(strArray) < 2 {
-		strArray := strings.SplitN(inputStr, "\n\n", 2)
+		strArray = strings.SplitN(inputStr, "\n\n", 2)
 		if len(strArray) < 2 {
 			return SGSIPRetErrBody
 		}
