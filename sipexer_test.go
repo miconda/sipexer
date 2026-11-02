@@ -1249,6 +1249,80 @@ func TestSelectDigestAuthParamsUsesFirstHeader(t *testing.T) {
 	}
 }
 
+func TestRunRegisterFirstRegisterHasNoInviteBody(t *testing.T) {
+	withCleanState(t, func() {
+		cliops.timeout = 3000
+		cliops.invite = true
+		cliops.registerfirst = true
+
+		srv, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer srv.Close()
+
+		done := make(chan string, 1)
+		go func() {
+			buf := make([]byte, 65535)
+			_ = srv.SetReadDeadline(time.Now().Add(3 * time.Second))
+			for _, want := range []struct {
+				method string
+				code   string
+				reason string
+				body   bool
+			}{
+				{method: "REGISTER", code: "200", reason: "OK", body: false},
+				{method: "INVITE", code: "486", reason: "Busy Here", body: true},
+			} {
+				req := sgsip.SGSIPMessage{}
+				var peer *net.UDPAddr
+				for {
+					n, addr, err := srv.ReadFromUDP(buf)
+					if err != nil {
+						done <- "no " + want.method + " request: " + err.Error()
+						return
+					}
+					if sgsip.SGSIPParseMessage(string(buf[:n]), &req) == sgsip.SGSIPRetOK &&
+						req.FLine.MType == sgsip.FLineRequest && req.FLine.Method == want.method {
+						peer = addr
+						break
+					}
+				}
+				if hasBody := len(req.Body.Content) > 0; hasBody != want.body {
+					done <- "unexpected body in " + want.method + ": " + req.Data
+					return
+				}
+				rsp := ""
+				if sgsip.SGSIPMessageToResponseString(&req, want.code, want.reason, &rsp) != sgsip.SGSIPRetOK {
+					done <- "failed to build response"
+					return
+				}
+				if _, err := srv.WriteToUDP([]byte(rsp), peer); err != nil {
+					done <- "failed to send response: " + err.Error()
+					return
+				}
+			}
+			done <- ""
+		}()
+
+		dstSockAddr := sgsip.SGSIPSocketAddress{}
+		if sgsip.SGSIPParseSocketAddress("udp:"+srv.LocalAddr().String(), &dstSockAddr) != sgsip.SGSIPRetOK {
+			t.Fatal("failed to parse responder address")
+		}
+		tplfields := make(map[string]any)
+		SIPExerPrepareTemplateFields(tplfields)
+		tplfields["ruri"] = "sip:bob@" + srv.LocalAddr().String()
+
+		ret := SIPExerRunRegisterFirst(dstSockAddr, nil, templateDefaultText, tplfields)
+		if msg := <-done; msg != "" {
+			t.Fatal(msg)
+		}
+		if ret != 486 {
+			t.Fatalf("expected 486 for the INVITE stage, got: %d", ret)
+		}
+	})
+}
+
 func TestSelectDigestAuthParamsModes(t *testing.T) {
 	msg := sgsip.SGSIPMessage{
 		Headers: []sgsip.SGSIPHeader{
