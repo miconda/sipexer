@@ -745,7 +745,7 @@ func init() {
 	flag.BoolVar(&cliops.setuser, "set-user", cliops.setuser, "set R-URI user to To-URI user for destination proxy address")
 	flag.BoolVar(&cliops.setuser, "su", cliops.setuser, "set R-URI user to To-URI user for destination proxy address")
 	flag.BoolVar(&cliops.subscribe, "subscribe", cliops.subscribe, "set method to SUBSCRIBE")
-	flag.BoolVar(&cliops.subscribesession, "subscribe-session", cliops.subscribesession, "set method to SUBSCRIBE and wait for NOTIFY requests for sessionwait interval")
+	flag.BoolVar(&cliops.subscribesession, "subscribe-session", cliops.subscribesession, "set method to SUBSCRIBE and wait for NOTIFY requests for sessionwait interval, refreshing before expires and re-subscribing after a failure")
 	flag.BoolVar(&cliops.templatedefaults, "template-defaults", cliops.templatedefaults, "print default (internal) template data")
 	flag.BoolVar(&cliops.templatedefaults, "tpd", cliops.templatedefaults, "print default (internal) template data")
 	flag.BoolVar(&cliops.templaterun, "template-run", cliops.templaterun, "run template execution and print the result")
@@ -3062,12 +3062,132 @@ func SIPExerDialogRequestIsInvite(seDlg *SIPExerDialog) bool {
 	return req != nil && req.FLine.MethodId == sgsip.SIPMethodINVITE
 }
 
+// SIPExerSubscribeRefresh turns the last SUBSCRIBE into an in-dialog refresh
+func SIPExerSubscribeRefresh(seDlg *SIPExerDialog, smsg *string) int {
+	var hv string
+	sgsip.SGSIPMessageHeaderGet(seDlg.FirstRequest, "To", &hv)
+	if !strings.Contains(hv, ";tag=") {
+		// the dialog-creating 2xx gives the To-tag and the route set
+		sgsip.SGSIPMessageHeaderGet(seDlg.LastResponse, "To", &hv)
+		sgsip.SGSIPMessageHeaderSet(seDlg.FirstRequest, "To", hv)
+		var rts []string
+		for _, h := range seDlg.LastResponse.Headers {
+			if h.HType == sgsip.HeaderTypeRecordRoute {
+				for _, r := range strings.Split(h.Body, ",") {
+					rts = append([]string{strings.TrimSpace(r)}, rts...)
+				}
+			}
+		}
+		if len(rts) > 0 {
+			sgsip.SGSIPMessageHeaderSet(seDlg.FirstRequest, "Route", strings.Join(rts, ", "))
+		}
+	}
+	if sgsip.SGSIPMessageGetContactURI(seDlg.LastResponse, &hv) == sgsip.SGSIPRetOK {
+		seDlg.FirstRequest.FLine.URI = hv
+		seDlg.FirstRequest.FLine.Val = "SUBSCRIBE " + hv + " SIP/2.0"
+	}
+	sgsip.SGSIPMessageViaUpdate(seDlg.FirstRequest)
+	sgsip.SGSIPMessageCSeqUpdate(seDlg.FirstRequest, 1)
+	if sgsip.SGSIPMessageToString(seDlg.FirstRequest, smsg) != sgsip.SGSIPRetOK {
+		SIPExerPrintf(SIPExerLogError, "failed to build sip subscribe refresh\n")
+		return SIPExerErrSIPMessageToString
+	}
+	return SIPExerRetOK
+}
+
+// SIPExerStaleResponse tells if a received response belongs to an earlier request
+func SIPExerStaleResponse(reqMsg *sgsip.SGSIPMessage, rmsg []byte) bool {
+	var qcid, rcid string
+	if sgsip.SGSIPMessageHeaderGet(reqMsg, "Call-ID", &qcid) != sgsip.SGSIPRetOK {
+		return false
+	}
+	rsp := sgsip.SGSIPMessage{}
+	if sgsip.SGSIPParseMessage(string(rmsg), &rsp) != sgsip.SGSIPRetOK || rsp.FLine.MType != sgsip.FLineResponse {
+		return false
+	}
+	sgsip.SGSIPMessageHeaderGet(&rsp, "Call-ID", &rcid)
+	return rcid != qcid || rsp.CSeq.Number != reqMsg.CSeq.Number
+}
+
+// SIPExerSubscribeRestart turns the dialog back into a new initial SUBSCRIBE
+func SIPExerSubscribeRestart(seDlg *SIPExerDialog, smsg *string) int {
+	initReq := seDlg.FirstRequest.Data
+	// keep stream bytes already read past the failed response
+	recvRest := seDlg.RecvRest
+	SIPExerDialogResetForRequest(seDlg)
+	seDlg.RecvRest = recvRest
+	seDlg.FirstRequest = new(sgsip.SGSIPMessage)
+	if sgsip.SGSIPParseMessage(initReq, seDlg.FirstRequest) != sgsip.SGSIPRetOK {
+		SIPExerPrintf(SIPExerLogError, "failed to parse sip subscribe\n")
+		return SIPExerErrSIPMessageFormat
+	}
+	// a new dialog needs a new Call-ID and From tag
+	sgsip.SGSIPMessageHeaderSet(seDlg.FirstRequest, "Call-ID", SIPExerMakeCallID(cliops.callidprefix))
+	var hv string
+	sgsip.SGSIPMessageHeaderGet(seDlg.FirstRequest, "From", &hv)
+	if i := strings.Index(hv, ";tag="); i >= 0 {
+		rest := ""
+		if j := strings.Index(hv[i+5:], ";"); j >= 0 {
+			rest = hv[i+5+j:]
+		}
+		hv = hv[:i] + rest
+	}
+	sgsip.SGSIPMessageHeaderSet(seDlg.FirstRequest, "From", hv+";tag="+uuid.New().String())
+	sgsip.SGSIPMessageViaUpdate(seDlg.FirstRequest)
+	if sgsip.SGSIPMessageToString(seDlg.FirstRequest, smsg) != sgsip.SGSIPRetOK {
+		SIPExerPrintf(SIPExerLogError, "failed to build sip subscribe\n")
+		return SIPExerErrSIPMessageToString
+	}
+	seDlg.RecvBuf = make([]byte, cliops.buffersize)
+	return SIPExerRetOK
+}
+
 func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDialog) int {
 	var smsg string = ""
 	var sack string = ""
 	var err error
 	var wmsg []byte
 	var skipsend bool = false
+	var transactionDeadline time.Time
+	// subscribe-session window, started by the first 2xx
+	var sessionEnd time.Time
+	// a re-subscribe after a failure is in progress
+	var resubscribing bool = false
+
+	// subscribe-session: replace a failed subscription with a new one while the window lasts
+	resubscribe := func(code int) bool {
+		if !cliops.subscribesession || sessionEnd.IsZero() {
+			return false
+		}
+		if resubscribing {
+			// wait one transaction timeout between failed re-subscribes
+			seDlg.SessionWait = cliops.timeout
+			if left := int(time.Until(sessionEnd).Milliseconds()); left < seDlg.SessionWait {
+				seDlg.SessionWait = left
+			}
+			if seDlg.SessionWait > 0 {
+				SIPExerSessionWaitAndRead(seDlg)
+			}
+		}
+		if time.Until(sessionEnd) <= 0 {
+			return false
+		}
+		if cliops.indialogdns {
+			// the failed target may be down: the new dialog resolves it again
+			SIPExerResolveDialogTarget(seDlg)
+		}
+		SIPExerPrintf(SIPExerLogInfo, "subscription failed (%d) - sending a new subscribe\n", code)
+		if SIPExerSubscribeRestart(seDlg, &smsg) < 0 {
+			return false
+		}
+		wmsg = []byte(smsg)
+		transactionDeadline = time.Now().Add(time.Millisecond * time.Duration(cliops.timeout))
+		SIPExerPrintf(SIPExerLogInfo, "sending to %s %s: [[---", seDlg.Proto, seDlg.TargetAddr)
+		SIPExerMessagePrint("\n\n", smsg, "\n")
+		SIPExerPrintf(SIPExerLogInfo, "---]]\n\n")
+		resubscribing = true
+		return true
+	}
 
 	// if no --auth-csv, fall back to the global -au/-ap values.
 	seDlg.AuthUser = cliops.authuser
@@ -3115,7 +3235,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 	wmsg = []byte(smsg)
 
 	seDlg.RecvBuf = make([]byte, cliops.buffersize)
-	transactionDeadline := time.Now().Add(time.Millisecond * time.Duration(cliops.timeout))
+	transactionDeadline = time.Now().Add(time.Millisecond * time.Duration(cliops.timeout))
 	// retransmissions loop
 	for {
 		if !skipsend && ((seDlg.ProtoId != sgsip.ProtoUDP && seDlg.State != SIPExerDialogEarly) || seDlg.Resend) {
@@ -3208,6 +3328,9 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					continue
 				}
 				SIPExerPrintf(SIPExerLogError, "error reading - bytes %d - %v\n", seDlg.RecvN, err)
+				if resubscribe(408) {
+					continue
+				}
 				return SIPExerErrUDPReceiveTimeout
 			} else {
 				return ret
@@ -3223,6 +3346,12 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 			reqMsg := seDlg.FirstRequest
 			if seDlg.LastRequest != nil {
 				reqMsg = seDlg.LastRequest
+			}
+			if cliops.subscribesession && SIPExerStaleResponse(reqMsg, seDlg.RecvBuf[:seDlg.RecvN]) {
+				// a late response to an earlier request - read again without re-sending
+				skipsend = true
+				seDlg.RecvBuf = make([]byte, cliops.buffersize)
+				continue
 			}
 			ret = SIPExerProcessResponse(reqMsg, seDlg.RecvBuf[:seDlg.RecvN], seDlg.LastResponse, &seDlg.SkipAuth, &smsg, &sack, seDlg.AuthUser, seDlg.AuthPassword)
 			if ret < 0 {
@@ -3533,8 +3662,26 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					continue
 				}
 			}
+			if cliops.subscribesession && ret >= 200 && ret < 300 {
+				if sessionEnd.IsZero() {
+					sessionEnd = time.Now().Add(time.Duration(cliops.sessionwait) * time.Millisecond)
+				}
+				// refreshes and re-subscribes share the window started by the first 2xx
+				seDlg.SessionWait = int(time.Until(sessionEnd).Milliseconds())
+				resubscribing = false
+			}
 			if seDlg.SessionWait > 0 && ret >= 200 && ret < 300 &&
 				(cliops.invite || cliops.register || cliops.subscribesession) {
+				swLeft := 0
+				if cliops.subscribesession {
+					var hv string
+					sgsip.SGSIPMessageHeaderGet(seDlg.LastResponse, "Expires", &hv)
+					// refresh at 90% of the granted expires while the session wait lasts
+					if exp, err := strconv.Atoi(hv); err == nil && exp > 0 && exp*900 < seDlg.SessionWait {
+						swLeft = seDlg.SessionWait - exp*900
+						seDlg.SessionWait = exp * 900
+					}
+				}
 				if seDlg.RTP != nil {
 					seDlg.RTPRet = SIPExerRTPStart(seDlg)
 				}
@@ -3543,7 +3690,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 				}
 				SIPExerRTPClose(seDlg)
 				smsg = ""
-				seDlg.SessionWait = 0
+				seDlg.SessionWait = swLeft
 				if cliops.register {
 					sgsip.SGSIPMessageViaUpdate(seDlg.FirstRequest)
 					sgsip.SGSIPMessageCSeqUpdate(seDlg.FirstRequest, 1)
@@ -3569,8 +3716,13 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 						return lret
 					}
 				} else if cliops.subscribesession {
-					// subscribe-session mode ends after waiting for NOTIFY handling
-					return ret
+					if swLeft == 0 {
+						// subscribe-session mode ends after waiting for NOTIFY handling
+						return ret
+					}
+					if lret := SIPExerSubscribeRefresh(seDlg, &smsg); lret < 0 {
+						return lret
+					}
 				}
 				if len(smsg) > 0 {
 					// send the new message
@@ -3611,6 +3763,9 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					seDlg.SkipAuth = true
 					seDlg.RecvBuf = make([]byte, cliops.buffersize)
 					seDlg.State = SIPExerDialogStarted
+					continue
+				}
+				if resubscribe(ret) {
 					continue
 				}
 			}
