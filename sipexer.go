@@ -2999,6 +2999,15 @@ func SIPExerDialogSetLastRequest(seDlg *SIPExerDialog, smsg string) int {
 	return SIPExerRetOK
 }
 
+// SIPExerDialogRequestIsInvite tells if the request being sent in the dialog is an INVITE
+func SIPExerDialogRequestIsInvite(seDlg *SIPExerDialog) bool {
+	req := seDlg.FirstRequest
+	if seDlg.LastRequest != nil {
+		req = seDlg.LastRequest
+	}
+	return req != nil && req.FLine.MethodId == sgsip.SIPMethodINVITE
+}
+
 func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDialog) int {
 	var smsg string = ""
 	var sack string = ""
@@ -3100,14 +3109,19 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 				continue
 			}
 			if seDlg.ProtoId == sgsip.ProtoUDP && ret == SIPExerErrUDPReceiveTimeout {
-				// perform udp retransmission
-				if seDlg.TimeoutStep < cliops.timert2 {
+				// perform udp retransmission, if the total timeout (timer B/F) is not reached yet
+				elapsed := seDlg.TimeoutVal
+				if elapsed < cliops.timeout {
 					seDlg.TimeoutStep *= 2
-				} else {
-					seDlg.TimeoutStep = cliops.timert2
-				}
-				seDlg.TimeoutVal += seDlg.TimeoutStep
-				if seDlg.TimeoutVal <= cliops.timeout {
+					if !SIPExerDialogRequestIsInvite(seDlg) && seDlg.TimeoutStep > cliops.timert2 {
+						// RFC 3261 17.1.2.2: non-INVITE interval is capped at T2;
+						// INVITE (17.1.1.2) keeps doubling until the timeout
+						seDlg.TimeoutStep = cliops.timert2
+					}
+					if elapsed+seDlg.TimeoutStep > cliops.timeout {
+						seDlg.TimeoutStep = cliops.timeout - elapsed
+					}
+					seDlg.TimeoutVal = elapsed + seDlg.TimeoutStep
 					SIPExerPrintf(SIPExerLogInfo, "trying again - new timeout at %dms\n", seDlg.TimeoutVal)
 					continue
 				}
@@ -3340,8 +3354,13 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 				continue
 			}
 			if ret/100 == 1 {
-				// 1xx response - read again, but do not re-send request
-				seDlg.Resend = false
+				// 1xx response - read again. An INVITE is not re-sent any more,
+				// a non-INVITE request keeps being re-sent every T2 (RFC 3261 17.1.2.2)
+				if seDlg.ProtoId == sgsip.ProtoUDP && seDlg.LastResponse.CSeq.MethodId != sgsip.SIPMethodINVITE {
+					seDlg.TimeoutStep = cliops.timert2
+				} else {
+					seDlg.Resend = false
+				}
 				if seDlg.State == SIPExerDialogStarted {
 					seDlg.State = SIPExerDialogEarly
 				}

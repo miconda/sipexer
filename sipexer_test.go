@@ -1233,6 +1233,118 @@ func TestDialogLoopAuthenticatesChallengedBYE(t *testing.T) {
 	})
 }
 
+// runUDPRetransmitDialog runs the dialog loop for the given method against a local
+// UDP peer. The peer gets the copies of the request seen until it stops being sent
+// and calls onRequest with the number of the copy; a non-empty answer is sent back.
+func runUDPRetransmitDialog(t *testing.T, method string, onRequest func(n int, req *sgsip.SGSIPMessage) string) (int, int) {
+	cliops.timert1 = 20
+	cliops.timert2 = 160
+	cliops.timeout = 1280
+
+	srv, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+
+	copies := make(chan int, 1)
+	go func() {
+		buf := make([]byte, 65535)
+		n := 0
+		for {
+			_ = srv.SetReadDeadline(time.Now().Add(1500 * time.Millisecond))
+			sz, peer, err := srv.ReadFromUDP(buf)
+			if err != nil {
+				copies <- n
+				return
+			}
+			req := sgsip.SGSIPMessage{}
+			if sgsip.SGSIPParseMessage(string(buf[:sz]), &req) != sgsip.SGSIPRetOK ||
+				req.FLine.MType != sgsip.FLineRequest || req.FLine.Method != method {
+				continue
+			}
+			n++
+			code := onRequest(n, &req)
+			if len(code) > 0 {
+				rsp := ""
+				if sgsip.SGSIPMessageToResponseString(&req, code, "Reply", &rsp) == sgsip.SGSIPRetOK {
+					_, _ = srv.WriteToUDP([]byte(rsp), peer)
+				}
+			}
+		}
+	}()
+
+	dstSockAddr := sgsip.SGSIPSocketAddress{}
+	if sgsip.SGSIPParseSocketAddress("udp:"+srv.LocalAddr().String(), &dstSockAddr) != sgsip.SGSIPRetOK {
+		t.Fatal("failed to parse responder address")
+	}
+	seDlg := &SIPExerDialog{}
+	if ret := SIPExerInitUDPDialog(dstSockAddr, seDlg); ret != SIPExerRetOK {
+		t.Fatalf("failed to init udp dialog: %d", ret)
+	}
+	defer SIPExerDialogCloseConn(seDlg)
+	tplfields := make(map[string]any)
+	SIPExerPrepareTemplateFields(tplfields)
+	tplfields["method"] = method
+	tplfields["ruri"] = "sip:bob@" + srv.LocalAddr().String()
+
+	ret := SIPExerDialogLoop(templateDefaultText, tplfields, seDlg)
+	return ret, <-copies
+}
+
+func TestDialogLoopUDPInviteRetransmitsWithoutT2Cap(t *testing.T) {
+	withCleanState(t, func() {
+		cliops.invite = true
+		ret, copies := runUDPRetransmitDialog(t, "INVITE", func(int, *sgsip.SGSIPMessage) string { return "" })
+		if ret != SIPExerErrUDPReceiveTimeout {
+			t.Fatalf("expected receive timeout, got: %d", ret)
+		}
+		// timer A doubles up to timer B (64*T1): sent at 0, 1, 3, 7, 15, 31 and 63 times T1
+		if copies != 7 {
+			t.Fatalf("expected 7 copies of the INVITE, got: %d", copies)
+		}
+	})
+}
+
+func TestDialogLoopUDPNonInviteRetransmitsAfter1xx(t *testing.T) {
+	withCleanState(t, func() {
+		ret, copies := runUDPRetransmitDialog(t, "OPTIONS", func(n int, _ *sgsip.SGSIPMessage) string {
+			switch n {
+			case 1:
+				return "100"
+			case 4:
+				// the final response is only sent for a retransmission
+				return "200"
+			}
+			return ""
+		})
+		if ret != 200 {
+			t.Fatalf("expected 200 after retransmissions following the 100, got: %d (copies: %d)", ret, copies)
+		}
+		if copies < 4 {
+			t.Fatalf("expected at least 4 copies of the OPTIONS, got: %d", copies)
+		}
+	})
+}
+
+func TestDialogLoopUDPInviteStopsAfter1xx(t *testing.T) {
+	withCleanState(t, func() {
+		cliops.invite = true
+		ret, copies := runUDPRetransmitDialog(t, "INVITE", func(n int, _ *sgsip.SGSIPMessage) string {
+			if n == 1 {
+				return "100"
+			}
+			return ""
+		})
+		if ret != SIPExerErrUDPReceiveTimeout {
+			t.Fatalf("expected receive timeout, got: %d", ret)
+		}
+		if copies != 1 {
+			t.Fatalf("expected the INVITE not to be re-sent after the 100, got %d copies", copies)
+		}
+	})
+}
+
 func TestSelectDigestAuthParamsUsesFirstHeader(t *testing.T) {
 	msg := sgsip.SGSIPMessage{
 		Headers: []sgsip.SGSIPHeader{
