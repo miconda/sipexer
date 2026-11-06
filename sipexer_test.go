@@ -1276,7 +1276,7 @@ func TestDialogLoopAuthenticatesChallengedBYE(t *testing.T) {
 // runUDPRetransmitDialog runs the dialog loop for the given method against a local
 // UDP peer. The peer gets the copies of the request seen until it stops being sent
 // and calls onRequest with the number of the copy; a non-empty answer is sent back.
-func runUDPRetransmitDialog(t *testing.T, method string, onRequest func(n int, req *sgsip.SGSIPMessage) string) (int, int) {
+func runUDPRetransmitDialog(t *testing.T, method string, onRequest func(n int, req *sgsip.SGSIPMessage) string) (int, int, time.Duration) {
 	cliops.timert1 = 20
 	cliops.timert2 = 160
 	cliops.timeout = 1280
@@ -1328,14 +1328,17 @@ func runUDPRetransmitDialog(t *testing.T, method string, onRequest func(n int, r
 	tplfields["method"] = method
 	tplfields["ruri"] = "sip:bob@" + srv.LocalAddr().String()
 
+	started := time.Now()
 	ret := SIPExerDialogLoop(templateDefaultText, tplfields, seDlg)
-	return ret, <-copies
+	elapsed := time.Since(started)
+	_ = srv.Close()
+	return ret, <-copies, elapsed
 }
 
 func TestDialogLoopUDPInviteRetransmitsWithoutT2Cap(t *testing.T) {
 	withCleanState(t, func() {
 		cliops.invite = true
-		ret, copies := runUDPRetransmitDialog(t, "INVITE", func(int, *sgsip.SGSIPMessage) string { return "" })
+		ret, copies, _ := runUDPRetransmitDialog(t, "INVITE", func(int, *sgsip.SGSIPMessage) string { return "" })
 		if ret != SIPExerErrUDPReceiveTimeout {
 			t.Fatalf("expected receive timeout, got: %d", ret)
 		}
@@ -1348,7 +1351,9 @@ func TestDialogLoopUDPInviteRetransmitsWithoutT2Cap(t *testing.T) {
 
 func TestDialogLoopUDPNonInviteRetransmitsAfter1xx(t *testing.T) {
 	withCleanState(t, func() {
-		ret, copies := runUDPRetransmitDialog(t, "OPTIONS", func(n int, _ *sgsip.SGSIPMessage) string {
+		var requestTimes []time.Time
+		ret, copies, _ := runUDPRetransmitDialog(t, "OPTIONS", func(n int, _ *sgsip.SGSIPMessage) string {
+			requestTimes = append(requestTimes, time.Now())
 			switch n {
 			case 1:
 				return "100"
@@ -1364,13 +1369,33 @@ func TestDialogLoopUDPNonInviteRetransmitsAfter1xx(t *testing.T) {
 		if copies < 4 {
 			t.Fatalf("expected at least 4 copies of the OPTIONS, got: %d", copies)
 		}
+		if gap := requestTimes[1].Sub(requestTimes[0]); gap < 120*time.Millisecond {
+			t.Fatalf("first retransmission followed the 100 after %v, expected it after T2", gap)
+		}
+	})
+}
+
+func TestDialogLoopUDPNonInviteTimerFRemainsAbsoluteAfter1xx(t *testing.T) {
+	withCleanState(t, func() {
+		ret, _, elapsed := runUDPRetransmitDialog(t, "OPTIONS", func(n int, _ *sgsip.SGSIPMessage) string {
+			if n == 1 {
+				return "100"
+			}
+			return ""
+		})
+		if ret != SIPExerErrUDPReceiveTimeout {
+			t.Fatalf("expected receive timeout, got: %d", ret)
+		}
+		if elapsed < 1200*time.Millisecond || elapsed > 1360*time.Millisecond {
+			t.Fatalf("timer F fired after %v, expected approximately 1280ms", elapsed)
+		}
 	})
 }
 
 func TestDialogLoopUDPInviteStopsAfter1xx(t *testing.T) {
 	withCleanState(t, func() {
 		cliops.invite = true
-		ret, copies := runUDPRetransmitDialog(t, "INVITE", func(n int, _ *sgsip.SGSIPMessage) string {
+		ret, copies, _ := runUDPRetransmitDialog(t, "INVITE", func(n int, _ *sgsip.SGSIPMessage) string {
 			if n == 1 {
 				return "100"
 			}
