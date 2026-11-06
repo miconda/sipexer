@@ -3115,6 +3115,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 	wmsg = []byte(smsg)
 
 	seDlg.RecvBuf = make([]byte, cliops.buffersize)
+	transactionDeadline := time.Now().Add(time.Millisecond * time.Duration(cliops.timeout))
 	// retransmissions loop
 	for {
 		if !skipsend && ((seDlg.ProtoId != sgsip.ProtoUDP && seDlg.State != SIPExerDialogEarly) || seDlg.Resend) {
@@ -3130,7 +3131,21 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 		skipsend = false
 
 		seDlg.RecvN = 0
-		ret = SIPExerSetReadTimeout(seDlg)
+		transactionTimeout := false
+		if seDlg.ProtoId == sgsip.ProtoUDP {
+			readDeadline := time.Now().Add(time.Millisecond * time.Duration(seDlg.TimeoutStep))
+			if !readDeadline.Before(transactionDeadline) {
+				readDeadline = transactionDeadline
+				transactionTimeout = true
+			}
+			if err = seDlg.ConnUDP.Conn.SetReadDeadline(readDeadline); err != nil {
+				SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
+				return SIPExerErrUDPSetTimeout
+			}
+			ret = SIPExerRetOK
+		} else {
+			ret = SIPExerSetReadTimeout(seDlg)
+		}
 		if ret < 0 {
 			return ret
 		}
@@ -3154,6 +3169,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 				if seDlg.ProtoId == sgsip.ProtoUDP {
 					seDlg.TimeoutStep = cliops.timert1
 					seDlg.TimeoutVal = seDlg.TimeoutStep
+					transactionDeadline = time.Now().Add(time.Millisecond * time.Duration(cliops.timeout))
 					seDlg.Resend = true
 				} else {
 					seDlg.Resend = false
@@ -3173,19 +3189,21 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 				continue
 			}
 			if seDlg.ProtoId == sgsip.ProtoUDP && ret == SIPExerErrUDPReceiveTimeout {
-				// perform udp retransmission, if the total timeout (timer B/F) is not reached yet
-				elapsed := seDlg.TimeoutVal
-				if elapsed < cliops.timeout {
+				// Timer B/F is independent of the retransmission interval and keeps
+				// running when a provisional response changes that interval.
+				if !transactionTimeout && time.Now().Before(transactionDeadline) {
 					seDlg.TimeoutStep *= 2
 					if !SIPExerDialogRequestIsInvite(seDlg) && seDlg.TimeoutStep > cliops.timert2 {
 						// RFC 3261 17.1.2.2: non-INVITE interval is capped at T2;
 						// INVITE (17.1.1.2) keeps doubling until the timeout
 						seDlg.TimeoutStep = cliops.timert2
 					}
-					if elapsed+seDlg.TimeoutStep > cliops.timeout {
-						seDlg.TimeoutStep = cliops.timeout - elapsed
-					}
+					remaining := time.Until(transactionDeadline)
+					elapsed := cliops.timeout - int(remaining/time.Millisecond)
 					seDlg.TimeoutVal = elapsed + seDlg.TimeoutStep
+					if seDlg.TimeoutVal > cliops.timeout {
+						seDlg.TimeoutVal = cliops.timeout
+					}
 					SIPExerPrintf(SIPExerLogInfo, "trying again - new timeout at %dms\n", seDlg.TimeoutVal)
 					continue
 				}
@@ -3319,6 +3337,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 						if seDlg.ProtoId == sgsip.ProtoUDP {
 							seDlg.TimeoutStep = cliops.timert1
 							seDlg.TimeoutVal = seDlg.TimeoutStep
+							transactionDeadline = time.Now().Add(time.Millisecond * time.Duration(cliops.timeout))
 							seDlg.Resend = true
 						} else {
 							seDlg.Resend = false
@@ -3422,6 +3441,8 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 				// a non-INVITE request keeps being re-sent every T2 (RFC 3261 17.1.2.2)
 				if seDlg.ProtoId == sgsip.ProtoUDP && seDlg.LastResponse.CSeq.MethodId != sgsip.SIPMethodINVITE {
 					seDlg.TimeoutStep = cliops.timert2
+					// Timer E was reset to T2, so wait for it before retransmitting.
+					skipsend = true
 				} else {
 					seDlg.Resend = false
 				}
@@ -3482,6 +3503,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					if seDlg.ProtoId == sgsip.ProtoUDP {
 						seDlg.TimeoutStep = cliops.timert1
 						seDlg.TimeoutVal = seDlg.TimeoutStep
+						transactionDeadline = time.Now().Add(time.Millisecond * time.Duration(cliops.timeout))
 						seDlg.Resend = true
 					} else {
 						seDlg.Resend = false
@@ -3559,6 +3581,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					if seDlg.ProtoId == sgsip.ProtoUDP {
 						seDlg.TimeoutStep = cliops.timert1
 						seDlg.TimeoutVal = seDlg.TimeoutStep
+						transactionDeadline = time.Now().Add(time.Millisecond * time.Duration(cliops.timeout))
 						seDlg.Resend = true
 					}
 					seDlg.SkipAuth = false
@@ -3582,6 +3605,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					if seDlg.ProtoId == sgsip.ProtoUDP {
 						seDlg.TimeoutStep = cliops.timert1
 						seDlg.TimeoutVal = seDlg.TimeoutStep
+						transactionDeadline = time.Now().Add(time.Millisecond * time.Duration(cliops.timeout))
 						seDlg.Resend = true
 					}
 					seDlg.SkipAuth = true
