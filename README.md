@@ -388,6 +388,15 @@ sipexer --subscribe-session --sessionwait 15000 -ex 60 -xh "Event:presence" \
   --fuser alice -cb -sd -su tcp:server.com:5060
 ```
 
+`-udp-sockets <n>` (UDP): share `n` local sockets between all dialogs and route each received
+packet to its dialog by `Call-ID`. Default 0 keeps one socket per dialog. A small value (for
+example 4) means fewer local ports and network flows when running many dialogs at once
+(`-rb`). Each shared socket asks for 8 MB kernel buffers (on Linux, capped by
+`net.core.rmem_max` and `net.core.wmem_max`). Packets with a `Call-ID` that no running dialog
+has sent are dropped without a reply (e.g., keepalive OPTIONS or a call to a registered
+contact). It cannot be combined with `-connect-udp`, `-in-dialog-socket`, `-call-self` or
+`-call-user`.
+
 To remove the default value for implicit fields (e.g., `useragent`), the `-no-val` value can
 be provided (which is default `no`), like:
 
