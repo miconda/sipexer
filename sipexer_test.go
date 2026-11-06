@@ -1333,7 +1333,8 @@ func TestRTPLoadAudioRawAndTone(t *testing.T) {
 			t.Fatalf("expected an error for rtp-file and rtp-tone together")
 		}
 		cliops.rtpfile = ""
-		for spec, n := range map[string]int{"440": 40000, "440:100": 800, ":40": 320, "4000": -1, "0:10": -1, "a": -1, "1000:-5": -1} {
+		for spec, n := range map[string]int{"440": 40000, "440:100": 800, ":40": 320, "4000": -1, "0:10": -1, "a": -1,
+			"1000:-5": -1, "1000:3600001": -1, "1000:9223372036854775807": -1} {
 			cliops.rtptone = spec
 			audio, err := SIPExerRTPLoadAudio()
 			if (n < 0 && err == nil) || (n >= 0 && (err != nil || len(audio.Samples) != n)) {
@@ -1389,7 +1390,7 @@ func TestRTPPacketAndSDP(t *testing.T) {
 
 	sdp := "v=0\r\no=- 1 1 IN IP4 192.0.2.1\r\ns=-\r\nc=IN IP4 192.0.2.1\r\nt=0 0\r\n" +
 		"m=video 4000 RTP/AVP 97\r\nc=IN IP4 192.0.2.9\r\n" +
-		"m=audio 4002 RTP/AVP 101 96 0\r\na=rtpmap:101 telephone-event/8000\r\na=rtpmap:96 PCMA/8000\r\n"
+		"m=audio 4002 RTP/AVP 101 96 0\r\na=rtpmap:101 telephone-event/8000\r\na=rtpmap:96 PCMA/8000/1\r\n"
 	media, err := SIPExerRTPParseSDP(sdp)
 	if err != nil || SIPExerRTPCheckMedia(&media, true) != nil || media.Addr != "192.0.2.1" || media.Port != 4002 {
 		t.Fatalf("unexpected parsed audio stream: %+v %v", media, err)
@@ -1401,12 +1402,45 @@ func TestRTPPacketAndSDP(t *testing.T) {
 		"c=IN IP4 192.0.2.1\r\nm=audio 4002 RTP/SAVP 0\r\na=crypto:1 AES_CM_128_HMAC_SHA1_80 inline:x\r\n",
 		"c=IN IP4 192.0.2.1\r\nm=audio 0 RTP/AVP 0\r\n",
 		"c=IN IP4 192.0.2.1\r\nm=audio 4002 RTP/AVP 9 18\r\n",
+		"c=IN IP4 192.0.2.1\r\nm=audio 4002 RTP/AVP 96\r\na=rtpmap:96 PCMA/8000/2\r\n",
+		"c=IN IP4 192.0.2.1\r\nm=audio 4002 RTP/AVP 96\r\na=rtpmap:96 PCMU/80000\r\n",
+		"c=IN IP4 192.0.2.1\r\nm=audio 4002 RTP/AVP 128\r\na=rtpmap:128 PCMU/8000\r\n",
 		"c=IN IP4 0.0.0.0\r\nm=audio 4002 RTP/AVP 8\r\n",
 		"c=IN IP4 192.0.2.1\r\nm=video 4002 RTP/AVP 97\r\n",
 	} {
 		if media, err = SIPExerRTPParseSDP(bad); err == nil && SIPExerRTPCheckMedia(&media, true) == nil {
 			t.Fatalf("expected unusable SDP answer: %q", bad)
 		}
+	}
+}
+
+func TestRTPSendErrorPropagates(t *testing.T) {
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	recvDone := make(chan struct{})
+	close(recvDone)
+	rtpS := &SIPExerRTPSession{
+		Conn:     conn,
+		Started:  true,
+		stop:     make(chan struct{}),
+		sendDone: make(chan struct{}),
+		recvDone: recvDone,
+	}
+	SIPExerRTPSend(rtpS, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 9}, SIPExerRTPLawPCMU,
+		SIPExerRTPLawPCMU, make([]byte, SIPExerRTPSamples), 1)
+	if rtpS.SendErr == nil {
+		t.Fatal("expected the RTP write failure to be recorded")
+	}
+
+	seDlg := &SIPExerDialog{RTP: rtpS}
+	SIPExerRTPClose(seDlg)
+	if seDlg.RTPRet != SIPExerErrRTPSend {
+		t.Fatalf("expected RTP send error %d, got: %d", SIPExerErrRTPSend, seDlg.RTPRet)
 	}
 }
 
