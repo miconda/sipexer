@@ -195,7 +195,8 @@ UDP) to the address and port in the SDP of the `200 OK`. The audio source is one
   * `--rtp-file PATH` - a WAV file with 8000 Hz mono 16-bit PCM, G.711 u-law or A-law
   data, or a raw G.711 file (`.ulaw`/`.pcmu` or `.alaw`/`.pcma`, or set the law with
   `--rtp-file-law pcmu|pcma`)
-  * `--rtp-tone FREQUENCY[:DURATION]` - a sine tone (Hz, milliseconds; defaults `1000:5000`)
+  * `--rtp-tone FREQUENCY[:DURATION]` - a sine tone (Hz, milliseconds; defaults
+  `1000:5000`, maximum duration 3600000 ms)
 
 The payload type is the first `PCMU` or `PCMA` one in the SDP answer. The audio is
 encoded to it (G.711 data of the same law is sent as is) in packets of 20ms, from the
