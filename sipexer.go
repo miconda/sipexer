@@ -103,6 +103,7 @@ const (
 	SIPExerErrRTPOptions          = -1190
 	SIPExerErrRTPOffer            = -1191
 	SIPExerErrRTPAnswer           = -1192
+	SIPExerErrRTPSend             = -1193
 )
 
 var templateDefaultText string = `{{.method}} {{.ruri}} SIP/2.0
@@ -692,7 +693,7 @@ func init() {
 	flag.StringVar(&cliops.u2akaamf, "ua2-aka-amf", cliops.u2akaamf, "second user aka authentication management field - amf")
 	flag.StringVar(&cliops.rtpfile, "rtp-file", cliops.rtpfile, "send audio as RTP after INVITE is answered, from a WAV (8000 Hz mono, 16-bit PCM or G.711) or a raw G.711 file (.ulaw/.pcmu, .alaw/.pcma)")
 	flag.StringVar(&cliops.rtpfilelaw, "rtp-file-law", cliops.rtpfilelaw, "G.711 law of a raw rtp-file: pcmu | pcma (default from file extension)")
-	flag.StringVar(&cliops.rtptone, "rtp-tone", cliops.rtptone, "send a sine tone as RTP after INVITE is answered: 'frequency[:duration]' (Hz, ms; defaults 1000:5000)")
+	flag.StringVar(&cliops.rtptone, "rtp-tone", cliops.rtptone, "send a sine tone as RTP after INVITE is answered: 'frequency[:duration]' (Hz, ms; defaults 1000:5000, max duration 3600000)")
 
 	flag.BoolVar(&cliops.ack, "ack", cliops.ack, "set method to ACK")
 	flag.BoolVar(&cliops.cancel, "cancel", cliops.cancel, "set method to CANCEL")
@@ -3499,6 +3500,9 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 					if seDlg.State == SIPExerDialogTerminated {
 						// dialog terminated
 						SIPExerPrintf(SIPExerLogInfo, "dialog terminated\n")
+						if seDlg.RTPRet < 0 {
+							return seDlg.RTPRet
+						}
 						return ret
 					}
 					if sgsip.SGSIPACKToByeString(seDlg.AckRequest, &smsg) != sgsip.SGSIPRetOK {
@@ -4079,6 +4083,7 @@ const (
 	SIPExerRTPLawPCMA   = 8
 	SIPExerRTPPtime     = 20
 	SIPExerRTPSamples   = 160
+	SIPExerRTPMaxToneMS = 60 * 60 * 1000
 )
 
 // SIPExerRTPAudio keeps 8000 Hz mono audio, as G.711 data or linear samples
@@ -4104,6 +4109,7 @@ type SIPExerRTPSession struct {
 	Conn     *net.UDPConn
 	Info     SIPExerRTPInfo
 	Started  bool
+	SendErr  error
 	stop     chan struct{}
 	sendDone chan struct{}
 	recvDone chan struct{}
@@ -4220,8 +4226,8 @@ func SIPExerRTPTone(spec string) (*SIPExerRTPAudio, error) {
 	if err == nil && len(dstr) > 0 {
 		duration, err = strconv.Atoi(dstr)
 	}
-	if err != nil || freq <= 0 || freq >= 4000 || duration <= 0 {
-		return nil, fmt.Errorf("invalid rtp-tone value: %s (use frequency[:duration], 1..3999 Hz, ms)", spec)
+	if err != nil || freq <= 0 || freq >= 4000 || duration <= 0 || duration > SIPExerRTPMaxToneMS {
+		return nil, fmt.Errorf("invalid rtp-tone value: %s (use frequency[:duration], 1..3999 Hz, 1..%d ms)", spec, SIPExerRTPMaxToneMS)
 	}
 	pcm := make([]int16, duration*8)
 	for i := range pcm {
@@ -4377,15 +4383,35 @@ func SIPExerRTPParseSDP(sdp string) (SIPExerRTPMedia, error) {
 	return media, nil
 }
 
-// SIPExerRTPSelectPayload returns the first PCMU or PCMA payload type of the stream
+func SIPExerRTPG711Law(encoding string) (int, bool) {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(encoding)), "/")
+	if len(parts) < 2 || len(parts) > 3 || parts[1] != "8000" || (len(parts) == 3 && parts[2] != "1") {
+		return 0, false
+	}
+	if parts[0] == "pcmu" {
+		return SIPExerRTPLawPCMU, true
+	}
+	if parts[0] == "pcma" {
+		return SIPExerRTPLawPCMA, true
+	}
+	return 0, false
+}
+
+// SIPExerRTPSelectPayload returns the first supported PCMU or PCMA payload type of the stream
 func SIPExerRTPSelectPayload(media *SIPExerRTPMedia) (int, int, bool) {
 	for _, pt := range media.PTs {
-		enc, ok := media.RTPMap[pt]
-		if (ok && strings.HasPrefix(enc, "pcmu/8000")) || (!ok && pt == SIPExerRTPLawPCMU) {
-			return pt, SIPExerRTPLawPCMU, true
+		if pt < 0 || pt > 127 {
+			continue
 		}
-		if (ok && strings.HasPrefix(enc, "pcma/8000")) || (!ok && pt == SIPExerRTPLawPCMA) {
-			return pt, SIPExerRTPLawPCMA, true
+		enc, ok := media.RTPMap[pt]
+		if ok {
+			if law, supported := SIPExerRTPG711Law(enc); supported {
+				return pt, law, true
+			}
+			continue
+		}
+		if pt == SIPExerRTPLawPCMU || pt == SIPExerRTPLawPCMA {
+			return pt, pt, true
 		}
 	}
 	return 0, 0, false
@@ -4491,6 +4517,7 @@ func SIPExerRTPSend(rtpS *SIPExerRTPSession, rAddr *net.UDPAddr, pt int, law int
 		}
 		pkt := SIPExerRTPPacket(pt, i == 0, seq+uint16(i), ts+uint32(i*SIPExerRTPSamples), ssrc, chunk)
 		if _, err := rtpS.Conn.WriteToUDP(pkt, rAddr); err != nil {
+			rtpS.SendErr = err
 			SIPExerPrintf(SIPExerLogError, "rtp: failed to send - %v\n", err)
 			return
 		}
@@ -4533,6 +4560,9 @@ func SIPExerRTPClose(seDlg *SIPExerDialog) {
 	close(rtpS.stop)
 	if rtpS.Started {
 		<-rtpS.sendDone
+		if rtpS.SendErr != nil && seDlg.RTPRet == SIPExerRetOK {
+			seDlg.RTPRet = SIPExerErrRTPSend
+		}
 	}
 	rtpS.Conn.Close()
 	if !rtpS.Started {
