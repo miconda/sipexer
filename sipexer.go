@@ -3068,6 +3068,7 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 	var err error
 	var wmsg []byte
 	var skipsend bool = false
+	var skiptimeout bool = false
 
 	// if no --auth-csv, fall back to the global -au/-ap values.
 	seDlg.AuthUser = cliops.authuser
@@ -3130,10 +3131,13 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 		skipsend = false
 
 		seDlg.RecvN = 0
-		ret = SIPExerSetReadTimeout(seDlg)
-		if ret < 0 {
-			return ret
+		if !skiptimeout {
+			ret = SIPExerSetReadTimeout(seDlg)
+			if ret < 0 {
+				return ret
+			}
 		}
+		skiptimeout = false
 		ret = SIPExerDialogReadBytes(seDlg)
 		if ret < 0 {
 			if cliops.callself && !seDlg.CallSelfBye && seDlg.AckRequest != nil {
@@ -3177,10 +3181,13 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 				elapsed := seDlg.TimeoutVal
 				if elapsed < cliops.timeout {
 					seDlg.TimeoutStep *= 2
-					if !SIPExerDialogRequestIsInvite(seDlg) && seDlg.TimeoutStep > cliops.timert2 {
-						// RFC 3261 17.1.2.2: non-INVITE interval is capped at T2;
-						// INVITE (17.1.1.2) keeps doubling until the timeout
-						seDlg.TimeoutStep = cliops.timert2
+					if !SIPExerDialogRequestIsInvite(seDlg) {
+						// RFC 3261 17.1.2.2: timer E uses T2 in Proceeding
+						// and is capped at T2 in Trying.
+						if !seDlg.Resend || seDlg.TimeoutStep > cliops.timert2 {
+							seDlg.TimeoutStep = cliops.timert2
+						}
+						seDlg.Resend = true
 					}
 					if elapsed+seDlg.TimeoutStep > cliops.timeout {
 						seDlg.TimeoutStep = cliops.timeout - elapsed
@@ -3418,12 +3425,11 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 				continue
 			}
 			if ret/100 == 1 {
-				// 1xx response - read again. An INVITE is not re-sent any more,
-				// a non-INVITE request keeps being re-sent every T2 (RFC 3261 17.1.2.2)
+				// 1xx response - read again without re-sending the request.
+				seDlg.Resend = false
 				if seDlg.ProtoId == sgsip.ProtoUDP && seDlg.LastResponse.CSeq.MethodId != sgsip.SIPMethodINVITE {
-					seDlg.TimeoutStep = cliops.timert2
-				} else {
-					seDlg.Resend = false
+					// Keep the pending timer E; only its expiry permits another send.
+					skiptimeout = true
 				}
 				if seDlg.State == SIPExerDialogStarted {
 					seDlg.State = SIPExerDialogEarly
