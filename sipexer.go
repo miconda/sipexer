@@ -232,6 +232,7 @@ type SIPExerDialog struct {
 	TargetAFProto  string
 	InitConnUDP    *net.UDPConn
 	InDialogReq    []byte
+	InDialogDNSReq []byte
 
 	RTP    *SIPExerRTPSession
 	RTPRet int
@@ -397,6 +398,7 @@ type CLIOptions struct {
 	helpcommands     bool
 	dnssrvprint      bool
 	indialogdns      bool
+	indialogdnsr     bool
 	indialogsocket   bool
 	lateoffer        bool
 	akauser          string
@@ -506,6 +508,7 @@ var cliops = CLIOptions{
 	runbatchinterval: 1000,
 	dnssrvprint:      false,
 	indialogdns:      false,
+	indialogdnsr:     false,
 	indialogsocket:   false,
 	lateoffer:        false,
 	helpcommands:     false,
@@ -708,8 +711,10 @@ func init() {
 	flag.BoolVar(&cliops.contactbuild, "cb", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.contactbuild, "contact-build", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.dnssrvprint, "dns-srv-print", cliops.dnssrvprint, "print DNS SRV records")
-	flag.BoolVar(&cliops.indialogdns, "in-dialog-dns", cliops.indialogdns, "re-resolve FQDN target via DNS before each in-dialog request (UDP only)")
-	flag.BoolVar(&cliops.indialogdns, "idd", cliops.indialogdns, "re-resolve FQDN target via DNS before each in-dialog request (UDP only)")
+	flag.BoolVar(&cliops.indialogdns, "in-dialog-dns", cliops.indialogdns, "re-resolve FQDN target via DNS before each new request (UDP only)")
+	flag.BoolVar(&cliops.indialogdns, "idd", cliops.indialogdns, "re-resolve FQDN target via DNS before each new request (UDP only)")
+	flag.BoolVar(&cliops.indialogdnsr, "in-dialog-dns-retrans", cliops.indialogdnsr, "re-resolve FQDN target via DNS before each retransmission (UDP only)")
+	flag.BoolVar(&cliops.indialogdnsr, "iddr", cliops.indialogdnsr, "re-resolve FQDN target via DNS before each retransmission (UDP only)")
 	flag.BoolVar(&cliops.indialogsocket, "in-dialog-socket", cliops.indialogsocket, "send each in-dialog request from a new local socket (UDP only)")
 	flag.BoolVar(&cliops.indialogsocket, "ids", cliops.indialogsocket, "send each in-dialog request from a new local socket (UDP only)")
 	flag.BoolVar(&cliops.fieldseval, "fe", cliops.fieldseval, "evaluate expression in fields file")
@@ -2970,10 +2975,18 @@ func SIPExerInDialogSocketRestore(seDlg *SIPExerDialog) {
 func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 	var err error
 	isReply := bytes.HasPrefix(bmsg, []byte("SIP/2.0 "))
-	// re-resolve DNS for requests only once the dialog is established (2xx received)
-	if cliops.indialogdns && !isReply &&
-		(seDlg.State == SIPExerDialogAnswered || seDlg.State == SIPExerDialogConfirmed) {
-		SIPExerResolveDialogTarget(seDlg)
+	// an ACK to a non-2xx goes where its INVITE went
+	if (cliops.indialogdns || cliops.indialogdnsr) && !isReply &&
+		!(seDlg.State == SIPExerDialogTerminated && bytes.HasPrefix(bmsg, []byte("ACK "))) {
+		rtx := bytes.Equal(bmsg, seDlg.InDialogDNSReq)
+		// -idd: re-resolve each request but the first (resolved with the dialog)
+		// -iddr: re-resolve each request retransmission
+		if (cliops.indialogdns && !rtx && seDlg.InDialogDNSReq != nil) || (cliops.indialogdnsr && rtx) {
+			SIPExerResolveDialogTarget(seDlg)
+			// the lookup may outlast the write deadline set by the caller
+			SIPExerSetWriteTimeout(seDlg)
+		}
+		seDlg.InDialogDNSReq = append([]byte(nil), bmsg...)
 	}
 	if cliops.indialogsocket && !isReply &&
 		(seDlg.State == SIPExerDialogAnswered || seDlg.State == SIPExerDialogConfirmed) {
@@ -3642,6 +3655,7 @@ func SIPExerSendUDP(dstSockAddr sgsip.SGSIPSocketAddress, tplstr string, tplfiel
 
 func SIPExerDialogResetForRequest(seDlg *SIPExerDialog) {
 	SIPExerInDialogSocketRestore(seDlg)
+	seDlg.InDialogDNSReq = nil
 	seDlg.State = SIPExerDialogInit
 	seDlg.Method = ""
 	seDlg.MethodId = 0
