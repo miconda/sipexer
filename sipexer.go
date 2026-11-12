@@ -8,6 +8,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -711,10 +712,10 @@ func init() {
 	flag.BoolVar(&cliops.contactbuild, "cb", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.contactbuild, "contact-build", cliops.contactbuild, "build contact header based on local address")
 	flag.BoolVar(&cliops.dnssrvprint, "dns-srv-print", cliops.dnssrvprint, "print DNS SRV records")
-	flag.BoolVar(&cliops.indialogdns, "in-dialog-dns", cliops.indialogdns, "re-resolve FQDN target via DNS before each new request (UDP only)")
-	flag.BoolVar(&cliops.indialogdns, "idd", cliops.indialogdns, "re-resolve FQDN target via DNS before each new request (UDP only)")
-	flag.BoolVar(&cliops.indialogdnsr, "in-dialog-dns-retrans", cliops.indialogdnsr, "re-resolve FQDN target via DNS before each retransmission (UDP only)")
-	flag.BoolVar(&cliops.indialogdnsr, "iddr", cliops.indialogdnsr, "re-resolve FQDN target via DNS before each retransmission (UDP only)")
+	flag.BoolVar(&cliops.indialogdns, "in-dialog-dns", cliops.indialogdns, "send each new request to a random address of the FQDN target, from its DNS answer cached for 60 s (UDP only)")
+	flag.BoolVar(&cliops.indialogdns, "idd", cliops.indialogdns, "send each new request to a random address of the FQDN target, from its DNS answer cached for 60 s (UDP only)")
+	flag.BoolVar(&cliops.indialogdnsr, "in-dialog-dns-retrans", cliops.indialogdnsr, "send each retransmission to a random address of the FQDN target, from its DNS answer cached for 60 s (UDP only)")
+	flag.BoolVar(&cliops.indialogdnsr, "iddr", cliops.indialogdnsr, "send each retransmission to a random address of the FQDN target, from its DNS answer cached for 60 s (UDP only)")
 	flag.BoolVar(&cliops.indialogsocket, "in-dialog-socket", cliops.indialogsocket, "send each in-dialog request from a new local socket (UDP only)")
 	flag.BoolVar(&cliops.indialogsocket, "ids", cliops.indialogsocket, "send each in-dialog request from a new local socket (UDP only)")
 	flag.BoolVar(&cliops.fieldseval, "fe", cliops.fieldseval, "evaluate expression in fields file")
@@ -2901,6 +2902,93 @@ func SIPExerDialogReadStreamConn(seDlg *SIPExerDialog, conn io.Reader, protoErr 
 	}
 }
 
+// SIPExerDNSTarget is the shared DNS answer of one -idd/-iddr target
+type SIPExerDNSTarget struct {
+	mu      sync.Mutex
+	addrs   []*net.UDPAddr
+	expires time.Time
+	busy    bool
+}
+
+// SIPExerDNSRefresh is how often a -idd/-iddr target is looked up again in the background, like a 60 s record TTL
+const SIPExerDNSRefresh = 60 * time.Second
+
+var dnsTargets sync.Map
+
+// SIPExerDNSLookup returns all addresses of hostPort for afProto (udp prefers IPv4, as net.ResolveUDPAddr)
+func SIPExerDNSLookup(afProto string, hostPort string) ([]*net.UDPAddr, error) {
+	host, sport, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		return nil, err
+	}
+	port, err := net.LookupPort("udp", sport)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	var v4, v6 []*net.UDPAddr
+	for _, ip := range ips {
+		a := &net.UDPAddr{IP: ip.IP, Port: port, Zone: ip.Zone}
+		if ip.IP.To4() != nil {
+			v4 = append(v4, a)
+		} else {
+			v6 = append(v6, a)
+		}
+	}
+	addrs := v6
+	if afProto == "udp4" || (afProto != "udp6" && len(v4) > 0) {
+		addrs = v4
+	}
+	if len(addrs) == 0 {
+		return nil, fmt.Errorf("no %s address for %s", afProto, host)
+	}
+	return addrs, nil
+}
+
+// SIPExerDNSTargetAddr picks a random address of the target's last DNS answer; only the first lookup blocks
+func SIPExerDNSTargetAddr(afProto string, hostPort string) (*net.UDPAddr, error) {
+	key := afProto + " " + hostPort
+	v, ok := dnsTargets.Load(key)
+	if !ok {
+		v, _ = dnsTargets.LoadOrStore(key, &SIPExerDNSTarget{})
+	}
+	t := v.(*SIPExerDNSTarget)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.addrs) == 0 {
+		// unlocked: the resolver merges concurrent first lookups, and a failed one does not queue the next
+		t.mu.Unlock()
+		addrs, err := SIPExerDNSLookup(afProto, hostPort)
+		t.mu.Lock()
+		if err != nil {
+			return nil, err
+		}
+		t.addrs = addrs
+		t.expires = time.Now().Add(SIPExerDNSRefresh)
+	} else if !t.busy && time.Now().After(t.expires) {
+		// sends keep the last answer while it is refreshed: a slow lookup never blocks them
+		t.busy = true
+		go func() {
+			addrs, err := SIPExerDNSLookup(afProto, hostPort)
+			t.mu.Lock()
+			if err == nil {
+				t.addrs = addrs
+			} else {
+				SIPExerPrintf(SIPExerLogError, "in-dialog-dns: failed to refresh %s - %v (keeping %d addresses)\n", hostPort, err, len(t.addrs))
+			}
+			t.expires = time.Now().Add(SIPExerDNSRefresh)
+			t.busy = false
+			t.mu.Unlock()
+		}()
+	}
+	return t.addrs[mathrand.Intn(len(t.addrs))], nil
+}
+
 func SIPExerResolveDialogTarget(seDlg *SIPExerDialog) int {
 	if len(seDlg.TargetHostPort) == 0 {
 		return SIPExerRetOK
@@ -2919,7 +3007,7 @@ func SIPExerResolveDialogTarget(seDlg *SIPExerDialog) int {
 			seDlg.Proto, seDlg.TargetHostPort, seDlg.TargetAddr)
 		return SIPExerRetOK
 	}
-	dstAddr, err := net.ResolveUDPAddr(seDlg.TargetAFProto, seDlg.TargetHostPort)
+	dstAddr, err := SIPExerDNSTargetAddr(seDlg.TargetAFProto, seDlg.TargetHostPort)
 	if err != nil {
 		SIPExerPrintf(SIPExerLogError, "in-dialog-dns: failed to resolve %s - %v\n", seDlg.TargetHostPort, err)
 		return SIPExerErrResolveDstUDPAddr
