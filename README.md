@@ -71,8 +71,8 @@ Among features:
   * simulate call between two users, registering both, then calling from first user
   to the second one, answering and hanging up
   * simulate subscribe session: send SUBSCRIBE and wait for NOTIFY requests
-  * optionally re-resolve an FQDN target via DNS before each new request (-idd)
-  and before each retransmission (-iddr) (UDP only)
+  * optionally send each new request (-idd) and each retransmission (-iddr) to a
+  random address of an FQDN target, from its DNS answer cached for 60 s (UDP only)
   * send audio (WAV or raw G.711 file, or a tone) as RTP after a call is answered
 
 ## Installation
