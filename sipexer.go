@@ -237,6 +237,174 @@ type SIPExerDialog struct {
 
 	RTP    *SIPExerRTPSession
 	RTPRet int
+
+	// -udp-sockets: shared local socket, packets for this dialog's Call-IDs come on SharedRecv
+	SharedUDP      *SIPExerSharedUDP
+	SharedRecv     chan SIPExerSharedPacket
+	SharedCallIDs  []string
+	SharedDeadline time.Time
+}
+
+// SIPExerSharedPacket is one UDP packet routed from a shared socket to a dialog
+type SIPExerSharedPacket struct {
+	Data []byte
+	Addr *net.UDPAddr
+}
+
+// SIPExerSharedUDP is one local UDP socket used by many dialogs (-udp-sockets)
+type SIPExerSharedUDP struct {
+	Conn    *net.UDPConn
+	mu      sync.RWMutex
+	dialogs map[string]chan SIPExerSharedPacket
+}
+
+var sharedUDPMu sync.Mutex
+var sharedUDPPools = map[string][]*SIPExerSharedUDP{}
+var sharedUDPNext uint64
+
+// SIPExerSharedUDPGet returns the next socket of the pool for this family and local address,
+// opening the pool on first use
+func SIPExerSharedUDPGet(afProto string, srcAddr *net.UDPAddr) (*SIPExerSharedUDP, error) {
+	key := afProto
+	if srcAddr != nil {
+		key += "/" + srcAddr.String()
+	}
+	sharedUDPMu.Lock()
+	pool, ok := sharedUDPPools[key]
+	if !ok {
+		for i := 0; i < cliops.udpsockets; i++ {
+			lAddr := srcAddr
+			if srcAddr != nil && srcAddr.Port > 0 {
+				// several sockets cannot share one port: use port, port+1, ...
+				lAddr = &net.UDPAddr{IP: srcAddr.IP, Port: srcAddr.Port + i, Zone: srcAddr.Zone}
+			}
+			conn, err := net.ListenUDP(afProto, lAddr)
+			if err != nil {
+				sharedUDPMu.Unlock()
+				return nil, err
+			}
+			// many dialogs share the socket: ask for large kernel buffers (best effort)
+			conn.SetReadBuffer(8 << 20)
+			conn.SetWriteBuffer(8 << 20)
+			su := &SIPExerSharedUDP{Conn: conn, dialogs: map[string]chan SIPExerSharedPacket{}}
+			go su.readLoop()
+			pool = append(pool, su)
+			SIPExerPrintf(SIPExerLogInfo, "udp-sockets: shared socket %d on %s\n", i, conn.LocalAddr().String())
+		}
+		sharedUDPPools[key] = pool
+	}
+	sharedUDPMu.Unlock()
+	n := atomic.AddUint64(&sharedUDPNext, 1)
+	return pool[(n-1)%uint64(len(pool))], nil
+}
+
+func (su *SIPExerSharedUDP) readLoop() {
+	buf := make([]byte, 65535)
+	for {
+		n, addr, err := su.Conn.ReadFromUDP(buf)
+		if err != nil {
+			if strings.Contains(err.Error(), "use of closed network connection") {
+				return
+			}
+			continue
+		}
+		cid := SIPExerCallIDOf(buf[:n])
+		su.mu.RLock()
+		ch := su.dialogs[cid]
+		su.mu.RUnlock()
+		if ch == nil {
+			SIPExerPrintf(SIPExerLogDebug, "udp-sockets: no dialog for call-id [%s] from %s - dropped\n", cid, addr)
+			continue
+		}
+		pkt := SIPExerSharedPacket{Data: append([]byte(nil), buf[:n]...), Addr: addr}
+		select {
+		case ch <- pkt:
+		default:
+			// the dialog is not reading fast enough: drop, as a full socket buffer would
+			SIPExerPrintf(SIPExerLogDebug, "udp-sockets: queue full for call-id [%s] from %s - dropped\n", cid, addr)
+		}
+	}
+}
+
+// SIPExerCallIDOf returns the Call-ID header value of a SIP message ("" if none)
+func SIPExerCallIDOf(b []byte) string {
+	for len(b) > 0 {
+		i := bytes.IndexByte(b, '\n')
+		var line []byte
+		if i < 0 {
+			line, b = b, nil
+		} else {
+			line, b = b[:i], b[i+1:]
+		}
+		line = bytes.TrimRight(line, "\r")
+		if len(line) == 0 {
+			// end of headers
+			return ""
+		}
+		c := bytes.IndexByte(line, ':')
+		if c <= 0 {
+			continue
+		}
+		name := strings.TrimSpace(string(line[:c]))
+		if strings.EqualFold(name, "Call-ID") || strings.EqualFold(name, "i") {
+			return strings.TrimSpace(string(line[c+1:]))
+		}
+	}
+	return ""
+}
+
+// SIPExerSharedRegister routes the Call-ID of an outgoing message to this dialog
+func SIPExerSharedRegister(seDlg *SIPExerDialog, bmsg []byte) {
+	cid := SIPExerCallIDOf(bmsg)
+	if len(cid) == 0 {
+		return
+	}
+	for _, c := range seDlg.SharedCallIDs {
+		if c == cid {
+			return
+		}
+	}
+	seDlg.SharedCallIDs = append(seDlg.SharedCallIDs, cid)
+	seDlg.SharedUDP.mu.Lock()
+	seDlg.SharedUDP.dialogs[cid] = seDlg.SharedRecv
+	seDlg.SharedUDP.mu.Unlock()
+}
+
+// SIPExerSharedRelease stops routing this dialog's Call-IDs; the shared socket stays open
+func SIPExerSharedRelease(seDlg *SIPExerDialog) {
+	seDlg.SharedUDP.mu.Lock()
+	for _, c := range seDlg.SharedCallIDs {
+		if seDlg.SharedUDP.dialogs[c] == seDlg.SharedRecv {
+			delete(seDlg.SharedUDP.dialogs, c)
+		}
+	}
+	seDlg.SharedUDP.mu.Unlock()
+	seDlg.SharedCallIDs = nil
+}
+
+// SIPExerSharedRead waits for the next packet routed to the dialog until SharedDeadline
+func SIPExerSharedRead(seDlg *SIPExerDialog) (*SIPExerSharedPacket, bool) {
+	select {
+	case p := <-seDlg.SharedRecv:
+		return &p, true
+	default:
+	}
+	if seDlg.SharedDeadline.IsZero() {
+		p := <-seDlg.SharedRecv
+		return &p, true
+	}
+	d := time.Until(seDlg.SharedDeadline)
+	if d <= 0 {
+		return nil, false
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case p := <-seDlg.SharedRecv:
+		return &p, true
+	case <-t.C:
+		return nil, false
+	}
 }
 
 type paramFieldsType map[string]string
@@ -401,6 +569,7 @@ type CLIOptions struct {
 	indialogdns      bool
 	indialogdnsr     bool
 	indialogsocket   bool
+	udpsockets       int
 	lateoffer        bool
 	akauser          string
 	akakey           string
@@ -511,6 +680,7 @@ var cliops = CLIOptions{
 	indialogdns:      false,
 	indialogdnsr:     false,
 	indialogsocket:   false,
+	udpsockets:       0,
 	lateoffer:        false,
 	helpcommands:     false,
 	version:          false,
@@ -718,6 +888,7 @@ func init() {
 	flag.BoolVar(&cliops.indialogdnsr, "iddr", cliops.indialogdnsr, "send each retransmission to a random address of the FQDN target, from its DNS answer cached for 60 s (UDP only)")
 	flag.BoolVar(&cliops.indialogsocket, "in-dialog-socket", cliops.indialogsocket, "send each in-dialog request from a new local socket (UDP only)")
 	flag.BoolVar(&cliops.indialogsocket, "ids", cliops.indialogsocket, "send each in-dialog request from a new local socket (UDP only)")
+	flag.IntVar(&cliops.udpsockets, "udp-sockets", cliops.udpsockets, "UDP: share this many local sockets between all dialogs, received packets are routed by Call-ID (0 = one socket per dialog)")
 	flag.BoolVar(&cliops.fieldseval, "fe", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.fieldseval, "fields-eval", cliops.fieldseval, "evaluate expression in fields file")
 	flag.BoolVar(&cliops.flagdefaults, "flag-defaults", cliops.flagdefaults, "print flag (cli param) default values")
@@ -831,6 +1002,14 @@ func main() {
 	}
 	if cliops.callself && cliops.indialogsocket {
 		SIPExerPrintf(SIPExerLogError, "call-self and in-dialog-socket cannot be enabled at the same time\n")
+		SIPExerExit(SIPExerRetErr)
+	}
+	if cliops.udpsockets < 0 {
+		SIPExerPrintf(SIPExerLogError, "udp-sockets cannot be negative\n")
+		SIPExerExit(SIPExerRetErr)
+	}
+	if cliops.udpsockets > 0 && (cliops.callself || cliops.callusers || cliops.indialogsocket || cliops.connectudp) {
+		SIPExerPrintf(SIPExerLogError, "udp-sockets cannot be used with call-self, call-user, in-dialog-socket or connect-udp\n")
 		SIPExerExit(SIPExerRetErr)
 	}
 	if cliops.flagdefaults {
@@ -2679,7 +2858,8 @@ func SIPExerProcessResponse(msgVal *sgsip.SGSIPMessage, rmsg []byte, sipRes *sgs
 }
 
 func SIPExerSetWriteTimeoutValue(seDlg *SIPExerDialog, tVal int) {
-	if seDlg.ProtoId == sgsip.ProtoUDP {
+	// no write deadline on a shared UDP socket: it would apply to all its dialogs
+	if seDlg.ProtoId == sgsip.ProtoUDP && seDlg.SharedUDP == nil {
 		seDlg.ConnUDP.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(tVal)))
 	} else if seDlg.ProtoId == sgsip.ProtoTCP {
 		seDlg.ConnTCP.Conn.SetWriteDeadline(time.Now().Add(time.Millisecond * time.Duration(tVal)))
@@ -2696,7 +2876,10 @@ func SIPExerSetWriteTimeout(seDlg *SIPExerDialog) {
 
 func SIPExerSetReadTimeoutValue(seDlg *SIPExerDialog, tVal int) int {
 	var err error
-	if seDlg.ProtoId == sgsip.ProtoUDP {
+	// one goroutine reads a shared UDP socket for all its dialogs: keep the deadline per dialog
+	if seDlg.ProtoId == sgsip.ProtoUDP && seDlg.SharedUDP != nil {
+		seDlg.SharedDeadline = time.Now().Add(time.Millisecond * time.Duration(tVal))
+	} else if seDlg.ProtoId == sgsip.ProtoUDP {
 		err = seDlg.ConnUDP.Conn.SetReadDeadline(time.Now().Add(time.Millisecond * time.Duration(tVal)))
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
@@ -2735,7 +2918,17 @@ func SIPExerSetReadTimeout(seDlg *SIPExerDialog) int {
 func SIPExerDialogReadBytes(seDlg *SIPExerDialog) int {
 	var err error
 
-	if seDlg.ProtoId == sgsip.ProtoUDP {
+	if seDlg.ProtoId == sgsip.ProtoUDP && seDlg.SharedUDP != nil {
+		p, ok := SIPExerSharedRead(seDlg)
+		if !ok {
+			seDlg.RecvN = 0
+			SIPExerPrintf(SIPExerLogDebug, "not receiving after %dms (shared socket)\n", seDlg.TimeoutVal)
+			return SIPExerErrUDPReceiveTimeout
+		}
+		seDlg.RecvN = copy(seDlg.RecvBuf, p.Data)
+		seDlg.ConnUDP.RcvAddr = p.Addr
+		seDlg.RecvAddr = p.Addr.String()
+	} else if seDlg.ProtoId == sgsip.ProtoUDP {
 		var rcvAddr *net.UDPAddr
 		seDlg.RecvN, rcvAddr, err = seDlg.ConnUDP.Conn.ReadFromUDP(seDlg.RecvBuf)
 		if err != nil {
@@ -3083,6 +3276,9 @@ func SIPExerSendBytes(seDlg *SIPExerDialog, bmsg []byte) int {
 		}
 	}
 	if seDlg.ProtoId == sgsip.ProtoUDP {
+		if seDlg.SharedUDP != nil {
+			SIPExerSharedRegister(seDlg, bmsg)
+		}
 		if cliops.connectudp {
 			_, err = seDlg.ConnUDP.Conn.Write(bmsg)
 		} else if isReply && seDlg.ConnUDP.RcvAddr != nil {
@@ -3359,7 +3555,9 @@ func SIPExerDialogLoop(tplstr string, tplfields map[string]any, seDlg *SIPExerDi
 				readDeadline = transactionDeadline
 				transactionTimeout = true
 			}
-			if err = seDlg.ConnUDP.Conn.SetReadDeadline(readDeadline); err != nil {
+			if seDlg.SharedUDP != nil {
+				seDlg.SharedDeadline = readDeadline
+			} else if err = seDlg.ConnUDP.Conn.SetReadDeadline(readDeadline); err != nil {
 				SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
 				return SIPExerErrUDPSetTimeout
 			}
@@ -3921,6 +4119,10 @@ func SIPExerDialogCloseConn(seDlg *SIPExerDialog) {
 	if seDlg == nil {
 		return
 	}
+	if seDlg.ProtoId == sgsip.ProtoUDP && seDlg.SharedUDP != nil {
+		SIPExerSharedRelease(seDlg)
+		return
+	}
 	if seDlg.ProtoId == sgsip.ProtoUDP && seDlg.ConnUDP != nil && seDlg.ConnUDP.Conn != nil {
 		SIPExerInDialogSocketRestore(seDlg)
 		seDlg.ConnUDP.Conn.Close()
@@ -3988,7 +4190,15 @@ func SIPExerInitUDPDialog(dstSockAddr sgsip.SGSIPSocketAddress, seDlg *SIPExerDi
 		SIPExerPrintf(SIPExerLogError, "error: %v\n", err)
 		return SIPExerErrResolveDstUDPAddr
 	}
-	if cliops.connectudp {
+	if cliops.udpsockets > 0 {
+		var su *SIPExerSharedUDP
+		su, err = SIPExerSharedUDPGet(strAFProto, seDlg.ConnUDP.SrcAddr)
+		if err == nil {
+			seDlg.SharedUDP = su
+			seDlg.SharedRecv = make(chan SIPExerSharedPacket, 64)
+			seDlg.ConnUDP.Conn = su.Conn
+		}
+	} else if cliops.connectudp {
 		seDlg.ConnUDP.Conn, err = net.DialUDP(strAFProto, seDlg.ConnUDP.SrcAddr, seDlg.ConnUDP.DstAddr)
 	} else {
 		seDlg.ConnUDP.Conn, err = net.ListenUDP(strAFProto, seDlg.ConnUDP.SrcAddr)
@@ -4007,7 +4217,7 @@ func SIPExerInitUDPDialog(dstSockAddr sgsip.SGSIPSocketAddress, seDlg *SIPExerDi
 		conn1, err = net.DialUDP(strAFProto, nil, seDlg.ConnUDP.DstAddr)
 		if err != nil {
 			SIPExerPrintf(SIPExerLogError, "error: %v (proto: %v - local: %v - remote: %v)\n", err, strAFProto, lAddr, seDlg.ConnUDP.DstAddr)
-			seDlg.ConnUDP.Conn.Close()
+			SIPExerDialogCloseConn(seDlg)
 			return SIPExerErrUDPDial
 		}
 		lAddr1 := conn1.LocalAddr().String()
